@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
-from app.schemas.stock import (AdjustIn, CountCompareRow, CountUndoIn, CountUpdateIn, CountVersionIn, StockCountLineRead,
+from app.schemas.stock import (AdjustIn, CountCompareRow, CountUpdateIn, StockCountLineRead,
                                StockCountRead, StockMoveRead)
 from app.services.stock import StockItemService, StockLotService, StockMoveService
 from app.services.stock_counts import MAX_BYTES, StockCountService
@@ -56,20 +56,6 @@ async def count_lines(u: UoW, count_id: int):
 @routes.get("/counts/{count_id}/compare", response_model=list[CountCompareRow])
 async def compare_count(u: UoW, count_id: int):
     return await StockCountService(u).compare(count_id)
-
-
-@routes.post("/counts/{count_id}/apply", response_model=StockCountRead)
-async def apply_count(u: UoW, count_id: int, body: CountVersionIn):
-    out = await StockCountService(u).apply(count_id, version=body.version)
-    await u.commit()
-    return out
-
-
-@routes.post("/counts/{count_id}/undo", response_model=StockCountRead)
-async def undo_count(u: UoW, count_id: int, body: CountUndoIn):
-    out = await StockCountService(u).undo(count_id, version=body.version, reason=body.reason)
-    await u.commit()
-    return out
 
 
 router = APIRouter()

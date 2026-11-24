@@ -81,22 +81,6 @@ class ConfirmIn(BaseModel):
     send: bool = False                  # and send the invoice when it is Ready
 
 
-class ConfirmBulkIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    order_ids: Annotated[list[int], Field(min_length=1, max_length=200)]
-    confirmed_date: date | None = None  # none: each order on the date its delivery was due
-    send: bool = False
-
-
-class ConfirmResult(BaseModel):
-    order_id: int
-    ok: bool
-    invoice_id: int | None = None
-    status: str | None = None
-    sent: bool = False
-    error: str | None = None
-
-
 class EditLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: int
@@ -119,13 +103,6 @@ class ReleaseIn(BaseModel):
     order_id: int
     version: int | None = None  # the order's, as the person saw it
     reason: Reason
-
-
-class SendInvoiceIn(BaseModel):
-    """`again`: an invoice already sent, once more, on purpose; it says why (the service asks: 422 with the field)."""
-    model_config = ConfigDict(extra="forbid")
-    again: bool = False
-    reason: Annotated[str, Field(max_length=2000)] | None = None
 
 
 class ReturnLine(BaseModel):

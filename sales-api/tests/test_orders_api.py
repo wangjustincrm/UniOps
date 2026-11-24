@@ -62,9 +62,11 @@ async def test_orders_list_detail_and_the_review_worklist(api):
     assert d["lines"][0]["problem"] == "item not in the Item Master"
     assert [doc["kind"] for doc in d["documents"]] == ["SHOPIFY_ORDER_JSON"]
     oid = d["id"]
-    assert (await api.post(f"/api/v1/orders/{oid}/resolve-review", headers=READER)).status_code == 403
-    r = await api.post(f"/api/v1/orders/{oid}/resolve-review", headers=OPERATOR)
-    assert r.status_code == 200 and r.json()["remaining"] and r.json()["order"]["fulfillment_status"] == "Review"
+    recheck = {"ids": {str(oid): d["version"]}}
+    assert (await api.post("/api/v1/orders/actions/recheck", json=recheck, headers=READER)).status_code == 403
+    r = await api.post("/api/v1/orders/actions/recheck", json=recheck, headers=OPERATOR)
+    assert r.status_code == 200 and r.json()["results"][0]["note"].startswith("still in review: ")
+    assert (await api.get(f"/api/v1/orders/{oid}", headers=READER)).json()["fulfillment_status"] == "Review"
 
 
 async def test_manual_order_preview_create_submit(api):
@@ -77,14 +79,17 @@ async def test_manual_order_preview_create_submit(api):
     assert (await api.post("/api/v1/orders/manual", json=body, headers=READER)).status_code == 403
     o = (await api.post("/api/v1/orders/manual", json=body, headers=OPERATOR)).json()
     assert (o["fulfillment_status"], o["order_state"]) == ("Draft", "Draft")
-    r = await api.post(f"/api/v1/orders/manual/{o['id']}/submit?version={o['version']}", headers=OPERATOR)
-    assert r.status_code == 200 and r.json()["fulfillment_status"] == "Pending"
     # the answer is the order as stored (review 2026-11-10): its partner and total, not the flushed row's gaps
     listed = (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()
-    assert r.json()["partner_name"] and r.json()["partner_name"] == listed["partner_name"]
-    assert (r.json()["order_status"], r.json()["total_amount"]) == (listed["order_status"], listed["total_amount"])
-    r = await api.post(f"/api/v1/orders/manual/{o['id']}/submit?version={r.json()['version']}", headers=OPERATOR)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "order.not_draft"
+    assert o["partner_name"] and o["partner_name"] == listed["partner_name"]
+    assert (o["order_status"], o["total_amount"]) == (listed["order_status"], listed["total_amount"])
+    submit = {"ids": {str(o["id"]): o["version"]}}
+    assert (await api.post("/api/v1/orders/actions/submit_draft", json=submit, headers=READER)).status_code == 403
+    r = await api.post("/api/v1/orders/actions/submit_draft", json=submit, headers=OPERATOR)
+    assert r.status_code == 200 and r.json()["results"][0]["status"] == "done"
+    assert (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()["fulfillment_status"] == "Pending"
+    [x] = (await api.post("/api/v1/orders/actions/submit_draft", json=submit, headers=OPERATOR)).json()["results"]
+    assert (x["status"], x["code"]) == ("skipped", "order.not_draft")
     trail = (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()["timeline"]
     assert {e["reason"] for e in trail} >= {"manual order: create draft", "manual order: submit"}
 
@@ -157,10 +162,11 @@ async def test_a_cancel_without_the_version_seen_is_refused(api):  # review 2026
             "ship_to": {"name": "A B", "phone": "514-555-0100", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
             "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
     o = (await api.post("/api/v1/orders/manual", json=body, headers=OPERATOR)).json()
-    r = await api.post(f"/api/v1/orders/manual/{o['id']}/cancel", headers=OPERATOR)
+    r = await api.post("/api/v1/orders/actions/cancel_draft", json={"ids": {str(o["id"]): None}}, headers=OPERATOR)
     assert r.status_code == 422 and r.json()["error"]["code"] == "entity.version_required"
-    r = await api.post(f"/api/v1/orders/manual/{o['id']}/cancel?version={o['version'] + 5}", headers=OPERATOR)
-    assert r.status_code == 409 and r.json()["error"]["details"]["current_version"] == o["version"]
+    r = await api.post("/api/v1/orders/actions/cancel_draft", json={"ids": {str(o["id"]): o["version"] + 5}}, headers=OPERATOR)
+    assert [(x["status"], x["code"]) for x in r.json()["results"]] == [("failed", "entity.stale")]
+    assert (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()["fulfillment_status"] == "Draft"
 
 
 async def test_print_documents_need_sales_read(api):  # packing_list had no check (coverage test, 2026-11-10)

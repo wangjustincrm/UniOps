@@ -14,7 +14,7 @@ from app.platform.auditing.contributors import _contributors
 from app.platform.auditing.store import NullAuditingStore
 from app.platform.exceptions import ExceptionNotification, ExceptionSubscriber, add_exception_subscriber, notify, _subscribers
 from app.platform.options import AuditingOptions, restore, snapshot
-from tests.test_order_payment import FINANCE, SETTLE_INPUT, _orders, api  # noqa: F401 — api is a fixture
+from tests.test_order_payment import FINANCE, SETTLE_INPUT, _orders, act, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 
 
@@ -31,7 +31,7 @@ def store():
 def test_the_rules_abp_s_defaults_and_ours():
     o = AuditingOptions(ignored_routes=("/health*",), always_log_routes=("/api/v1/*/export.csv",))
     req = lambda **k: AuditLogInfo(kind="request", user_id="u", **k)  # noqa: E731
-    assert should_save(req(http_method="POST", route="/api/v1/orders/{id}/settle", http_status=200), o)
+    assert should_save(req(http_method="POST", route="/api/v1/orders/actions/{action_id}", http_status=200), o)
     assert not should_save(req(http_method="GET", route="/api/v1/orders", http_status=200), o)       # GET: no (ABP)
     assert not should_save(req(http_method="OPTIONS", route=None, http_status=200), o)               # a CORS preflight: no
     assert should_save(req(http_method="GET", route="/api/v1/orders/{id}", http_status=404), o)       # …unless it fails
@@ -48,13 +48,12 @@ def test_the_rules_abp_s_defaults_and_ours():
 
 async def test_a_write_is_saved_with_who_where_its_actions_parameters_changes_and_ids(api, store):  # noqa: F811
     o = (await _orders(api, 9951))["9951"]
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=SETTLE_INPUT,
-                       headers={**FINANCE, "X-Correlation-Id": "corr-1"})
+    r = await act(api, "settle", o, {**FINANCE, "X-Correlation-Id": "corr-1"}, input=SETTLE_INPUT)
     assert r.status_code == 200 and r.headers["x-correlation-id"] == "corr-1" and r.headers["x-request-id"] == "corr-1"
     [log] = [x for x in store.logs if x.correlation_id == "corr-1"]
-    assert (log.kind, log.http_method, log.route, log.http_status, log.role) == ("request", "POST", "/api/v1/orders/{id}/settle", 200, "finance")
-    assert [(a.service_name, a.method_name) for a in log.actions] == [("OrderPaymentService", "settle")]
-    assert log.actions[0].parameters == SETTLE_INPUT  # whole (the user's rule)
+    assert (log.kind, log.http_method, log.route, log.http_status, log.role) == ("request", "POST", "/api/v1/orders/actions/{action_id}", 200, "finance")
+    assert [(a.service_name, a.method_name) for a in log.actions] == [("OrderActions", "settle")]
+    assert log.actions[0].parameters == {"ids": {str(o["id"]): o["version"]}, "input": SETTLE_INPUT}  # whole (the user's rule)
     assert log.entity_changes >= 1 and log.user_name and log.execution_duration_ms is not None
     # a GET that works: not saved; the old header still honoured
     r = await api.get(f"/api/v1/orders/{o['id']}", headers={**FINANCE, "X-Request-Id": "req-2"})
@@ -65,11 +64,14 @@ async def test_a_refusal_and_a_business_error_land_on_the_audit_log(api, store, 
     from tests.test_order_payment import OPERATOR
     caplog.set_level(logging.WARNING)
     o = (await _orders(api, 9952))["9952"]
-    await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=SETTLE_INPUT, headers={**OPERATOR, "X-Correlation-Id": "c-403"})
-    await api.post(f"/api/v1/orders/{o['id']}/settle?version=999", json=SETTLE_INPUT, headers={**FINANCE, "X-Correlation-Id": "c-409"})
+    await act(api, "settle", o, {**OPERATOR, "X-Correlation-Id": "c-403"}, input=SETTLE_INPUT)
+    await act(api, "settle", o, {**FINANCE, "X-Correlation-Id": "c-one"}, version=999, input=SETTLE_INPUT)
+    await api.put(f"/api/v1/orders/{o['id']}/returned?version=999", json={"reason": "from an old page", "lines": [{"id": 1, "returned_ea": 1}]},
+                  headers={**OPERATOR, "X-Correlation-Id": "c-409"})
     logs = {x.correlation_id: x for x in store.logs}
     assert (logs["c-403"].http_status, logs["c-403"].error_code) == (403, "auth.forbidden")
     assert (logs["c-409"].http_status, logs["c-409"].error_code) == (409, "entity.stale")
+    assert (logs["c-one"].http_status, logs["c-one"].error_code) == (200, "entity.stale")  # one record's action refused: its result, kept as an error
     assert logs["c-409"].exceptions and logs["c-409"].exceptions[0].startswith("entity.stale:")
     assert any(r.levelno == logging.WARNING and "entity.stale" in r.getMessage() for r in caplog.records)  # ≈ IHasLogLevel
 

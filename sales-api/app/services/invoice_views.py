@@ -16,14 +16,12 @@ from app.services import print_docs
 from app.services.record_files import TIMELINES, timeline_of
 from app.platform.authorization import authorize, requires
 from app.platform.commands import ANY_VERSION, VersionArg
-from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
-from app.platform.uow import Savepoint
 from app.platform.views import Preset
-from app.schemas.invoices import ConfirmResult, InvoiceDetail, InvoiceLineRead, InvoiceRead
+from app.schemas.invoices import InvoiceDetail, InvoiceLineRead, InvoiceRead
 
 READ = "sales.read"
 MANAGE = "sales.invoice.manage"
@@ -127,24 +125,6 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
             return False
         await invoicing.send(self.uow, inv.id, version=ANY_VERSION)  # built (or found Ready) in this unit
         return True
-
-    @requires(OPERATE)
-    async def confirm_bulk(self, invoicing, body) -> list[ConfirmResult]:
-        """FR-OB-31: in bulk, delivered = shipped. Each order on its own: one
-        that cannot be confirmed does not stop the others."""
-        if body.send:
-            await authorize(self.uow, MANAGE)
-        out = []
-        for oid in body.order_ids:
-            try:
-                async with Savepoint.of(self.uow):  # its events with its writes
-                    inv = await invoicing.confirm(self.uow, oid, version=ANY_VERSION, confirmed_date=body.confirmed_date)  # no versions in this route: the action has them
-                    sent = body.send and await self._send_if_ready(invoicing, inv)
-                status = (await self.uow.session.get(Order, oid)).invoice_status
-                out.append(ConfirmResult(order_id=oid, ok=True, invoice_id=inv.id, status=status, sent=sent))
-            except BusinessError as e:
-                out.append(ConfirmResult(order_id=oid, ok=False, error=e.message))
-        return out
 
     @requires(MANAGE)
     async def edit(self, invoicing, id: int, body, version: int | None) -> InvoiceDetail:

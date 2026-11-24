@@ -4,7 +4,7 @@ oplog's context and is a 500's correlation id."""
 import json
 import logging
 
-from tests.test_order_payment import FINANCE, SETTLE_INPUT, _orders, api  # noqa: F401 — api is a fixture
+from tests.test_order_payment import FINANCE, SETTLE_INPUT, _orders, act, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 
 
@@ -22,7 +22,7 @@ async def test_one_line_per_request_with_its_id_person_and_route_never_the_query
     assert line["user_name"] and line["duration_ms"] >= 0 and line["error"] is None
     assert "Jane" not in json.dumps(line)  # no query string, no body
     # a caller's id that is not a plain token is replaced; a business error is named by its code
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle", json=SETTLE_INPUT, headers={**FINANCE, "X-Request-Id": "bad id\n"})
+    r = await act(api, "settle", o, {**FINANCE, "X-Request-Id": "bad id\n"}, version=None, input=SETTLE_INPUT)
     rid = r.headers["x-request-id"]
     assert rid != "bad id\n" and len(rid) == 32
     [line] = [x for x in _lines(caplog) if x["request_id"] == rid]
@@ -31,8 +31,7 @@ async def test_one_line_per_request_with_its_id_person_and_route_never_the_query
 
 async def test_the_request_id_is_in_the_oplog_context(api):  # noqa: F811
     o = (await _orders(api, 9802))["9802"]
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=SETTLE_INPUT,
-                       headers={**FINANCE, "X-Request-Id": "req-oplog-1"})
+    r = await act(api, "settle", o, {**FINANCE, "X-Request-Id": "req-oplog-1"}, input=SETTLE_INPUT)
     assert r.status_code == 200
     [row] = await api.env.q("SELECT context FROM sales_log WHERE step = 'payment'")
     assert row["context"]["request_id"] == "req-oplog-1"

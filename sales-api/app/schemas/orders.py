@@ -425,27 +425,6 @@ class ManualOrderSettings(BaseModel):
         "Gift", "Replacement", "Sample", "Staff purchase", "Phone order", "Other"]
 
 
-class CancelOrderIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: Reason
-
-
-class Send940In(BaseModel):
-    """Replacing a live 940 says why (the service asks: 422 with the field); a first send asks nothing."""
-    model_config = ConfigDict(extra="forbid")
-
-    reason: Annotated[str, Field(max_length=2000)] | None = None
-
-
-class ReleaseHoldIn(BaseModel):
-    """Where the order goes: one of the detail's `hold_exits`."""
-    model_config = ConfigDict(extra="forbid")
-
-    to: str
-    reason: Reason
-
-
 class ResolveRowIn(BaseModel):
     """A 945 row matching no line: link it to a line, or (no line) accept it, saying why."""
     model_config = ConfigDict(extra="forbid")

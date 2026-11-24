@@ -63,6 +63,23 @@ async def _orders(api, *numbers):
         "SELECT id, source_order_number, version FROM sales_orders ORDER BY id")}
 
 
+ACT = "/api/v1/orders/actions/"
+
+
+async def act(api, action, o, headers=None, *, version="seen", **body):
+    """One order through a record action, by the version seen (`version` gives another)."""
+    v = o["version"] if version == "seen" else version
+    return await api.post(ACT + action, json={"ids": {str(o["id"]): v}, **body}, headers=headers or FINANCE)
+
+
+async def one(api, action, o, headers=None, **kw):
+    """Its result (the request itself went through)."""
+    r = await act(api, action, o, headers, **kw)
+    assert r.status_code == 200, r.text
+    [x] = r.json()["results"]
+    return x
+
+
 async def _exec(api, sql):
     async with api.env.factory(SYSTEM_ACTOR) as u:
         await u.session.execute(sa.text(sql))
@@ -104,40 +121,39 @@ async def test_payment_shows_beside_the_status_lists_filters_and_follows_the_ter
 async def test_a_finance_user_marks_settled_with_a_date_and_a_reference_and_undoes_it_with_a_reason(api):
     o = (await _orders(api, 9611))["9611"]
     before = await _status(api, o["id"])
-    url = f"/api/v1/orders/{o['id']}/settle?version={before['version']}"
     body = {"settled_on": "2026-11-20", "reference": "EFT 55012", "amount": "112.50", "note": "Remittance 11-20"}
     # required: the date and the reference
-    assert (await api.post(url, json={"reference": "EFT 55012"}, headers=FINANCE)).status_code == 422
-    assert (await api.post(url, json={"settled_on": "2026-11-20", "reference": "  "}, headers=FINANCE)).status_code == 422
-    r = await api.post(url, json={**body, "settled_on": (date.today() + timedelta(days=2)).isoformat()}, headers=FINANCE)
+    assert (await act(api, "settle", before, input={"reference": "EFT 55012"})).status_code == 422
+    assert (await act(api, "settle", before, input={"settled_on": "2026-11-20", "reference": "  "})).status_code == 422
+    r = await act(api, "settle", before, input={**body, "settled_on": (date.today() + timedelta(days=2)).isoformat()})
     assert r.status_code == 422 and r.json()["error"]["code"] == "order.settled_future", r.text
-    r = await api.post(url, json=body, headers=FINANCE)
-    assert r.status_code == 200, r.text
-    s = r.json()
+    assert (await one(api, "settle", before, input=body))["status"] == "done"
+    s = await _status(api, o["id"])
     assert (s["payment_status"], s["settled_on"], s["settled_reference"], s["settled_amount"], s["settled_note"]) == (
         SETTLED, "2026-11-20", "EFT 55012", "112.50", "Remittance 11-20")
     assert s["settled_by_name"] and s["settled_at"]
     assert (s["order_state"], s["order_status"]) == (before["order_state"], before["order_status"])  # the state is untouched
-    # a stale version and a second mark are refused
-    assert (await api.post(url, json=body, headers=FINANCE)).status_code == 409
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={s['version']}", json=body, headers=FINANCE)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "order.settled"
+    # a second mark is left out, whatever the version: already settled
+    for v in (before["version"], s["version"]):
+        x = await one(api, "settle", s, version=v, input=body)
+        assert x["status"] == "skipped" and x["reason"] == "already settled on 2026-11-20 (EFT 55012)"
     # Activity has the mark; undo needs a reason and is in Activity too
-    undo = f"/api/v1/orders/{o['id']}/unsettle?version={s['version']}"
-    assert (await api.post(undo, json={"reason": ""}, headers=FINANCE)).status_code == 422
-    r = await api.post(undo, json={"reason": "wrong order, the EFT was for 9612"}, headers=FINANCE)
-    assert r.status_code == 200 and r.json()["payment_status"] == NOT_SETTLED and r.json()["settled_on"] is None
+    assert (await act(api, "unsettle", s, input={"reason": ""})).status_code == 422
+    assert (await one(api, "unsettle", s, version=before["version"], input={"reason": "from an old page"}))["code"] == "entity.stale"
+    assert (await one(api, "unsettle", s, input={"reason": "wrong order, the EFT was for 9612"}))["status"] == "done"
+    u = await _status(api, o["id"])
+    assert u["payment_status"] == NOT_SETTLED and u["settled_on"] is None
     reasons = [t["reason"] for t in (await _status(api, o["id"]))["timeline"]]
     assert "settled on 2026-11-20, EFT 55012, 112.50: Remittance 11-20" in reasons
     assert "settlement undone (was 2026-11-20, EFT 55012): wrong order, the EFT was for 9612" in reasons
-    r = await api.post(f"/api/v1/orders/{o['id']}/unsettle?version={r.json()['version']}", json={"reason": "again"}, headers=FINANCE)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "order.not_settled"
-    assert (await api.post(f"/api/v1/orders/{o['id']}/settle", json=body, headers=FINANCE)).json()["error"]["code"] == (
-        "entity.version_required")  # the version check, as on other edits
+    x = await one(api, "unsettle", u, input={"reason": "again"})
+    assert x["status"] == "skipped" and x["reason"] == "not settled"
+    r = await act(api, "settle", u, version=None, input=body)  # the version check, as on other edits
+    assert r.status_code == 422 and r.json()["error"]["code"] == "entity.version_required"
+    assert (await one(api, "settle", u, version=u["version"] + 5, input=body))["code"] == "entity.stale"
 
 
 # ── the record actions (platform/bulk_actions.py): one rule and one run, on one order or many ──────────────
-ACT = "/api/v1/orders/actions/"
 SETTLE_INPUT = {"settled_on": "2026-11-22", "reference": "REM 77"}
 
 
@@ -158,19 +174,16 @@ async def test_every_order_action_refuses_without_its_permission_and_admits_with
 async def test_only_finance_settles_an_operator_is_refused(api):
     o = (await _orders(api, 9621))["9621"]
     body = {"settled_on": "2026-11-20", "reference": "CHQ 1001"}
-    for path, b in ((f"/api/v1/orders/{o['id']}/settle", body), (f"/api/v1/orders/{o['id']}/unsettle", {"reason": "test"}),
-                    (ACT + "settle", {"ids": {str(o["id"]): o["version"]}, "input": body})):
-        assert (await api.post(path, json=b, headers=OPERATOR)).status_code == 403, path  # operate, invoice, config: no
+    for action, b in (("settle", body), ("unsettle", {"reason": "test"})):
+        assert (await act(api, action, o, OPERATOR, input=b)).status_code == 403, action  # operate, invoice, config: no
     assert (await _status(api, o["id"]))["payment_status"] == NOT_SETTLED
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=body, headers=FINANCE)
-    assert r.status_code == 200 and r.json()["payment_status"] == SETTLED  # admitted
+    assert (await one(api, "settle", o, input=body))["status"] == "done" and (await _status(api, o["id"]))["payment_status"] == SETTLED  # admitted
 
 
 async def test_mark_settled_on_many_one_result_each_its_own_activity_and_a_second_run_writes_nothing(api):
     o = await _orders(api, 9631, 9632, 9633, 9634)
     first = {"settled_on": "2026-11-21", "reference": "EFT 1"}
-    assert (await api.post(f"/api/v1/orders/{o['9632']['id']}/settle?version={o['9632']['version']}", json=first,
-                           headers=FINANCE)).status_code == 200
+    assert (await one(api, "settle", o["9632"], input=first))["status"] == "done"
     await _exec(api, f"UPDATE sales_orders SET version = version + 1 WHERE id = {o['9634']['id']}")  # changed meanwhile
     ids = {str(o[n]["id"]): o[n]["version"] for n in ("9631", "9632", "9633", "9634")} | {"999999": 1}
     # the confirm step: a dry run, no input needed, nothing written
@@ -225,9 +238,6 @@ async def test_historical_and_cancelled_orders_need_no_payment_and_are_not_settl
     r = (await api.post(ACT + "settle", json={"ids": {str(o[n]["id"]): o[n]["version"] for n in ("9661", "9662")},
                                               "input": SETTLE_INPUT}, headers=FINANCE)).json()
     assert [x["status"] for x in r["results"]] == ["skipped", "skipped"] and "Not needed" in r["results"][0]["reason"]
-    r = await api.post(f"/api/v1/orders/{o['9661']['id']}/settle?version={o['9661']['version']}", json=SETTLE_INPUT,
-                       headers=FINANCE)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "order.not_settleable"
     assert payment_status(draft=False, cancelled=False, settled=False, invoice_sent=False, invoice_date=None, terms=None,
                           today=TODAY, historical=True) == NOT_NEEDED
 

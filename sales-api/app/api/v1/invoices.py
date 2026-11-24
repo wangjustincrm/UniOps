@@ -1,7 +1,7 @@
-"""Invoicing (P6): the invoice list and detail, delivery confirmation (one
-and in bulk), edit, send / resend, release a hold, and a cancellation or
-return after shipment. Permissions are checked by the service; each write
-commits once."""
+"""Invoicing (P6): the invoice list and detail, delivery confirmation of one order,
+edit, release a hold, and a cancellation or return after shipment; Send and Send
+again are record actions (app/services/invoice_actions.py), as is confirming many
+(order_actions.py). Permissions are checked by the service; each write commits once."""
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -11,7 +11,7 @@ from app.platform.crud_router import resource_router
 from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.invoices import (
-    ConfirmBulkIn, ConfirmIn, ConfirmResult, InvoiceDetail, InvoiceEdit, ReleaseIn, ReturnIn, SendInvoiceIn,
+    ConfirmIn, InvoiceDetail, InvoiceEdit, ReleaseIn, ReturnIn,
 )
 from app.services.invoice_views import InvoiceService
 
@@ -34,13 +34,6 @@ async def confirm(u: UoW, rt: Rt, body: ConfirmIn):
     return out
 
 
-@routes.post("/confirm-bulk", response_model=list[ConfirmResult])
-async def confirm_bulk(u: UoW, rt: Rt, body: ConfirmBulkIn):
-    out = await InvoiceService(u).confirm_bulk(rt.invoicing, body)
-    await u.commit()
-    return out
-
-
 @routes.post("/release")
 async def release(u: UoW, rt: Rt, body: ReleaseIn) -> dict:
     out = await InvoiceService(u).release(rt.invoicing, body)
@@ -58,14 +51,6 @@ async def record_return(u: UoW, rt: Rt, body: ReturnIn) -> dict:
 @routes.put("/{id}", response_model=InvoiceDetail)
 async def edit_invoice(u: UoW, rt: Rt, id: int, body: InvoiceEdit, version: Annotated[int | None, Query()] = None):
     out = await InvoiceService(u).edit(rt.invoicing, id, body, version)
-    await u.commit()
-    return out
-
-
-@routes.post("/{id}/send", response_model=InvoiceDetail)
-async def send_invoice(u: UoW, rt: Rt, id: int, version: Annotated[int | None, Query()] = None, body: SendInvoiceIn | None = None):
-    body = body or SendInvoiceIn()
-    out = await InvoiceService(u).send(rt.invoicing, id, version, again=body.again, reason=body.reason)
     await u.commit()
     return out
 

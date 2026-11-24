@@ -176,3 +176,19 @@ def test_all_fields_never_says_less_than_the_page(svc):
 def test_a_list_kept_from_bulk_export_is_kept():
     off = {c.resolved().path for c in LISTS if not c.resolved().export}
     assert off == {"/documents", "/runs", "/config/notification-rules", "/log", "/audit-logs", "/entity-changes", "/notifications"}
+
+
+# The single-record routes that went with stage 3 (l): one record and many are the record action, nothing beside it.
+GONE = ("/orders/{id}/send-940", "/orders/{order_id}/shopify-fulfil", "/orders/manual/{id}/submit", "/orders/manual/{id}/cancel", "/orders/{id}/settle",
+        "/orders/{id}/unsettle", "/orders/{id}/resolve-review", "/orders/{id}/cancel", "/orders/{id}/release-hold", "/invoices/confirm-bulk",
+        "/invoices/{id}/send", "/transfers/{id}/ready", "/transfers/{id}/cancel", "/transfers/{id}/resend", "/transfers/{id}/release",
+        "/documents/{id}/read-again", "/documents/{id}/ignore", "/documents/{id}/send-again", "/inventory/counts/{count_id}/apply",
+        "/inventory/counts/{count_id}/undo")
+
+
+def test_no_single_route_comes_back_beside_its_record_action():
+    from app.main import app
+    paths = set(app.openapi()["paths"])
+    assert not paths & {f"/api/v1{p}" for p in GONE}
+    for lst in ("orders", "invoices", "transfers", "documents", "inventory/counts"):
+        assert f"/api/v1/{lst}/actions/{{action_id}}" in paths  # and the one that stands in their place is there

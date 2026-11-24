@@ -7,8 +7,8 @@ bulk). Nothing is sent to anyone and the order's state does not change (Complete
 user has not decided).
 
 sales.settle only — a finance key, not on sales.read or sales.order.operate. The rules (`settle_check`,
-`unsettle_check`) and the work (`settle_run`, `unsettle_run`) are one each, used by the single endpoints and by the
-record actions (ORDER_ACTIONS, platform/bulk_actions.py): a draft, a shadow order, one already settled, or one whose
+`unsettle_check`) and the work (`settle_run`, `unsettle_run`) are one each, the record actions
+(ORDER_ACTIONS, platform/bulk_actions.py), on one order or many: a draft, a shadow order, one already settled, or one whose
 Payment is Not needed (cancelled with nothing invoiced, or historical and not settled by its gateway)
 is not settled. A later derived source (Shopify from the gateway settlements) goes beside the manual columns; the
 manual mark wins (app/domain/order_payment.py). An order the gateway settled (derived, user 2026-11-23) is not marked
@@ -23,12 +23,9 @@ from app.domain.order_payment import NOT_NEEDED
 from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import Fulfillment as F
 from app.models.orders import Order
-from app.platform.authorization import requires
 from app.platform.bulk_actions import Action, ActionRegistry
 from app.platform.clock import clock
-from app.platform.commands import ANY_VERSION, VersionArg, check_version, load_for_command
-from app.platform.errors import BusinessError, InvalidInput
-from app.platform.services import Service
+from app.platform.errors import InvalidInput
 from app.schemas.orders import SettleIn, UnsettleIn
 from app.services import oplog
 
@@ -104,27 +101,3 @@ def _order_actions() -> ActionRegistry:
 
 
 ORDER_ACTIONS = _order_actions()
-
-
-class OrderPaymentService(Service):
-    """The single-record endpoints: the version the person saw, then the same rule and work as the actions."""
-
-    async def _one(self, id: int, version: VersionArg, check, run, body) -> Order:
-        o = await load_for_command(self.s, Order, id, version=ANY_VERSION, what="this order")
-        check_version(o, version, "this order")
-        why = await check(self.uow, o)
-        if why:
-            code = ("order.not_settled" if check is unsettle_check else
-                    "order.settled" if why.startswith("already settled") else "order.not_settleable")
-            raise BusinessError(code, why)
-        await run(self.uow, o, body)
-        return o
-
-    @requires(SETTLE)
-    async def settle(self, id: int, body: SettleIn, version: VersionArg = ANY_VERSION) -> Order:
-        settle_validate(body)
-        return await self._one(id, version, settle_check, settle_run, body)
-
-    @requires(SETTLE)
-    async def unsettle(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> Order:
-        return await self._one(id, version, unsettle_check, unsettle_run, UnsettleIn(reason=reason))

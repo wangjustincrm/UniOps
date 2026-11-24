@@ -142,14 +142,3 @@ class CountUpdateIn(BaseModel):
     version: int
     counted_at: datetime | None = None
     note: str | None = Field(default=None, max_length=2000)
-
-
-class CountVersionIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    version: int
-
-
-class CountUndoIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    version: int
-    reason: str = Field(min_length=3, max_length=500)

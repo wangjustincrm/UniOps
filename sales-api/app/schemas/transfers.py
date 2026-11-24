@@ -27,11 +27,6 @@ class TransferIn(BaseModel):
     lines: Annotated[list[TransferLineIn], Field(min_length=1, max_length=200)]
 
 
-class CancelIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    reason: Reason
-
-
 class TransferRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -121,9 +116,4 @@ class ResolveIn(BaseModel):
     """A receipt difference settled (user 2026-11-13): corrected to what arrived, or accepted as it is."""
     model_config = ConfigDict(extra="forbid")
     how: Literal["corrected", "accepted"]
-    reason: Reason
-
-
-class ReleaseIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     reason: Reason

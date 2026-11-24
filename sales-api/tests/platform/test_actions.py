@@ -43,7 +43,8 @@ async def rule(w):
 
 
 async def half(uow, w, data, ctx):  # noqa: ARG001
-    ctx.problem = f"{w.code} was written, and refused by its checks" if w.code == "A" else None
+    if w.code == "A":
+        ctx.problem = f"{w.code} was written, and refused by its checks"
 
 REGISTRY = ActionRegistry(WidgetRepository, [
     Action("open", permission="pt.read", run=half, check=not_open, context=True),

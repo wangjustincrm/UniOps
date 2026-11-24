@@ -6,21 +6,20 @@ import logging
 from types import SimpleNamespace
 
 from app.services.security_log import log_startup, switches
-from tests.test_order_payment import FINANCE, OPERATOR, SETTLE_INPUT, _orders, api  # noqa: F401 — api is a fixture
+from tests.test_order_payment import OPERATOR, SETTLE_INPUT, _orders, act, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 
 
 async def test_a_refusal_is_logged_with_who_what_where_and_the_request_id(api):  # noqa: F811
     o = (await _orders(api, 9901))["9901"]
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=SETTLE_INPUT,
-                       headers={**OPERATOR, "X-Request-Id": "sec-1"})
+    r = await act(api, "settle", o, {**OPERATOR, "X-Request-Id": "sec-1"}, input=SETTLE_INPUT)
     assert r.status_code == 403
     [row] = await api.env.q("SELECT level, message, context FROM sales_log WHERE step = 'security'")
     c = row["context"]
     assert row["level"] == "WARNING" and "needs sales.settle" in row["message"]
-    assert (c["permission"], c["role"], c["route"], c["request_id"]) == ("sales.settle", "op", "/api/v1/orders/{id}/settle", "sec-1")
+    assert (c["permission"], c["role"], c["route"], c["request_id"]) == ("sales.settle", "op", "/api/v1/orders/actions/{action_id}", "sec-1")
     # admitted: no security row
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=SETTLE_INPUT, headers=FINANCE)
+    r = await act(api, "settle", o, input=SETTLE_INPUT)
     assert r.status_code == 200
     assert len(await api.env.q("SELECT id FROM sales_log WHERE step = 'security'")) == 1
 

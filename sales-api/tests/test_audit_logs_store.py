@@ -5,7 +5,7 @@ import pytest
 
 from app.platform.auditing import NullAuditingStore, use_store
 from app.services.audit_logs import SqlAuditingStore
-from tests.test_order_payment import FINANCE, SETTLE_INPUT, _orders, api  # noqa: F401 — api is a fixture
+from tests.test_order_payment import FINANCE, OPERATOR, SETTLE_INPUT, _orders, act, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 
 
@@ -18,13 +18,12 @@ def sql_store(api):  # noqa: F811
 
 async def test_a_write_saves_its_header_actions_and_links_its_changes_and_log(api, sql_store):  # noqa: F811
     o = (await _orders(api, 9961))["9961"]
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=SETTLE_INPUT,
-                       headers={**FINANCE, "X-Correlation-Id": "store-1"})
+    r = await act(api, "settle", o, {**FINANCE, "X-Correlation-Id": "store-1"}, input=SETTLE_INPUT)
     assert r.status_code == 200
     [h] = await api.env.q("SELECT id, kind, route, http_status, role, entity_changes FROM sales_audit_logs WHERE correlation_id = 'store-1'")
-    assert (h["kind"], h["route"], h["http_status"], h["role"]) == ("request", "/api/v1/orders/{id}/settle", 200, "finance")
+    assert (h["kind"], h["route"], h["http_status"], h["role"]) == ("request", "/api/v1/orders/actions/{action_id}", 200, "finance")
     [a] = await api.env.q("SELECT service_name, method_name, parameters FROM sales_audit_log_actions WHERE audit_log_id = :i", i=h["id"])
-    assert (a["service_name"], a["method_name"], a["parameters"]) == ("OrderPaymentService", "settle", SETTLE_INPUT)
+    assert (a["service_name"], a["method_name"], a["parameters"]) == ("OrderActions", "settle", {"ids": {str(o["id"]): o["version"]}, "input": SETTLE_INPUT})
     changes = await api.env.q("SELECT id FROM sales_audit WHERE audit_log_id = :i", i=h["id"])
     assert len(changes) == h["entity_changes"] >= 1
     [lg] = await api.env.q("SELECT step FROM sales_log WHERE audit_log_id = :i", i=h["id"])
@@ -33,7 +32,8 @@ async def test_a_write_saves_its_header_actions_and_links_its_changes_and_log(ap
 
 async def test_a_failed_request_keeps_its_header_and_a_plain_get_saves_none(api, sql_store):  # noqa: F811
     o = (await _orders(api, 9962))["9962"]
-    r = await api.post(f"/api/v1/orders/{o['id']}/settle?version=999", json=SETTLE_INPUT, headers={**FINANCE, "X-Correlation-Id": "store-2"})
+    r = await api.put(f"/api/v1/orders/{o['id']}/returned?version=999", json={"reason": "from an old page", "lines": [{"id": 1, "returned_ea": 1}]},
+                      headers={**OPERATOR, "X-Correlation-Id": "store-2"})
     assert r.status_code == 409
     [h] = await api.env.q("SELECT http_status, error_code, exceptions FROM sales_audit_logs WHERE correlation_id = 'store-2'")
     assert (h["http_status"], h["error_code"]) == (409, "entity.stale") and h["exceptions"].startswith("entity.stale:")

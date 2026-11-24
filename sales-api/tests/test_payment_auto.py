@@ -12,7 +12,7 @@ from app.domain.order_payment import NOT_NEEDED, NOT_SETTLED, SETTLED, WAITING, 
 from app.models.gateways import GatewaySettlement, GatewayTransaction
 from app.models.payments import OrderPayment
 from app.platform.actors import SYSTEM_ACTOR
-from tests.test_order_payment import ACT, FINANCE, SETTLE_INPUT, _exec, _orders, _status, api  # noqa: F401 — api is a fixture
+from tests.test_order_payment import ACT, FINANCE, SETTLE_INPUT, _exec, _orders, _status, api, one  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 
 T = datetime(2026, 11, 10, 20, tzinfo=timezone.utc)
@@ -118,20 +118,16 @@ async def test_the_manual_mark_wins_and_undo_falls_back_to_the_gateway(api):  # 
     # an order the gateway settled: Mark settled is skipped with the settlement's name; Undo has nothing to undo
     r = (await api.post(ACT + "settle", json={"ids": {str(a["id"]): auto["version"]}, "input": SETTLE_INPUT}, headers=FINANCE)).json()
     assert r["results"][0]["status"] == "skipped" and r["results"][0]["reason"] == f"already settled by {auto['auto_settlement_label']}"
-    r = await api.post(f"/api/v1/orders/{a['id']}/settle?version={auto['version']}", json=SETTLE_INPUT, headers=FINANCE)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "order.settled"
     r = (await api.post(ACT + "unsettle", json={"ids": {str(a["id"]): auto["version"]}, "input": {"reason": "test it"}},
                         headers=FINANCE)).json()
     assert r["results"][0]["status"] == "skipped" and "nothing to undo" in r["results"][0]["reason"]
     # marked by hand first: the mark wins; its undo falls back to what the gateway says
-    r = await api.post(f"/api/v1/orders/{b['id']}/settle?version={b['version']}", json=SETTLE_INPUT, headers=FINANCE)
-    assert r.status_code == 200
+    assert (await one(api, "settle", b, input=SETTLE_INPUT))["status"] == "done"
     await _pay(api, b["id"], tx=CLOSED, gateway="authorize.net")
     s = await _status(api, b["id"])
     assert (s["payment_status"], s["settled_reference"], s["auto_settlement_id"]) == (SETTLED, "REM 77", None)
-    r = await api.post(f"/api/v1/orders/{b['id']}/unsettle?version={s['version']}", json={"reason": "wrong remittance"},
-                       headers=FINANCE)
-    s = r.json()
+    assert (await one(api, "unsettle", s, input={"reason": "wrong remittance"}))["status"] == "done"
+    s = await _status(api, b["id"])
     assert (s["payment_status"], s["settled_on"]) == (SETTLED, None) and s["auto_settlement_label"].startswith("Authorize.Net")
 
 

@@ -157,15 +157,13 @@ async def test_the_order_carries_its_next_step(api):  # noqa: F811
 
 
 async def test_a_post_answers_with_the_same_next_step_as_a_get(api):  # noqa: F811
-    from tests.test_orders import shopify_order
     from tests.test_orders_api import OPERATOR
-    api.env.shop.orders = [shopify_order(2, 9302, lines=[
-        {"id": 5, "sku": "NOPE", "variant_title": "Case", "quantity": 1, "price": "1", "requires_shipping": True}])]
-    await api.env.pull()
-    o = (await api.get("/api/v1/orders", headers=READER)).json()["items"][0]
-    posted = (await api.post(f"/api/v1/orders/{o['id']}/resolve-review", headers=OPERATOR)).json()["order"]
-    got = (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()
-    assert posted["next_step"] == got["next_step"] == "Fix it in the Item Master, then Re-check."
+    body = {"partner_code": "MAN", "customer_reference": "phone-1", "carrier": "Purolator", "reason": "Phone order",
+            "ship_to": {"name": "A B", "phone": "514-555-0100", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
+            "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
+    posted = (await api.post("/api/v1/orders/manual", json=body, headers=OPERATOR)).json()
+    got = (await api.get(f"/api/v1/orders/{posted['id']}", headers=READER)).json()
+    assert posted["next_step"] and posted["next_step"] == got["next_step"]
 
 
 def test_a_read_that_never_learned_whether_runs_happen_shows_no_step():

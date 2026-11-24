@@ -25,7 +25,7 @@ from app.platform.uow import UnitOfWorkFactory
 from app.services.invoice_views import InvoiceService
 from app.services.invoicing import SEND_INVOICE, Invoicing
 from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
-from app.schemas.invoices import ConfirmBulkIn, ConfirmIn, DeliveredLine, InvoiceEdit, ReleaseIn, ReturnIn
+from app.schemas.invoices import ConfirmIn, DeliveredLine, InvoiceEdit, ReleaseIn, ReturnIn
 from tests.test_orders import OP, env, po, run_850  # noqa: F401 — env is a fixture (p4_edi needs it)
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
 from tests.test_shipments import store_945, x945
@@ -138,6 +138,22 @@ async def test_ac43_unconfirmed_for_30_days_stays_and_nothing_escalates(p6):
     assert await p6.q("SELECT 1 FROM tasks WHERE type LIKE 'sales_invoice%'") == []
 
 
+async def confirm_many(t, *ids, date_=None, send=False, uow=None):
+    """The bulk confirmation: the record action, by the versions seen now."""
+    from app.platform.bulk_actions import ActionIn, run_action
+    from app.services.order_actions import ORDER_ACTIONS
+    async with t.factory(OP) as u:
+        seen = {i: (await u.session.execute(sa.text("SELECT version FROM sales_orders WHERE id = :i"), {"i": i})).scalar_one_or_none() or 1 for i in ids}
+        out = await run_action(u, ORDER_ACTIONS, "confirm_delivery", ActionIn(ids=seen, input={"confirmed_date": date_, "send": send}),
+                               SimpleNamespace(invoicing=t.inv))
+        events = [e.entity_id for e in u.events.drain() if getattr(e, "machine", "") == "test"]
+        dispatched = {e.entity_id for e in u.events.dispatched}
+        await u.commit()
+    if uow is not None:
+        uow.update(events=events, dispatched=dispatched)
+    return out.results
+
+
 # ── confirmation and the invoice (AC-OB-42, FR-OB-30, 35) ────────────────────
 
 async def test_ac42_nothing_without_a_confirmation_and_the_invoice_states_what_was_delivered(p6):
@@ -171,11 +187,8 @@ async def test_bulk_confirmation_takes_the_shipped_quantity_and_one_failure_stop
     a = await shipped_850(p6, "PO-1")
     b = await shipped_850(p6, "PO-3")
     await p6.inv.advance()
-    async with p6.factory(OP) as u:
-        res = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[a.id, 999999, b.id],
-                                                                         confirmed_date=date(2026, 11, 5)))
-        await u.commit()
-    assert [(r.order_id, r.ok) for r in res] == [(a.id, True), (999999, False), (b.id, True)]
+    res = await confirm_many(p6, a.id, 999999, b.id, date_="2026-11-05")
+    assert [(r.id, r.status) for r in res] == [(a.id, "done"), (999999, "failed"), (b.id, "done")]
     assert await inv_status(p6, a.id) == await inv_status(p6, b.id) == "Ready"
 
 
@@ -194,12 +207,9 @@ async def test_an_order_that_fails_in_bulk_leaves_no_event_behind(p6, monkeypatc
             raise BusinessError("test.refused", "refused after its writes")
         return out
     monkeypatch.setattr(p6.inv, "confirm", confirm_then_fail)
-    async with p6.factory(OP) as u:
-        res = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[a.id, b.id], confirmed_date=date(2026, 11, 5)))
-        ours = [e.entity_id for e in u.events.drain() if getattr(e, "machine", "") == "test"]
-        others = {e.entity_id for e in u.events.dispatched}
-        await u.commit()
-    assert [r.ok for r in res] == [False, True] and ours == [b.id] and a.id not in others
+    kept: dict = {}
+    res = await confirm_many(p6, a.id, b.id, date_="2026-11-05", uow=kept)
+    assert [r.status for r in res] == ["failed", "done"] and kept["events"] == [b.id] and a.id not in kept["dispatched"]
     assert await inv_status(p6, a.id) != "Ready" and await inv_status(p6, b.id) == "Ready"
 
 
@@ -208,10 +218,8 @@ async def test_with_no_date_each_order_takes_its_due_date(p6):
     await p6.inv.advance()
     [row] = await p6.q("SELECT requested_delivery_date d FROM sales_orders WHERE id = :i", i=o.id)
     assert row["d"] is not None
-    async with p6.factory(OP) as u:
-        [res] = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[o.id]))
-        await u.commit()
-    assert res.ok and not res.sent and res.status == "Ready"
+    [res] = await confirm_many(p6, o.id)
+    assert (res.status, res.note) == ("done", None) and await inv_status(p6, o.id) == "Ready"
     [inv] = await p6.q("SELECT invoice_date d FROM sales_invoices WHERE order_id = :i", i=o.id)
     assert inv["d"] == row["d"]
 
@@ -229,10 +237,8 @@ async def test_confirm_and_send_queues_the_invoice_once(p6):
 async def test_confirm_and_send_leaves_a_blocked_invoice_for_a_person(p6):
     o = await shipped_850(p6, "PO-1", shipped=1)  # part of a case: the invoice needs a decision
     await p6.inv.advance()
-    async with p6.factory(OP) as u:
-        [res] = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[o.id], send=True))
-        await u.commit()
-    assert res.ok and not res.sent and res.status == "Blocked"
+    [res] = await confirm_many(p6, o.id, send=True)
+    assert (res.status, res.note) == ("done", None) and await inv_status(p6, o.id) == "Blocked"
     assert await p6.q("SELECT 1 FROM sales_outbox WHERE kind = 'send_invoice'") == []
 
 
