@@ -21,7 +21,7 @@ never removed. Models that opt in to SoftDeletable get `soft_delete`.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from types import UnionType
 from typing import Any, ClassVar, Generic, Literal, TypeVar, Union, get_args, get_origin
@@ -29,6 +29,7 @@ from typing import Any, ClassVar, Generic, Literal, TypeVar, Union, get_args, ge
 from pydantic import BaseModel
 from sqlalchemy import Select, and_, func, not_, or_, select, true
 
+from app.platform.clock import clock
 from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
 from app.platform.views import Preset
@@ -251,7 +252,7 @@ class Repository(Generic[T]):
         if not isinstance(entity, SoftDeletable):
             raise TypeError(f"{type(entity).__name__} is not SoftDeletable")
         actor = self.session.info.get("actor")
-        entity.deleted_at = datetime.now(timezone.utc)
+        entity.deleted_at = clock().now()
         entity.deleted_by = actor.user_id if actor else None
         await self.session.flush()
         return entity

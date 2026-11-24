@@ -11,16 +11,17 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from app.platform.actors import Actor
+from app.platform.clock import utc_now
 
 
 @dataclass(frozen=True, kw_only=True)
 class DomainEvent:
     actor: Actor
-    at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    at: datetime = field(default_factory=utc_now)
 
 
 @dataclass(frozen=True, kw_only=True)

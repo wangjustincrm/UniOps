@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -28,6 +28,7 @@ from sqlalchemy import DateTime, Integer, String, Text, event, inspect, insert
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
+from app.platform.clock import clock
 from app.platform.entities import Audited, CreationAudited
 
 
@@ -106,7 +107,7 @@ class AuditTrail:
 
     def _before_flush(self, session: Session, flush_context, instances) -> None:  # noqa: ARG002
         actor = session.info.get("actor")
-        now = datetime.now(timezone.utc)
+        now = clock().now()
         pending: list[tuple[str, Any, dict | None]] = session.info.setdefault("_audit_pending", [])
 
         for obj in list(session.new):
@@ -148,7 +149,7 @@ class AuditTrail:
             return
         actor = session.info.get("actor")
         reason = session.info.get("audit_reason")
-        now = datetime.now(timezone.utc)
+        now = clock().now()
         rows = []
         for action, obj, change in pending:
             if action == "create":

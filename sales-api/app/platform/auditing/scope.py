@@ -16,10 +16,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from app.platform import correlation
+from app.platform.clock import utc_now
 from app.platform.options import AuditingOptions, options
 
 log = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class AuditLogAction:
     service_name: str
     method_name: str
     parameters: Any = None
-    execution_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    execution_time: datetime = field(default_factory=utc_now)
     execution_duration_ms: int | None = None
 
 
@@ -54,7 +55,7 @@ class AuditLogInfo:
     url: str | None = None
     route: str | None = None
     http_status: int | None = None
-    execution_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    execution_time: datetime = field(default_factory=utc_now)
     execution_duration_ms: int | None = None
     error_code: str | None = None
     exceptions: list[str] = field(default_factory=list)

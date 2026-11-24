@@ -22,7 +22,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import DateTime, Integer, String, Text, select, text, update
@@ -31,6 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.auditing.scope import begin_scope
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import clock
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ Clock = Callable[[], datetime]
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock().now()
 
 
 class ScheduledJob(ABC):

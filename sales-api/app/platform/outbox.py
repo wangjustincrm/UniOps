@@ -40,7 +40,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text, func, inspect, select
@@ -50,6 +50,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.platform import correlation
 from app.platform.auditing.scope import begin_scope
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import clock, utc_now
 from app.platform.errors import BusinessError, NotFound
 from app.platform.guard import Suppressed
 
@@ -196,7 +197,7 @@ class Outbox:
         row.status = PENDING
         row.attempts = 0
         row.manual = True
-        row.next_attempt_at = datetime.now(timezone.utc)
+        row.next_attempt_at = clock().now()
         row.finished_at = None
         return row
 
@@ -229,7 +230,7 @@ class Outbox:
         if row.status != PENDING:
             return False
         row.status = CANCELLED
-        row.finished_at = datetime.now(timezone.utc)
+        row.finished_at = clock().now()
         row.last_error = reason
         return True
 
@@ -271,7 +272,7 @@ class OutboxWorker:
         *,
         batch: int = 50,
         lease: timedelta = timedelta(minutes=15),
-        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        clock: Callable[[], datetime] = utc_now,
         on_hook_failed: Hook | None = None,
     ) -> None:
         self.on_hook_failed = on_hook_failed

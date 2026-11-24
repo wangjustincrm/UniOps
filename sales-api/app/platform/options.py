@@ -70,6 +70,24 @@ class AuthenticationOptions:
     refuse_missing_principals: bool = True  # a token for a user who does not exist (deleted) is refused too
 
 
+@dataclass(frozen=True)
+class ClockOptions:
+    """≈ AbpClockOptions (Volo.Abp.Timing): what "now" is and which zone the business day is in (platform/clock.py).
+
+    `business_timezone` is read where it is used; SQL expressions built at import time (a model's column_property)
+    take it when their module loads, so it is set before the models import — or left at its default."""
+    business_timezone: str = "America/Toronto"  # the business day, for documents and lists (product owner, 2026-10-30)
+    kind: str = "utc"                           # now() is aware UTC (ABP: DateTimeKind.Utc)
+    naive_is: str = "utc"                       # normalize(): a time without a zone is UTC ("business": the business zone)
+    provider: Any = None                        # a Clock (tests: FixedClock); None = the system clock
+
+    def __post_init__(self) -> None:
+        if self.kind != "utc":
+            raise ValueError("the clock is UTC only")
+        if self.naive_is not in ("utc", "business"):
+            raise ValueError(f"naive_is is utc or business, not {self.naive_is!r}")
+
+
 _options: dict[type, Any] = {}
 
 
@@ -90,5 +108,5 @@ def reset() -> None:
     _options.clear()
 
 
-__all__ = ["AuditingOptions", "AuthenticationOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "configure", "options",
+__all__ = ["AuditingOptions", "AuthenticationOptions", "ClockOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "configure", "options",
            "replace", "reset", "field"]
