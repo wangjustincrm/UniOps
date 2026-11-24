@@ -12,6 +12,7 @@ from app.domain.partners import check_partner
 from app.models.config import Partner
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.partners import PartnerCreate, PartnerRead, PartnerUpdate
@@ -47,6 +48,7 @@ class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpd
     create_schema = PartnerCreate
     update_schema = PartnerUpdate
     read_permission = READ
+    resource = Resource(path="/config/partners", tags=("partners",))
     write_permission = CONFIG
     csv_key = "code"
     unique_constraints = {"uq_sales_partners_code_ci": ("partner.code_taken", "code"),

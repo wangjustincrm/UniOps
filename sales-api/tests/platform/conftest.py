@@ -20,6 +20,7 @@ from app.platform.jobs import RunRecordMixin
 from app.platform.outbox import OutboxRecordMixin
 from app.platform.query import FilterRule
 from app.platform.repository import Repository, parse_bool
+from app.platform.resource import Resource
 from app.platform.services import CrudService
 from app.platform.settings_registry import SettingRecordMixin
 from app.integrations.epms_tasks import shared_tasks_table
@@ -126,6 +127,7 @@ class WidgetService(CrudService[Widget, WidgetRead, WidgetCreate, WidgetUpdate])
     update_schema = WidgetUpdate
     read_permission = "pt.read"
     write_permission = "pt.config"
+    resource = Resource(path="/widgets")
     csv_columns = ("code", "name", "email", "price", "active")
     csv_key = "code"
 

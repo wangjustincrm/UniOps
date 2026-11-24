@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.models.config import Carrier
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.carriers import CarrierCreate, CarrierRead, CarrierUpdate
@@ -32,6 +33,7 @@ class CarrierService(CrudService[Carrier, CarrierRead, CarrierCreate, CarrierUpd
     create_schema = CarrierCreate
     update_schema = CarrierUpdate
     read_permission = READ
+    resource = Resource(path="/config/carriers", tags=("carriers",))
     write_permission = CONFIG
     csv_key = ("scac",)
     csv_columns = ("scac", "name", "tracking_url", "active")

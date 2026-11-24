@@ -88,6 +88,15 @@ class ClockOptions:
             raise ValueError(f"naive_is is utc or business, not {self.naive_is!r}")
 
 
+@dataclass(frozen=True)
+class ResourceOptions:
+    """What every list resource offers unless its base class or its service says otherwise (platform/resource.py)."""
+    get: bool = True
+    suggest: bool = True
+    export: bool = True
+    export_headers: str = "fields"  # the full export's header row: the field names (an import reads them back)
+
+
 _options: dict[type, Any] = {}
 
 
@@ -108,5 +117,6 @@ def reset() -> None:
     _options.clear()
 
 
-__all__ = ["AuditingOptions", "AuthenticationOptions", "ClockOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "configure", "options",
+__all__ = ["AuditingOptions", "AuthenticationOptions", "ClockOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "ResourceOptions",
+           "configure", "options",
            "replace", "reset", "field"]

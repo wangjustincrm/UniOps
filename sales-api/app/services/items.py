@@ -11,6 +11,7 @@ from app.domain.items import check_units, factor, normalise_unit, titles_column,
 from app.models.config import DcRouting, Item, ItemPartnerCode, ItemUnit, Partner
 from app.platform.errors import InvalidInput
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.items import (
@@ -61,6 +62,7 @@ class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
     create_schema = ItemCreate
     update_schema = ItemUpdate
     read_permission = READ
+    resource = Resource(path="/config/items", tags=("items",))
     write_permission = CONFIG
     csv_key = "item_code"
     csv_columns = ("item_code", "description", "sku", "upc", "gtin", "gross_weight_lb_per_ea", "warehouse_held",
@@ -140,6 +142,7 @@ class PartnerCodeService(CrudService[ItemPartnerCode, PartnerCodeRead, PartnerCo
     create_schema = PartnerCodeCreate
     update_schema = PartnerCodeUpdate
     read_permission = READ
+    resource = Resource(path="/config/partner-codes", tags=("partner-codes",))
     write_permission = CONFIG
     csv_key = ("partner_code", "buyer_part")
     csv_columns = ("partner_code", "buyer_part", "item_code")
@@ -173,6 +176,7 @@ class DcRoutingService(CrudService[DcRouting, DcRoutingRead, DcRoutingCreate, Dc
     create_schema = DcRoutingCreate
     update_schema = DcRoutingUpdate
     read_permission = READ
+    resource = Resource(path="/config/dc-routing", tags=("dc-routing",))
     write_permission = CONFIG
     csv_key = ("partner_code", "ship_to_gln")
     csv_columns = ("partner_code", "ship_to_gln", "dc_number", "notes", "active")

@@ -6,7 +6,7 @@ from fastapi import Depends
 
 from app.core.deps import get_uow
 from app.models.config import Carrier, DcRouting, Item, ItemPartnerCode, Warehouse
-from app.platform.crud_router import crud_router
+from app.platform.crud_router import resource_router
 from app.schemas.audit import AuditEntryRead
 from app.services import audit
 from app.services.items import READ, DcRoutingService, ItemService, PartnerCodeService
@@ -15,11 +15,11 @@ from app.services.warehouses import WarehouseService
 
 UoW = Annotated[Any, Depends(get_uow)]
 
-items = crud_router("/config/items", ItemService, uow=get_uow, tags=["items"])
-partner_codes = crud_router("/config/partner-codes", PartnerCodeService, uow=get_uow, tags=["partner-codes"])
-dc_routing = crud_router("/config/dc-routing", DcRoutingService, uow=get_uow, tags=["dc-routing"])
-warehouses = crud_router("/config/warehouses", WarehouseService, uow=get_uow, tags=["warehouses"])
-carriers = crud_router("/config/carriers", CarrierService, uow=get_uow, tags=["carriers"])
+items = resource_router(ItemService, uow=get_uow)
+partner_codes = resource_router(PartnerCodeService, uow=get_uow)
+dc_routing = resource_router(DcRoutingService, uow=get_uow)
+warehouses = resource_router(WarehouseService, uow=get_uow)
+carriers = resource_router(CarrierService, uow=get_uow)
 
 
 @carriers.get("/{id}/audit", response_model=list[AuditEntryRead])

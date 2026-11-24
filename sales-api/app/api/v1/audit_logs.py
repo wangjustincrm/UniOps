@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from app.core.deps import get_uow
-from app.platform.crud_router import read_router
+from app.platform.crud_router import resource_router
 from app.schemas.audit_logs import AuditLogDetail
 from app.services.audit_logs import AuditLogService, EntityChangeService
 
@@ -20,5 +20,5 @@ async def audit_log_detail(u: UoW, id: uuid.UUID):
     return await AuditLogService(u).detail(id)
 
 
-logs = read_router("/audit-logs", AuditLogService, uow=get_uow, tags=["audit"])
-changes = read_router("/entity-changes", EntityChangeService, uow=get_uow, tags=["audit"])
+logs = resource_router(AuditLogService, uow=get_uow)
+changes = resource_router(EntityChangeService, uow=get_uow)

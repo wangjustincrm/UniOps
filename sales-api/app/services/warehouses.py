@@ -6,6 +6,7 @@ from __future__ import annotations
 from app.domain.config import WAREHOUSE_ROLES
 from app.models.config import Warehouse
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.warehouses import WarehouseCreate, WarehouseRead, WarehouseUpdate
@@ -34,6 +35,7 @@ class WarehouseService(CrudService[Warehouse, WarehouseRead, WarehouseCreate, Wa
     create_schema = WarehouseCreate
     update_schema = WarehouseUpdate
     read_permission = READ
+    resource = Resource(path="/config/warehouses", tags=("warehouses",))
     write_permission = CONFIG
     csv_key = ("code",)
     csv_columns = ("code", "name", "role", "edi_id_qualifier", "edi_id", "address1", "city", "province", "zip", "country",

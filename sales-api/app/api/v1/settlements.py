@@ -4,11 +4,11 @@ from typing import Annotated, Any
 from fastapi import Depends, Response
 
 from app.core.deps import get_uow
-from app.platform.crud_router import read_router
+from app.platform.crud_router import resource_router
 from app.platform.query import QuerySpec, query_spec
 from app.services.settlement_list import SettlementRowService
 
-router = read_router("/settlements", SettlementRowService, uow=get_uow, tags=["settlements"], export=True)
+router = resource_router(SettlementRowService, uow=get_uow)
 UoW = Annotated[Any, Depends(get_uow)]
 Spec = Annotated[QuerySpec, Depends(query_spec)]
 

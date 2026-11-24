@@ -21,6 +21,7 @@ from app.models.config import Connection
 from app.platform.authorization import requires
 from app.platform.query import FilterRule, parse_bool
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import CrudService
 from app.platform.settings_group import SettingsGroup
 from app.platform.views import Preset
@@ -93,6 +94,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     create_schema = ConnectionCreate
     update_schema = ConnectionUpdate
     read_permission = READ
+    resource = Resource(path="/config/connections", tags=("connections",))
     write_permission = CONFIG
     csv_key = "name"
     csv_columns = ("name", "kind", "host", "port", "username", *_FOLDERS, "after_read", "stable_seconds", "can_read", "can_write",

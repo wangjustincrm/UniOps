@@ -6,12 +6,12 @@ from fastapi import Depends
 
 from app.core.deps import get_uow
 from app.models.config import Partner
-from app.platform.crud_router import crud_router
+from app.platform.crud_router import resource_router
 from app.schemas.audit import AuditEntryRead
 from app.services import audit
 from app.services.partners import READ, PartnerService
 
-router = crud_router("/config/partners", PartnerService, uow=get_uow, tags=["partners"])
+router = resource_router(PartnerService, uow=get_uow)
 
 
 @router.get("/{id}/audit", response_model=list[AuditEntryRead])

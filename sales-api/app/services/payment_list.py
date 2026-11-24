@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.models.payment_list import INFO_ISSUES, ISSUES, KINDS, MATCHES, METHODS, SOURCES, STATUSES, PaymentRow
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.payment_list import PaymentRowRead
@@ -69,3 +70,4 @@ class PaymentRowService(ReadOnlyService[PaymentRow, PaymentRowRead]):
     repo_cls = PaymentRowRepository
     read_schema = PaymentRowRead
     read_permission = READ
+    resource = Resource(path="/payments", tags=("payments",))

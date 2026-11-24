@@ -15,6 +15,7 @@ from app.models.records import AuditLog, AuditLogAction, AuditRecord
 from app.platform.authorization import requires
 from app.platform.errors import NotFound
 from app.platform.query import FilterRule
+from app.platform.resource import Resource
 from app.platform.views import Preset
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
@@ -84,6 +85,7 @@ class AuditLogService(ReadOnlyService[AuditLog, AuditLogRead]):
     repo_cls = AuditLogRepository
     read_schema = AuditLogRead
     read_permission = AUDIT
+    resource = Resource(path="/audit-logs", tags=("audit",), export=False)  # who did what, with parameters: read here, never handed out in bulk
 
     def to_read(self, e: AuditLog) -> AuditLogRead:
         out = AuditLogRead.model_validate(e, from_attributes=True)
@@ -120,3 +122,4 @@ class EntityChangeService(ReadOnlyService[AuditRecord, EntityChangeRead]):
     repo_cls = EntityChangeRepository
     read_schema = EntityChangeRead
     read_permission = AUDIT
+    resource = Resource(path="/entity-changes", tags=("audit",), export=False)  # before / after values of every record: read here, never handed out in bulk

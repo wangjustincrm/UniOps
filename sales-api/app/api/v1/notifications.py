@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from app.core.config import settings
 from app.core.deps import get_uow
 from app.models.config import NotificationRule
-from app.platform.crud_router import crud_router
+from app.platform.crud_router import resource_router
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
@@ -24,7 +24,7 @@ UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
 Spec = Annotated[QuerySpec, Depends(query_spec)]
 
-rules = crud_router("/config/notification-rules", NotificationRuleService, uow=get_uow, tags=["notifications"])
+rules = resource_router(NotificationRuleService, uow=get_uow)
 
 
 @rules.get("/{id}/audit", response_model=list[AuditEntryRead])

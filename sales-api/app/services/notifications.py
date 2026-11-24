@@ -35,6 +35,7 @@ from app.platform.clock import clock
 from app.platform.errors import InvalidInput, NotFound
 from app.platform.outbox import Outbox, OutboxKind, retry_while_not_accepted
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import CrudService, ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.notifications import (
@@ -176,6 +177,7 @@ class NotificationRuleService(CrudService[NotificationRule, NotificationRuleRead
     create_schema = NotificationRuleCreate
     update_schema = NotificationRuleUpdate
     read_permission = READ
+    resource = Resource(path="/config/notification-rules", tags=("notifications",), export=False)  # who is notified: not handed out in bulk until the user decides (2026-11-24)
     write_permission = CONFIG
     unique_constraints = {"sales_notification_rules_event_type_key": ("notification.event_taken", "event_type")}
 

@@ -1,4 +1,4 @@
-"""crud_router offers only the routes the table supports: a route that can only fail is never mounted."""
+"""resource_router offers only the routes the table supports: a route that can only fail is never mounted."""
 from app.main import app
 
 
@@ -19,8 +19,8 @@ def test_csv_only_for_a_service_that_declares_it():
     assert ("POST", "/api/v1/config/notification-rules/import.csv") not in routes
 
 
-def test_a_read_router_exports_only_when_asked():
+def test_a_read_only_list_exports_unless_its_resource_says_no():
     routes = _routes()
-    assert ("GET", "/api/v1/payments/export.csv") in routes  # read_router(..., export=True)
+    assert ("GET", "/api/v1/payments/export.csv") in routes  # the default
     assert ("GET", "/api/v1/payments") in routes and ("GET", "/api/v1/payments/meta") in routes
-    assert ("GET", "/api/v1/documents/export.csv") not in routes  # read_router without it
+    assert ("GET", "/api/v1/documents/export.csv") not in routes  # Resource(export=False)

@@ -88,6 +88,21 @@ async def authorize(uow: Any, key: str, *, system: bool = False) -> None:
         raise await _refuse(uow, key, actor)
 
 
+async def may(uow: Any, key: str) -> bool:
+    """Whether the actor may use `key`: a question, not a refusal (no security event, nothing raised) — for what a page
+    offers. Never true for the system actor. The operation itself still calls `authorize`."""
+    actor: Actor = uow.actor
+    checker: PermissionChecker | None = getattr(uow, "permissions", None)
+    if actor.is_system or checker is None:
+        return False
+    granted: dict[str, bool] | None = getattr(uow, "granted", None)
+    if granted is None:
+        return await checker(uow.session, actor, key)
+    if key not in granted:
+        granted[key] = await checker(uow.session, actor, key)
+    return granted[key]
+
+
 def _note_action(service: str, method: str) -> None:
     from app.platform.auditing.scope import current_scope
     scope = current_scope()

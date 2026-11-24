@@ -9,7 +9,7 @@ from pydantic import ConfigDict, BaseModel, Field
 from app.core.config import settings
 from app.core.deps import get_uow
 from app.models.config import Connection
-from app.platform.crud_router import crud_router, read_router
+from app.platform.crud_router import resource_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
 from app.schemas.connections import (
@@ -26,7 +26,7 @@ from app.services.operations import DocumentActions, DocumentService, LogService
 UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
 
-connections = crud_router("/config/connections", ConnectionService, uow=get_uow, tags=["connections"])
+connections = resource_router(ConnectionService, uow=get_uow)
 
 
 @connections.get("/{id}/audit", response_model=list[AuditEntryRead])
@@ -60,7 +60,7 @@ async def connection_clear_latch(u: UoW, rt: Rt, id: int):
     return out
 
 
-documents = read_router("/documents", DocumentService, uow=get_uow, tags=["documents"])
+documents = resource_router(DocumentService, uow=get_uow)
 
 
 @documents.get("/{id}/raw")
@@ -98,7 +98,7 @@ async def document_send_again(u: UoW, rt: Rt, id: int) -> dict:
     return {"result": text}
 
 
-runs = read_router("/runs", RunService, uow=get_uow, tags=["runs"])
+runs = resource_router(RunService, uow=get_uow)
 
 
 @runs.post("/run-now", response_model=RunStarted, status_code=202)
@@ -112,7 +112,7 @@ async def run_system_now(u: UoW, rt: Rt):
     return RunStarted(run_id=await RunService(u).run_system_now(rt.scheduler, rt.background))
 
 
-log = read_router("/log", LogService, uow=get_uow, tags=["log"])
+log = resource_router(LogService, uow=get_uow)
 
 scheduler_setting = APIRouter(prefix="/config/scheduler", tags=["settings"])
 

@@ -5,7 +5,7 @@ import pytest_asyncio
 from fastapi import FastAPI, Header
 from httpx import ASGITransport, AsyncClient
 
-from app.platform.crud_router import crud_router
+from app.platform.crud_router import resource_router
 from app.platform.errors import BusinessError, install_error_handlers
 from tests.platform.conftest import WidgetService, actor_with
 
@@ -18,7 +18,7 @@ async def http(uow_factory):
 
     app = FastAPI()
     install_error_handlers(app)
-    app.include_router(crud_router("/widgets", WidgetService, uow=uow))
+    app.include_router(resource_router(WidgetService, uow=uow))
 
     @app.get("/boom")
     async def boom():

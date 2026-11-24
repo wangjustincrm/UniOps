@@ -31,12 +31,13 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.actors import Actor
 from app.platform.audit import jsonable
-from app.platform.authorization import authorize
+from app.platform.authorization import authorize, may
 from app.platform.commands import check_version
 from app.platform.entities import Deactivatable, Versioned
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.query import Page, QuerySpec
-from app.platform.repository import Repository
+from app.platform.repository import Repository, _humanise
+from app.platform.resource import ResolvedResource, Resource, resolve
 from app.platform.state import StateMachine
 
 T = TypeVar("T")
@@ -87,6 +88,8 @@ class ReadOnlyService(Service, Generic[T, R]):
     repo_cls: ClassVar[type[Repository]]
     read_schema: ClassVar[type[BaseModel]]
     read_permission: ClassVar[str]
+    # What this list offers over HTTP and to its page (platform/resource.py): merged over the base classes'.
+    resource: ClassVar[Resource] = Resource()
     # The zone a "Visible columns" export writes date-times in, as people read them ("2026-11-17 15:54",
     # the zone named in the header); None: as stored (ISO, UTC). The business code sets it once.
     export_timezone: ClassVar[str | None] = None
@@ -94,6 +97,10 @@ class ReadOnlyService(Service, Generic[T, R]):
     def __init__(self, uow) -> None:
         super().__init__(uow)
         self.repo = self.repo_cls(uow)
+
+    @classmethod
+    def resolved(cls) -> ResolvedResource:
+        return resolve(cls)
 
     # ── CSV export: every row the spec selects (a read model: its list columns) ──
     @staticmethod
@@ -114,11 +121,15 @@ class ReadOnlyService(Service, Generic[T, R]):
     async def export_csv(self, spec: QuerySpec, columns: list[str] | None = None) -> bytes:
         """Every row the spec selects. `columns`: the columns the user sees, in their order and with their
         labels (each a field the rows carry, /meta `in_row`; never a meta_hidden one), from the rows as the
-        list reads them; an amount gets its currency column. None: the list's own full export."""
+        list reads them; an amount gets its currency column; or one of the page's own columns the resource computes.
+        None: the list's own full export (its headers: Resource.export_headers)."""
+        await self._authorize_export()
         if columns is not None:
-            return await self._export_columns(spec, columns)
-        await self._authorize(self.read_permission)
-        columns = self._csv_export_columns()
+            return await self._export_columns(spec, self._known_columns(columns))
+        res = self.resolved()
+        if res.export_headers == "labels":
+            return await self._export_columns(spec, list(res.export_fields or self._csv_export_columns()))
+        columns = list(res.export_fields or self._csv_export_columns())
         rows: list[list[Any]] = []
         page_no = 1
         while True:
@@ -130,37 +141,57 @@ class ReadOnlyService(Service, Generic[T, R]):
         return csv_bytes(columns, rows)
 
 
-    async def _export_columns(self, spec: QuerySpec, columns: list[str]) -> bytes:
+    async def _authorize_export(self) -> None:
         await self._authorize(self.read_permission)
-        fields = {f["name"]: f for f in self.repo_cls.field_meta(self.read_schema) if f["in_row"]}
-        unknown = [c for c in columns if c not in fields]
+        if key := self.resolved().export_permission:
+            await self._authorize(key)
+
+    def _known_columns(self, columns: list[str]) -> list[str]:
+        fields = {f["name"] for f in self.repo_cls.field_meta(self.read_schema) if f["in_row"]}
+        unknown = [c for c in columns if c not in fields and c not in self.resolved().computed]
         if unknown:
             raise InvalidInput("export.unknown_column", f"this list cannot export {', '.join(unknown)}",
                                {"columns": unknown, "field": "columns"})
+        return columns
+
+    async def _export_columns(self, spec: QuerySpec, columns: list[str]) -> bytes:
+        repo, computed = self.repo_cls, self.resolved().computed
+        fields = {f["name"]: f for f in repo.field_meta(self.read_schema) if f["in_row"]}
         cols: list[str] = []
         for c in columns:  # an amount without its currency column beside it gets one, once
             cols.append(c)
-            cur = fields[c].get("currency_field")
-            if fields[c].get("money") and cur and cur not in columns and cur not in cols:
+            f = fields.get(c, {})
+            cur = f.get("currency_field")
+            if f.get("money") and cur and cur not in columns and cur not in cols:
                 cols.append(cur)
         zone = ZoneInfo(self.export_timezone) if self.export_timezone else None
         place = self.export_timezone.rsplit("/", 1)[-1].replace("_", " ") if self.export_timezone else ""
-        labels = [(fields[c]["label"] if c in fields else c.replace("_", " ").capitalize())
-                  + (f" ({place})" if zone and fields.get(c, {}).get("type") == "datetime" else "") for c in cols]
+
+        def label(c: str) -> str:
+            if c in computed:
+                return computed[c].label
+            name = fields[c]["label"] if c in fields else repo.labels.get(c) or _humanise(c)
+            return name + (f" ({place})" if zone and repo.field_kind(c) == "datetime" else "")
 
         def shown(v: Any) -> Any:  # a date-time in the zone, to the minute; a date as YYYY-MM-DD
             if zone and isinstance(v, datetime):
                 return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).astimezone(zone).strftime("%Y-%m-%d %H:%M")
             return v.isoformat() if isinstance(v, date) and not isinstance(v, datetime) else v
+
+        def cell(row: Any, entity: Any, c: str) -> Any:  # as the list reads it; a field the row does not carry: the record's
+            if c in computed:
+                return computed[c].value(row)
+            return shown(getattr(row, c) if c in self.read_schema.model_fields else getattr(entity, c, None))
         rows: list[list[Any]] = []
         page_no = 1
         while True:
             page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
-            rows.extend([shown(getattr(r, c, None)) for c in cols] for r in await self._read_all(list(page.items)))
+            entities = list(page.items)
+            rows.extend([cell(r, e, c) for c in cols] for r, e in zip(await self._read_all(entities), entities))
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
-        return csv_bytes(labels, rows)
+        return csv_bytes([label(c) for c in cols], rows)
 
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)
@@ -205,7 +236,20 @@ class ReadOnlyService(Service, Generic[T, R]):
         return {"version": self.META_VERSION, "fields": repo.field_meta(self.read_schema),
                 "searchable": bool(repo.search_fields), "default_sort": list(repo.default_sort),
                 "client_columns": list(repo.client_columns),
-                "views": [p.as_dict() for p in repo.presets]}
+                "views": [p.as_dict() for p in repo.presets],
+                "capabilities": await self.capabilities()}
+
+    async def capabilities(self) -> dict[str, Any]:
+        """What this list offers, and whether this person may use it (the operation itself still checks)."""
+        await self._authorize(self.read_permission)
+        res = self.resolved()
+        registry = res.action_registry()
+        return {
+            "export": {"allowed": await may(self.uow, res.export_permission or self.read_permission),
+                       "computed": [{"id": k, "label": c.label} for k, c in res.computed.items()]} if res.export else None,
+            "suggest": res.suggest and bool(self.repo_cls.suggestable),
+            "actions": [{"id": a.id, "allowed": await may(self.uow, a.permission)} for a in registry.actions.values()]
+            if registry is not None else []}
 
 
 @dataclass

@@ -30,6 +30,7 @@ from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.operations import DocumentRead, EntityRef, LogRead, RunRead
@@ -100,6 +101,7 @@ class DocumentService(ReadOnlyService[Document, DocumentRead]):
     repo_cls = DocumentRepository
     read_schema = DocumentRead
     read_permission = READ
+    resource = Resource(path="/documents", tags=("documents",), export=False)  # partner files' names and errors: not handed out in bulk until the user decides (2026-11-24)
 
     async def enrich(self, rows: list[DocumentRead], docs) -> None:
         """Each row's orders (the first MAX_REFS and the count) and transfers, two queries for the page."""
@@ -159,6 +161,7 @@ class RunService(ReadOnlyService[Run, RunRead]):
     repo_cls = RunRepository
     read_schema = RunRead
     read_permission = READ
+    resource = Resource(path="/runs", tags=("runs",), export=False)  # job errors: not handed out in bulk until the user decides (2026-11-24)
 
     @requires(FILE_RETRY)
     async def run_now(self, scheduler, background) -> int:
@@ -197,6 +200,7 @@ class LogService(ReadOnlyService[LogEntry, LogRead]):
     repo_cls = LogRepository
     read_schema = LogRead
     read_permission = READ
+    resource = Resource(path="/log", tags=("log",), export=False)  # the operations log: read here, never handed out in bulk
 
 
 class DocumentActions(Service):
