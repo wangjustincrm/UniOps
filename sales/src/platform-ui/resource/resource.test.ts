@@ -50,7 +50,7 @@ describe('createResourceClient', () => {
   }
   const c = createResourceClient(http, '/config/things/')
 
-  it('builds the crud_router paths', async () => {
+  it('builds the resource_router paths', async () => {
     await c.list({ page: 1, pageSize: 20, sort: [{ field: 'name' }] })
     expect(http.get).toHaveBeenCalledWith('/config/things?page=1&page_size=20&sort=name')
     await c.update(3, { email: null }, 7)

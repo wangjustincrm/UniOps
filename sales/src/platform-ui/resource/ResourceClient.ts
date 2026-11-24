@@ -83,7 +83,7 @@ export interface ActionRunBody {
 export interface ActionResultRow { id: number; status: 'done' | 'skipped' | 'failed'; reason?: string | null; version?: number | null }
 export interface ActionOut { action: string; dry_run: boolean; results: ActionResultRow[]; counts: Record<'done' | 'skipped' | 'failed', number> }
 
-/** A client for one resource served by the back end's `crud_router`. The
+/** A client for one resource served by the back end's `resource_router`. The
  *  types come from the business code (generated from the OpenAPI schema). */
 export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
   http: HttpClient,

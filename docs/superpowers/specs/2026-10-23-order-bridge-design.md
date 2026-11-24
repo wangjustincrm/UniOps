@@ -561,7 +561,7 @@ class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpd
         if data.invoice_method == InvoiceMethod.EMAIL and not data.invoice_email:
             raise BusinessError("partner.invoice_email_required")   # FR-OB-33
 
-router = crud_router("/config/partners", PartnerService, uow=get_uow)   # list/get/create/update/deactivate/export/import
+router = resource_router(PartnerService, uow=get_uow)   # what PartnerService.resource declares (path "/config/partners"; 2026-11-24)
 ```
 
 ### 13.6 State machine

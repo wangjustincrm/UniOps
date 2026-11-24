@@ -68,7 +68,7 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
 }
 
 /** List + create/edit form + deactivate + CSV import with a dry-run preview,
- *  for one config table served by the back end's crud_router — a ListPage
+ *  for one config table served by the back end's resource_router — a ListPage
  *  whose detail is the record's form. A user without the write permission
  *  opens a record read-only (no save, no deactivate). */
 export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T, TCreate, TUpdate>) {

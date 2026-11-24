@@ -1,4 +1,4 @@
-"""crud_router and the error shape, through HTTP. The router has no
+"""resource_router and the error shape, through HTTP. The router has no
 permission check of its own: the service's declared keys decide (the
 X-Perms header stands in for the role matrix)."""
 import pytest_asyncio
