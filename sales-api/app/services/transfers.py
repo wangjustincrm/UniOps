@@ -51,7 +51,7 @@ from app.models.records import OutboxRecord
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock, utc_now
-from app.platform.commands import VersionArg, load_for_command
+from app.platform.commands import ANY_VERSION, VersionArg, check_version, load_for_command
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -70,6 +70,7 @@ from app.services.problems import (
     send_refused,
 )
 from app.services.doc_links import link
+from app.services.queued import refuse_queued
 from app.services.returns_944 import apply_return_944, is_return
 from app.services.settings import (
     ACK_TIMEOUT_MINUTES,
@@ -198,12 +199,18 @@ class Transfers:
         await s.flush()
         return t
 
-    async def resend(self, uow, id: int, version: int | None) -> Transfer:
+    async def refuse_resend(self, s, t: Transfer) -> None:
+        """Why this transfer (locked) gets no new 943, raised; nothing: it can."""
+        await refuse_queued(s, (SEND_943,), t, f"the 943 of transfer {t.transfer_number}")  # first: a stuck one says how it ends
+        if t.status != T.FAILED.value:
+            raise BusinessError("transfer.not_failed", f"only a Failed transfer is resent (it is {t.status})", {"status": t.status})
+
+    async def resend(self, uow, id: int, version: VersionArg = None) -> Transfer:
         """FR-OB-81 / FR-OB-24: a Failed transfer gets a new 943 (a new control number)."""
         s = uow.session
-        t = await self._get(s, id, version)
-        if t.status != T.FAILED.value:
-            raise BusinessError("transfer.not_failed", "only a Failed transfer is resent")
+        t = await self._get(s, id, ANY_VERSION)
+        await self.refuse_resend(s, t)  # what is done or queued says so, whatever the version
+        check_version(t, version, "this transfer")
         uow.set_reason("943 resent")
         await self.generate(uow, t, reason="resend (FR-OB-81)")
         await self.tasks.resolve_problem(s, EDI_943_REJECTED, t.id, by=uow.actor.user_id)

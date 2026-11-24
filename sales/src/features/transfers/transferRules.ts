@@ -4,7 +4,8 @@ export const AMENDABLE = ['Waiting for 997', 'Waiting for 944', 'Failed']
 export const errorMessages: Record<string, string> = {
   'transfer.not_cancellable': 'The 943 is sent: the transfer can no longer be cancelled.',
   'transfer.same_warehouse': 'The two warehouses must differ.',
-  'entity.stale': 'Someone else changed this transfer. Close it and open it again.',
+  'entity.stale': 'Someone else changed this transfer: it is read again here. Look, then decide again.',
+  'transfer.not_failed': 'Only a Failed transfer is resent.',
   'auth.forbidden': 'You do not have permission to manage transfers.',
   'transfer.not_on_hold': 'This transfer is not On Hold any more.',
   'transfer.not_amendable': 'A 944 has answered this transfer: settle the difference instead.',
