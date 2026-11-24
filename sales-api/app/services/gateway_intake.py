@@ -34,6 +34,7 @@ from app.integrations.authorize_net import MAX_DAYS, AuthorizeNetAuthFailed, Aut
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts, details_failed_at
 from app.models.payments import OrderPayment
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import utc_now
 from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.gateway_base import apply_changes, MATCHABLE, OVERLAP, GatewayIntake, GatewayReport, money as _money, when as _when
@@ -95,7 +96,7 @@ class AuthorizeNetIntake(GatewayIntake):
     HISTORY = staticmethod(lambda now: datetime(now.year - HISTORY_YEARS, 1, 1, tzinfo=timezone.utc))
     readable = staticmethod(readable)
 
-    def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = utc_now,
                  timer: Callable[[], float] | None = None, budget_seconds: float = DETAILS_BUDGET_SECONDS):
         super().__init__(uow_factory=uow_factory, gateway=gateway, clock=clock, **({"timer": timer} if timer else {}))
         self.budget_seconds = budget_seconds

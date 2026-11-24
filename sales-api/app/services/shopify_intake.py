@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -37,6 +37,7 @@ from app.models.config import Connection, Partner
 from app.models.documents import Document
 from app.models.orders import Order
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import utc_now
 from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -68,7 +69,7 @@ class ShopifyReport:
 
 
 class ShopifyIntake:
-    def __init__(self, *, uow_factory, shopify, tasks, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+    def __init__(self, *, uow_factory, shopify, tasks, clock: Callable[[], datetime] = utc_now):
         self.uow_factory = uow_factory
         self.shopify = shopify
         self.tasks = tasks

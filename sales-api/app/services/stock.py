@@ -44,13 +44,13 @@ from app.models.stock import (ADJUSTED, CUSTOMER, PLANT, RADIANT, RETURNING, TO_
                               StockMove)
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.authorization import requires
+from app.platform.clock import clock
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog
-from app.services.outbound import TORONTO
 from app.services.returns_944 import RA_ERROR
 from app.schemas.stock import StockItemRead, StockLotRead, StockMoveRead
 
@@ -67,8 +67,8 @@ def _at(d: date | datetime | None, fallback: datetime | None = None) -> datetime
     if isinstance(d, datetime):
         return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
     if isinstance(d, date):
-        return datetime.combine(d, time(12), tzinfo=TORONTO)
-    return fallback or datetime.now(timezone.utc)
+        return clock().at(d, time(12))
+    return fallback or clock().now()
 
 
 def ship_moment(ship_date: date | None, arrived: datetime | None) -> datetime:
@@ -77,10 +77,10 @@ def ship_moment(ship_date: date | None, arrived: datetime | None) -> datetime:
     arrives after a report of the same day counts after it, and one that comes days late, at the end of its day."""
     if ship_date is None:
         return _at(None, arrived)
-    start = datetime.combine(ship_date, time(0), tzinfo=TORONTO)
-    end = datetime.combine(ship_date, time(23, 59, 59), tzinfo=TORONTO)
+    start = clock().at(ship_date, time(0))
+    end = clock().at(ship_date, time(23, 59, 59))
     if arrived is None:
-        return datetime.combine(ship_date, time(12), tzinfo=TORONTO)
+        return clock().at(ship_date, time(12))
     arrived = arrived if arrived.tzinfo else arrived.replace(tzinfo=timezone.utc)
     return min(max(arrived, start), end)
 
@@ -340,7 +340,7 @@ class StockMoveService(ReadOnlyService[StockMove, StockMoveRead]):
             raise BusinessError("stock.item", f"no item {item_code}", status_code=404)
         expiry = (await s.execute(select(func.max(StockMove.expiry)).where(StockMove.item_code == item_code, StockMove.lot == lot))).scalar()
         actor = self.uow.actor
-        m = StockMove(at=datetime.now(timezone.utc), item_code=item_code, lot=lot or None, expiry=expiry, qty_ea=abs(qty_ea),
+        m = StockMove(at=clock().now(), item_code=item_code, lot=lot or None, expiry=expiry, qty_ea=abs(qty_ea),
                       from_place=ADJUSTED if qty_ea > 0 else RADIANT, to_place=RADIANT if qty_ea > 0 else ADJUSTED,
                       source_type="adjustment", source_key=uuid.uuid4().hex, reason=reason,
                       created_by=getattr(actor, "user_id", None), created_by_name=getattr(actor, "name", None))

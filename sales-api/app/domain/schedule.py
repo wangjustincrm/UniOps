@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo
 
-TORONTO = ZoneInfo("America/Toronto")
+from app.platform.clock import clock
+
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
@@ -37,7 +37,7 @@ class Window:
     days: tuple[str, ...] = ()
 
     def contains(self, at: datetime) -> bool:
-        local = at.astimezone(TORONTO)
+        local = clock().to_business(at)
         day, t = local.date(), local.time()
         if self.start is not None and self.end is not None and self.start != self.end:
             if self.start < self.end:

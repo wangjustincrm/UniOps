@@ -4,7 +4,7 @@ worklist's "re-check", and manual orders (FR-OB-19a)."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, ClassVar
 
@@ -39,13 +39,13 @@ from app.domain.order_status import (
     status_detail,
 )
 from app.domain.order_payment import PAYMENT_STATUSES
+from app.platform.clock import clock
 from app.services.record_files import link_audit
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
-from app.domain.schedule import TORONTO
 from app.domain.status_help import next_step
 from app.models.config import Connection, DcRouting, Item, ItemUnit, Partner
 from app.models.documents import Document, DocumentLink
@@ -262,7 +262,7 @@ def status_facts(o: Order) -> StatusFacts:
     """What the rules read of an order, from the row and what was loaded with it."""
     send_at = _send_at(o)
     return StatusFacts(
-        delay_over=send_at is not None and send_at <= datetime.now(timezone.utc),
+        delay_over=send_at is not None and send_at <= clock().now(),
         fulfillment=o.fulfillment_status, invoice=o.invoice_status,
         source_type=o.source_type, shadow=bool(o.shadow), archived=o.archived_in_shopify_at is not None,
         fulfilled_in_shopify=o.shopify_fulfillment_status == "fulfilled", cancelled_at_source=o.source_cancelled_at is not None,
@@ -328,7 +328,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         out.status_detail_kind = detail_kind(out.status_detail)
         out.delay_starts_at = _delay_start(o)
         out.delay_minutes, out.settlement_mode = o.fact("partner_delay_minutes_sql"), o.fact("partner_settlement_mode_sql")
-        step = None if self._runs_on is None else next_step(d, facts, details, datetime.now(TORONTO).date(), runs_on=self._runs_on)
+        step = None if self._runs_on is None else next_step(d, facts, details, clock().today(), runs_on=self._runs_on)
         out.next_step, out.next_step_who = (step.text, step.who) if step else (None, None)
         return out
 
@@ -786,7 +786,7 @@ class ManualOrderService(Service):
                       ship_to=data.ship_to.model_dump(exclude_none=True), notes=data.notes, fulfillment_status=F.DRAFT.value,
                       shipping_method=data.carrier, manual_reason=data.reason,
                       invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
-                      first_received_at=datetime.now(timezone.utc), version=1,
+                      first_received_at=clock().now(), version=1,
                       shadow=await SETTINGS.get(self.s, SHADOW_MODE))
         self.s.add(order)
         await self.s.flush()
@@ -842,7 +842,7 @@ class ManualOrderService(Service):
         await self._express_allowed(o.shipping_method)
         p = await self._partner(o.partner_code)
         self.uow.set_reason("manual order: submit")
-        now = datetime.now(timezone.utc)
+        now = clock().now()
         o.first_received_at = now  # the delay runs from submission, not from when the draft was started
         if payment_satisfied(p.settlement_mode, "MANUAL", None) and p.settlement_mode == "PREPAID":
             o.paid_at = now
@@ -871,7 +871,7 @@ class ManualOrderService(Service):
                       source_order_number=ref[:50], ship_to=ship or None, contact=src.contact, notes=f"Reorder of {ref}",
                       fulfillment_status=F.DRAFT.value, shipping_method=carrier, parent_order_id=src.id,
                       invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
-                      first_received_at=datetime.now(timezone.utc), version=1, shadow=await SETTINGS.get(self.s, SHADOW_MODE))
+                      first_received_at=clock().now(), version=1, shadow=await SETTINGS.get(self.s, SHADOW_MODE))
         self.s.add(order)
         await self.s.flush()
         order.source_reference = order_ref(p, str(order.order_number))

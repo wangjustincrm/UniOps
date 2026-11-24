@@ -23,6 +23,7 @@ from app.models.invoices import Invoice, InvoiceLine
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
+from app.platform.clock import clock
 from app.services import pdf_layout as L
 from app.services.carriers import carriers_by_scac
 from app.services.pdf_layout import Card, Col, Company
@@ -288,14 +289,12 @@ async def transfer_pdf(s, t: Transfer) -> bytes:
 
 # ── Settlements (Finance, user 2026-11-17) ─────────────────────────────────
 
-_TZ = "America/Toronto"
 _MATCH_WORDS = {"TRANSACTION_ID": "Transaction ID", "SHOPIFY_PAYMENT_ID": "Shopify payment ID", "ORDER_NUMBER": "Order number",
                 "AMOUNT_TIME": "Amount and time (probable)"}
 
 
 def _local(t):
-    from zoneinfo import ZoneInfo
-    return t.astimezone(ZoneInfo(_TZ)) if t is not None else None
+    return clock().to_business(t) if t is not None else None
 
 
 def _when(t) -> str:

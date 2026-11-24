@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from app.platform import log_levels as levels
 from app.platform.authorization import requires
+from app.platform.clock import clock
 from app.platform.errors import InvalidInput
 from app.platform.services import Service
 from app.services.settings import LOG_OVERRIDES, SETTINGS
@@ -41,7 +42,7 @@ log = logging.getLogger("sales.log_levels")
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock().now()
 
 
 def view(overrides: list[dict[str, Any]], default: str, now: datetime | None = None) -> dict[str, Any]:

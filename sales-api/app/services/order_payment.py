@@ -16,17 +16,16 @@ again ("already settled by PayPal settlement …"), and Undo applies only to a m
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from app.domain.order_payment import NOT_NEEDED
-from app.domain.schedule import TORONTO
 from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import Fulfillment as F
 from app.models.orders import Order
 from app.platform.authorization import requires
 from app.platform.bulk_actions import ActionRegistry, BulkAction
+from app.platform.clock import clock
 from app.platform.commands import ANY_VERSION, VersionArg, check_version, load_for_command
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.services import Service
@@ -72,7 +71,7 @@ async def unsettle_check(uow, o: Order) -> str | None:
 
 def settle_validate(body: SettleIn) -> None:
     """The input alone: once, before any order (a 422), and shown by the form."""
-    if body.settled_on > datetime.now(TORONTO).date():
+    if body.settled_on > clock().today():
         raise InvalidInput("order.settled_future", "the settled date cannot be in the future", {"field": "settled_on"})
 
 
@@ -80,7 +79,7 @@ async def settle_run(uow, o: Order, body: SettleIn) -> None:
     actor = uow.actor
     o.settled_on, o.settled_reference, o.settled_amount = body.settled_on, body.reference, body.amount
     o.settled_note = body.note or None
-    o.settled_at, o.settled_by, o.settled_by_name = datetime.now(timezone.utc), actor.user_id, actor.name
+    o.settled_at, o.settled_by, o.settled_by_name = clock().now(), actor.user_id, actor.name
     what = f"settled on {body.settled_on:%Y-%m-%d}, {body.reference}" + (f", {body.amount:.2f}" if body.amount is not None else "")
     uow.set_reason(what + (f": {body.note}" if body.note else ""))
     await oplog.write(uow.session, "INFO", STEP, f"order {o.label} {what}", order_id=o.id)

@@ -20,12 +20,13 @@ from app.db.base import Base
 from app.domain.gateways import LABELS
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.payments import OrderPayment
+from app.platform.clock import business_timezone
 
 ISSUES = ("Transactions not read yet", "Chargebacks or returns", "Unmatched transactions", "Differs from the transfer",
           "Differs from Shopify", "Still matching")
 GATEWAY_NAMES = tuple(LABELS.values())
 
-_TZ = "America/Toronto"
+_TZ = business_timezone()
 _S, _T, _P = GatewaySettlement, GatewayTransaction, OrderPayment
 
 _per_batch = (

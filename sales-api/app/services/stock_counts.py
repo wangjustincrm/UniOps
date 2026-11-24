@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import case, delete, func, select
 
@@ -25,13 +25,13 @@ from app.models.config import Item
 from app.models.documents import Document, DocumentLink
 from app.models.stock import ADJUSTED, RADIANT, StockCount, StockCountLine, StockMove, _net
 from app.platform.authorization import authorize
+from app.platform.clock import clock
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.schemas.stock import CountCompareRow, StockCountLineRead, StockCountRead
 from app.platform.audit import audit_also
 from app.services import oplog
-from app.services.outbound import TORONTO
 from app.services.record_files import MAX_BYTES
 
 READ = "sales.read"
@@ -114,7 +114,7 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
             raise BusinessError("stock_count.too_large", f"at most {MAX_BYTES // (1024 * 1024)} MB")
         if counted_at.tzinfo is None:
             raise BusinessError("stock_count.when", "the moment needs its time zone")
-        if counted_at > datetime.now(timezone.utc) + timedelta(minutes=5):
+        if counted_at > clock().now() + timedelta(minutes=5):
             raise BusinessError("stock_count.when", "the report cannot be from the future")
         name = re.sub(r"[\\/\x00-\x1f]+", "_", (name or "").strip())[:200] or "inventory"
         try:
@@ -150,7 +150,7 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
         if counted_at is not None:
             if c.applied_at is not None:
                 raise BusinessError("stock_count.applied", "undo the count before changing its moment")
-            if counted_at.tzinfo is None or counted_at > datetime.now(timezone.utc) + timedelta(minutes=5):
+            if counted_at.tzinfo is None or counted_at > clock().now() + timedelta(minutes=5):
                 raise BusinessError("stock_count.when", "the moment needs its time zone and cannot be in the future")
             c.counted_at = counted_at
         c.note = (note or "").strip()[:2000] or None
@@ -166,7 +166,7 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
             raise BusinessError("entity.stale", "someone changed this count: reload it", status_code=409)
         if c.applied_at is not None:
             raise BusinessError("stock_count.applied", "this count is already the start")
-        c.applied_at, c.applied_by_name = datetime.now(timezone.utc), self.uow.actor.name
+        c.applied_at, c.applied_by_name = clock().now(), self.uow.actor.name
         self.uow.set_reason("Radiant count applied: every lot starts from Radiant's figure at its moment")
         await s.flush()
         n = await count_moves(s)
@@ -249,7 +249,7 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
                 r.in_after_ea, r.out_after_ea = int(got), int(gone)
                 r.since_ea = r.in_after_ea - r.out_after_ea
         names = dict((await s.execute(select(Item.item_code, Item.description).where(Item.item_code.in_({k[0] for k in rows})))).all())
-        today = datetime.now(TORONTO).date()
+        today = clock().today()
         out = []
         for (item, lot), r in rows.items():
             if not (r.sales_ea or r.radiant_ea or r.in_after_ea or r.out_after_ea or r.in_report or r.received_ea or r.shipped_ea):

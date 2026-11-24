@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
 from typing import Any, ClassVar
 
 from app.core.config import settings as app_settings
@@ -15,6 +14,7 @@ from app.domain.connections import check_connection
 from app.integrations import shopify as shopify_mod
 from app.integrations.sftp import readable
 from app.models.config import Partner
+from app.platform.clock import utc_now
 from app.platform.errors import BusinessError, InvalidInput
 from sqlalchemy import case, or_, select
 from app.models.config import Connection
@@ -103,7 +103,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     environ: ClassVar[Any] = os.environ
     # The environment's switches (SALES_SCHEDULER_ENABLED): whether next runs ever happen.
     settings: ClassVar[Any] = app_settings
-    clock: ClassVar[Any] = staticmethod(lambda: datetime.now(timezone.utc))
+    clock: ClassVar[Any] = staticmethod(utc_now)
 
     def scheduler_enabled(self) -> bool:
         return bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))

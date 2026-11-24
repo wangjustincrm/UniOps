@@ -24,12 +24,13 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON, Boolean, Column, Date, DateTime, MetaData, Numeric, String, Table, Text, func, insert, select, update,
 )
 from sqlalchemy.dialects.postgresql import UUID
+
+from app.platform.clock import clock
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ class TaskService:
             raise ValueError(f"task type {task.task_type!r} is longer than {TYPE_MAX}")
         if len(task.title) > TITLE_MAX:
             raise ValueError(f"task title is {len(task.title)} characters; the column holds {TITLE_MAX}")
-        t, now = self.t, datetime.now(timezone.utc)
+        t, now = self.t, clock().now()
         try:
             async with session.begin_nested():
                 await self._lock(session, key)
@@ -162,7 +163,7 @@ class TaskService:
     async def resolve_problem(self, session, event: str, entity: object, *, by: uuid.UUID | None = None) -> int:
         """Complete the problem's open task(s); returns how many were closed."""
         key = self.problem_key(event, entity)
-        now = datetime.now(timezone.utc)
+        now = clock().now()
         try:
             async with session.begin_nested():
                 res = await session.execute(update(self.t).where(self._open(key)).values(

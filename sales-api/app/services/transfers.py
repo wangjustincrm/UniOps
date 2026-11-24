@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from sqlalchemy import func, select, text
@@ -50,13 +50,13 @@ from app.models.documents import Document, DocumentLink
 from app.models.records import OutboxRecord
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import clock, utc_now
 from app.platform.commands import VersionArg, load_for_command
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.intake import ConnectionSnapshot
-from app.services.outbound import TORONTO
 from app.services.problems import (
     EDI_943_REJECTED,
     EDI_943_TIMEOUT,
@@ -111,7 +111,7 @@ def _key(v: str | None) -> str:
 
 class Transfers:
     def __init__(self, *, uow_factory, tasks, sftp, shadow=None,
-                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+                 clock: Callable[[], datetime] = utc_now) -> None:
         self.uow_factory = uow_factory
         self.tasks = tasks
         self.sftp = sftp
@@ -288,7 +288,7 @@ class Transfers:
                 rec.outcome, rec.discrepancies = T.RECEIVED.value, None
         TRANSFER.transition(t, T.RECEIVED, actor=uow.actor, events=uow.events, reason=f"{how}: {reason}")
         t.resolution, t.resolution_reason = how, reason
-        t.resolved_at, t.resolved_by_name = datetime.now(timezone.utc), uow.actor.name
+        t.resolved_at, t.resolved_by_name = clock().now(), uow.actor.name
         for event in (TRANSFER_DISCREPANCY, PARTIAL_RECEIPT):
             await self.tasks.resolve_problem(s, event, t.id, by=uow.actor.user_id)
         await oplog.write(s, "INFO", STEP, f"transfer {t.transfer_number}: receipt difference {how} by {uow.actor.name}: {reason}",
@@ -317,7 +317,7 @@ class Transfers:
         ctl = (await s.execute(text("SELECT nextval('sales_x12_control_seq')"))).scalar_one()
         built = build_943(Transfer943(t.transfer_number, _party(frm), _party(to), tuple(
             Line943(ln.line_no, ln.item_code, ln.qty_ea, weights.get(ln.item_code)) for ln in lines)),
-            ctl, self.clock().astimezone(TORONTO))
+            ctl, clock().to_business(self.clock()))
         doc = Document(direction="OUT", origin="UNIOPS", system="RADIANT", connection_id=conn.id, kind="943_EDI",
                        remote_name=built.file_name, size=len(built.content), sha256=hashlib.sha256(built.content).hexdigest(),
                        content=built.content, file_status=OutboundFile.READY_TO_SEND.value, ack_status=Ack.WAITING.value,
@@ -507,7 +507,7 @@ class Transfers:
             await self.tasks.raise_problem(s, EDI_943_TIMEOUT, t.id, problem(
                 EDI_943_TIMEOUT, f"No 997 for transfer {t.transfer_number}",
                 f"No 997 arrived within {minutes} minutes for the 943 of transfer {t.transfer_number} (control "
-                f"{doc.st02}, sent {doc.sent_at.astimezone(TORONTO):%Y-%m-%d %H:%M} Toronto time). The transfer "
+                f"{doc.st02}, sent {clock().to_business(doc.sent_at):%Y-%m-%d %H:%M} Toronto time). The transfer "
                 "waits; check with the warehouse."))
         return True
 

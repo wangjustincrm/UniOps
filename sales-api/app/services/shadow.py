@@ -38,6 +38,7 @@ from app.models.orders import Order
 from app.models.shadow import ShadowMatch
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import requires
+from app.platform.clock import clock, utc_now
 from app.platform.commands import check_version
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
@@ -46,7 +47,7 @@ from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.shadow import ShadowCompare, ShadowMatchRead
 from app.services import oplog
-from app.services.outbound import LIVE_940_FILE, TORONTO
+from app.services.outbound import LIVE_940_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class ShadowReport:
 
 class ShadowRun:
     def __init__(self, *, uow_factory, outbound, reference_dir: str | None,
-                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+                 clock: Callable[[], datetime] = utc_now) -> None:
         self.uow_factory = uow_factory
         self.outbound = outbound
         self.reference_dir = reference_dir or None
@@ -160,7 +161,7 @@ class ShadowRun:
     async def _dry_run(self, s, order: Order) -> bytes:
         partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
         snap = await self.outbound.snapshot(s, order, partner)
-        return build_940(snap, DRY_RUN_CONTROL, self.clock().astimezone(TORONTO)).content
+        return build_940(snap, DRY_RUN_CONTROL, clock().to_business(self.clock())).content
 
     async def _find_order(self, s, data: bytes) -> tuple[list[Order], str | None]:
         ref = reference_940(data)

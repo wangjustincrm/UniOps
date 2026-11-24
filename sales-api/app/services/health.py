@@ -18,7 +18,7 @@ The shadow run and the two send switches are shown as they are.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, func, select
@@ -33,6 +33,7 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.transfers import Receipt
 from app.platform.authorization import requires
+from app.platform.clock import clock
 from app.platform.services import Service
 from app.platform.query import Filter, QuerySpec
 from app.domain.schedule import describe, is_overdue
@@ -126,7 +127,7 @@ class Health:
 
     # ── FR-OB-52a ────────────────────────────────────────────────────────────
     async def checks(self) -> HealthRead:
-        now = datetime.now(timezone.utc)
+        now = clock().now()
         out: list[CheckRead] = []
 
         def add(key: str, label: str, result: str, detail: str, *, count: int | None = None,

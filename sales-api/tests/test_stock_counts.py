@@ -249,7 +249,9 @@ async def test_a_lot_s_picked_pallets_are_in_process_until_the_945(p6):  # noqa:
 
 
 def test_a_945_moment_is_its_arrival_within_its_ship_day():
-    from app.services.stock import TORONTO, ship_moment
+    from app.platform.clock import business_zone
+    from app.services.stock import ship_moment
+    TORONTO = business_zone()
     day = date(2026, 11, 13)
     same_day = datetime(2026, 11, 13, 23, 39, tzinfo=timezone.utc)          # 18:39 Toronto
     assert ship_moment(day, same_day) == same_day

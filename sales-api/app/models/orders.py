@@ -28,6 +28,7 @@ from app.db.base import Base
 from app.domain.orders import HOLD_REASONS, LINE_STATUSES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, INVOICE, Fulfillment, Invoice
 from app.models.config import Connection, Partner, one_of
+from app.platform.clock import business_time_sql
 from app.platform.entities import Audited, Versioned
 
 ORDER_NUMBER_SEQ = Sequence("sales_order_number_seq", start=1)  # P9 sets it above Zoho's highest
@@ -300,7 +301,7 @@ Order.returned_ea_sql = order_fact(select(func.nullif(func.sum(OrderLine.returne
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
 
 # Manual orders by reason (user 2026-11-19): the month an order came in (Toronto), its EA, and the order it repeats.
-Order.received_month_sql = order_fact(cast(func.date_trunc("month", func.timezone("America/Toronto", Order.first_received_at)), Date))
+Order.received_month_sql = order_fact(cast(func.date_trunc("month", business_time_sql(Order.first_received_at)), Date))
 Order.ordered_ea_sql = order_fact(select(func.sum(OrderLine.qty_ea)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
 _Parent = aliased(Order)

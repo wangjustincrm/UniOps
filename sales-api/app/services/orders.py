@@ -22,7 +22,7 @@ before the 940 cancels silently (FR-OB-18).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -38,6 +38,7 @@ from app.domain.status import Invoice as Inv
 from app.integrations.shopify import readable
 from app.models.config import DcRouting, Item, ItemPartnerCode, Partner
 from app.models.orders import Order, OrderLine
+from app.platform.clock import clock
 from app.services.outbound import changed_after_940
 from app.services.problems import CANCELLED_AFTER_940, ORDER_ARCHIVED, ORDER_REVIEW, problem
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -64,7 +65,7 @@ def order_ref(partner: Partner | None, number: str | None) -> str | None:
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock().now()
 
 
 # ── the Item Master as one lookup ────────────────────────────────────────────

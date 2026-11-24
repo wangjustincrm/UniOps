@@ -26,7 +26,7 @@ import hashlib
 import html
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Callable
 
@@ -54,13 +54,13 @@ from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import clock, utc_now
 from app.platform.commands import load_for_command
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog, print_docs
 from app.services.intake import ConnectionSnapshot
-from app.services.outbound import TORONTO
 from app.services.problems import (
     INVOICE_FAILED,
     INVOICE_HOLD,
@@ -116,7 +116,7 @@ async def rows_to_review(s, order_id: int) -> list[str | None]:
 
 class Invoicing:
     def __init__(self, *, uow_factory, tasks, sftp, email,
-                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+                 clock: Callable[[], datetime] = utc_now) -> None:
         self.uow_factory = uow_factory
         self.tasks = tasks
         self.sftp = sftp
@@ -124,7 +124,7 @@ class Invoicing:
         self.clock = clock
 
     def today(self) -> date:
-        return self.clock().astimezone(TORONTO).date()
+        return clock().to_business(self.clock()).date()
 
     # ── the worklist (FR-OB-31) ──────────────────────────────────────────────
     async def advance(self, *, run_id: int | None = None) -> AdvanceReport:
@@ -405,7 +405,7 @@ class Invoicing:
                 snap = ConnectionSnapshot.of(conn)
                 data = await self._810(s, inv, order, lines)
                 name = (f"810-{partner.abbrev}-{order.order_number}-{order.source_order_number or ''}-"
-                        f"{self.clock().astimezone(TORONTO):%Y%m%d_%H%M%S}.json")
+                        f"{clock().to_business(self.clock()):%Y%m%d_%H%M%S}.json")
                 await self._document(uow, inv, order, data, name, system="TRUECOMMERCE", kind="810_JSON", conn_id=conn.id)
                 await uow.commit()
                 folder = write_folder(snap)

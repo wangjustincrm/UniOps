@@ -36,6 +36,7 @@ from app.models.gateways import GatewayTransaction
 from app.models.orders import Order
 from app.models.payments import OrderPayment
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import utc_now
 from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -103,7 +104,7 @@ class GatewayIntake:
     MAX_DAYS: ClassVar[int] = 31
     HISTORY: ClassVar[Callable[[datetime], datetime]]  # the earliest time the gateway answers for
 
-    def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = utc_now,
                  timer: Callable[[], float] = time.monotonic, **_: Any):
         self.uow_factory = uow_factory
         self.gateway = gateway

@@ -22,7 +22,7 @@ by the warehouse number, and `attach` adds what the part shipped to its lines.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -37,6 +37,7 @@ from app.models.orders import Order, OrderLine
 from app.models.shadow import ShadowMatch
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
+from app.platform.clock import clock
 from app.platform.services import Service
 from app.platform.errors import BusinessError, InvalidInput
 from app.services import oplog
@@ -243,7 +244,7 @@ class OrderFrom945(Service):
             order_date=sh.ship_date, ship_to=p.ship_to, warehouse_order_number_received=_warehouse_number(key),
             notes=f"Created from 945 document {sh.document_id}. No prices: the 945 carries none.",
             fulfillment_status=F.PENDING.value, invoice_status=Inv.NOT_REQUIRED.value, shadow=True,
-            first_received_at=datetime.now(timezone.utc), version=1)
+            first_received_at=clock().now(), version=1)
         self.s.add(order)
         await self.s.flush()
         return order

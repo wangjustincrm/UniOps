@@ -6,5 +6,7 @@ that opened the unit of work does, once."""
 
 from app.platform.services import ReadOnlyService  # noqa: E402
 
+from app.platform.clock import business_timezone
+
 # People read Sales' times in Toronto (the 940's "today", the schedules, the PDFs): so do its exports (user 2026-11-18).
-ReadOnlyService.export_timezone = "America/Toronto"
+ReadOnlyService.export_timezone = business_timezone()

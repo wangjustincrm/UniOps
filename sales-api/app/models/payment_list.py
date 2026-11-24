@@ -34,6 +34,7 @@ from app.domain.gateways import LABELS
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.orders import Order
 from app.models.payments import OrderPayment
+from app.platform.clock import business_timezone
 
 ISSUES = ("Pending over 7 days", "Cancelled, not fully refunded", "Partially paid", "Failed on an open order",
           "Paid, no payment", "Not settled in the gateway", "In the gateway, not in Shopify",
@@ -54,7 +55,7 @@ KINDS = ("sale", "capture", "authorization", "refund", "void", "none")
 STATUSES = ("success", "pending", "failure", "error")
 SOURCES = ("Subscription", "One-off")
 
-_TZ = "America/Toronto"
+_TZ = business_timezone()
 _SUCCESS_IN = ("sale", "capture")
 # An order still owed money (a failed payment matters there): not cancelled and not paid yet.
 _OPEN = ("pending", "partially_paid", "authorized")

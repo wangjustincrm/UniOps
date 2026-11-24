@@ -25,6 +25,7 @@ from app.models.config import Partner, one_of
 from app.models.gateways import GatewaySettlement, GatewayTransaction
 from app.models.payments import OrderPayment
 from app.models.orders import Order, order_fact
+from app.platform.clock import business_date_sql
 from app.platform.entities import Audited, CreationAudited, Versioned
 
 RETURN_KINDS = ("Cancelled after shipment", "Returned")
@@ -154,7 +155,7 @@ def _payment_status_sql():
     due = (select(Invoice.invoice_date + days).where(Invoice.order_id == Order.id, Invoice.sent_at.is_not(None))
            .order_by(Invoice.id.desc()).limit(1).correlate_except(Invoice).scalar_subquery())
     sent = exists(select(Invoice.id).where(Invoice.order_id == Order.id, Invoice.sent_at.is_not(None)).correlate_except(Invoice))
-    today = cast(func.timezone("America/Toronto", func.now()), Date)
+    today = business_date_sql()  # SQL's now(): a FixedClock does not freeze it
     shopify = Order.source_type == "SHOPIFY"
     return case(
         (Order.settled_on.is_not(None), SETTLED),                      # the manual mark always wins
@@ -177,5 +178,5 @@ Order.auto_settlement_label_sql = order_fact(
                 else_=GatewaySettlement.gateway + " settlement ") + GatewaySettlement.external_id)
     .where(GatewaySettlement.id == AUTO_SETTLEMENT_ID).correlate_except(GatewaySettlement).scalar_subquery())
 Order.auto_settled_on_sql = order_fact(
-    select(cast(func.timezone("America/Toronto", GatewaySettlement.settled_at), Date))
+    select(business_date_sql(GatewaySettlement.settled_at))
     .where(GatewaySettlement.id == AUTO_SETTLEMENT_ID).correlate_except(GatewaySettlement).scalar_subquery())

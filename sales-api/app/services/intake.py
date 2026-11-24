@@ -25,7 +25,7 @@ import hashlib
 import posixpath
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -37,6 +37,7 @@ from app.integrations.sftp import RemoteFile, SftpAuthFailed, readable
 from app.models.config import Connection
 from app.models.documents import Document
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import utc_now
 from app.platform.guard import Suppressed
 from app.platform.pipeline import UnitOutcome, isolated
 from app.services import oplog
@@ -107,7 +108,7 @@ class ConnectionSnapshot:
 
 
 class Intake:
-    def __init__(self, *, uow_factory, sftp, tasks, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+    def __init__(self, *, uow_factory, sftp, tasks, clock: Callable[[], datetime] = utc_now):
         self.uow_factory = uow_factory
         self.sftp = sftp
         self.tasks = tasks

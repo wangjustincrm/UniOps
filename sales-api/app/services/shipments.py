@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any, Callable
 
 from sqlalchemy import func, select
@@ -55,6 +55,7 @@ from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import clock, utc_now
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -62,7 +63,7 @@ from app.services import oplog
 from app.services.doc_links import link
 from app.services.intake import ConnectionSnapshot
 from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
-from app.services.outbound import FULFILL_AT_997, TORONTO, latest_940
+from app.services.outbound import FULFILL_AT_997, latest_940
 from app.services.problems import (
     CANCELLED_AFTER_940, EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
     SETTLED_BY_SHIPMENT,
@@ -137,7 +138,7 @@ def _check(kind: str, message: str, **values: Any) -> dict[str, Any]:
 
 class Shipments:
     def __init__(self, *, uow_factory, tasks, shopify, outbound, shadow=None,
-                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+                 clock: Callable[[], datetime] = utc_now) -> None:
         self.uow_factory = uow_factory
         self.tasks = tasks
         self.shopify = shopify
@@ -363,12 +364,12 @@ class Shipments:
             if found_zip and want_zip and found_zip != want_zip:
                 p.checks.append(_check("mismatch with the 940", "the ship-to differs from the 940",
                                        found=f"{st.name} {st.zip}", expected=f"{want.get('name')} {want.get('zip')}"))
-        today = self.clock().astimezone(TORONTO).date()
+        today = clock().to_business(self.clock()).date()
         if ship is not None and ship > today:
             p.checks.append(_check("ship date", f"the ship date {ship} is in the future", found=ship, expected=f"≤ {today}"))
-        if ship is not None and sent is not None and sent.sent_at is not None and ship < sent.sent_at.astimezone(TORONTO).date():
+        if ship is not None and sent is not None and sent.sent_at is not None and ship < clock().to_business(sent.sent_at).date():
             p.checks.append(_check("ship date", f"the ship date {ship} is before the 940 was sent",
-                                   found=ship, expected=f"≥ {sent.sent_at.astimezone(TORONTO).date()}"))
+                                   found=ship, expected=f"≥ {clock().to_business(sent.sent_at).date()}"))
 
     # ── applying ─────────────────────────────────────────────────────────────
     async def apply(self, uow, doc: Document, set_index: int, sh: Shipment945, report: ShipmentReport,

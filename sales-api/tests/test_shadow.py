@@ -14,7 +14,7 @@ from app.models.config import Partner
 from app.models.orders import Order
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
-from app.services.outbound import TORONTO
+from app.platform.clock import clock
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.shadow import ShadowMatchService, ShadowRun
 from tests.test_orders import OP, T0, env, shopify_order  # noqa: F401 — env is a fixture (p4_edi needs it)
@@ -103,7 +103,7 @@ async def zoho_940(edi, order_id: int, *, change=None, ctl=16468) -> bytes:
         order = await u.session.get(Order, order_id)
         partner = (await u.session.execute(sa.select(Partner).where(Partner.code == order.partner_code))).scalar_one()
         snap = await edi.out.snapshot(u.session, order, partner)
-    data = build_940(snap, ctl, (T0 - timedelta(days=1)).astimezone(TORONTO)).content
+    data = build_940(snap, ctl, clock().to_business(T0 - timedelta(days=1))).content
     return change(data) if change else data
 
 

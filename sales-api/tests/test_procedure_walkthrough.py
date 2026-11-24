@@ -108,8 +108,8 @@ def today(t, days=0):
 
 
 def runtime_tz():
-    from app.services.outbound import TORONTO
-    return TORONTO
+    from app.platform.clock import business_zone
+    return business_zone()
 
 
 async def shopify(t, oid, number, *, lines=None, **k):

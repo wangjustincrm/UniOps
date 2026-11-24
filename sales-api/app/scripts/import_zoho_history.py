@@ -63,7 +63,7 @@ from app.services import oplog
 from app.services.edi_intake import EdiIntake
 from app.services.invoicing import Invoicing
 from app.services.orders import OrderSync
-from app.services.outbound import TORONTO, Outbound940
+from app.services.outbound import Outbound940
 from app.services.settings import EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE
 from app.models.shipments import Shipment
 from app.services.shipments import Shipments
@@ -338,7 +338,7 @@ class History:
                 out.problems.append("zoho_number_taken")
             partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
             snap = await self.outbound.snapshot(s, order, partner)
-            built = build_940(snap, 0, c.sent_at.astimezone(TORONTO))
+            built = build_940(snap, 0, c.sent_at.astimezone(TOR))
             diff = compare(data, built.content)
             out.compare_940 = "same" if diff.differences == 0 else "differs: " + ",".join(sorted({segment_tag(r) for r in diff.rows if not r["same"]}))
             k = classify(data)

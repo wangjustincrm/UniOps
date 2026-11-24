@@ -32,10 +32,12 @@ from app.models.config import Item, Warehouse
 from app.models.documents import Document
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import business_zone
 from app.scripts.base import ScriptArgs, script_main
 from app.services import oplog
 from app.services.doc_links import link
-from app.services.outbound import TORONTO
+
+TORONTO = business_zone()  # a one-off script's alias
 
 OLD = "old system's 944"
 

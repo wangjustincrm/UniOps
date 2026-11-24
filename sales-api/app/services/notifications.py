@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
 
@@ -32,6 +31,7 @@ from app.integrations.epms_users import find_users, search_users
 from app.models.config import NotificationRule
 from app.models.records import NotificationRecord, OutboxRecord
 from app.platform.authorization import requires
+from app.platform.clock import clock
 from app.platform.errors import InvalidInput, NotFound
 from app.platform.outbox import Outbox, OutboxKind, retry_while_not_accepted
 from app.platform.repository import Repository
@@ -265,7 +265,7 @@ class NotificationRuleService(CrudService[NotificationRule, NotificationRuleRead
             row = await queue_email(s, rule.event_type, None, addresses, title, text, test=True)
             done.append(f"email queued to {len(addresses)} address(es) (outbox #{row.id})")
         self.uow.set_reason("test notification")
-        rule.tested_at = datetime.now(timezone.utc)
+        rule.tested_at = clock().now()
         rule.test_result = "; ".join(done) or "nothing to send"
         await s.flush()
         return RuleTestResult(rule=self.to_read(rule), result=rule.test_result)

@@ -6,7 +6,6 @@ task; a file that is not JSON at all was already stored and tasked at intake.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -15,6 +14,7 @@ from app.domain.sources import SourceError, from_850
 from app.domain.status import INBOUND_FILE, InboundFile
 from app.models.documents import Document
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import utc_now
 from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.orders import OrderSync
@@ -24,7 +24,7 @@ STEP = "850"
 
 
 class EdiIntake:
-    def __init__(self, *, uow_factory, tasks, clock=lambda: datetime.now(timezone.utc)) -> None:
+    def __init__(self, *, uow_factory, tasks, clock=utc_now) -> None:
         self.uow_factory = uow_factory
         self.tasks = tasks
         self.clock = clock

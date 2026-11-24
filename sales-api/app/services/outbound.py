@@ -23,10 +23,9 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.sql.elements import ColumnElement
@@ -46,6 +45,7 @@ from app.models.documents import Document, DocumentLink
 from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.clock import clock
 from app.platform.errors import BusinessError
 from app.platform.outbox import Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -58,7 +58,6 @@ from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTIN
 from app.services.doc_links import link
 
 logger = logging.getLogger(__name__)
-TORONTO = ZoneInfo("America/Toronto")  # "today" on a 940 (product owner, 2026-10-30)
 SEND_940 = "send_940"
 # A Shopify order whose 940 Radiant accepted (997): fulfil it in Shopify in full, without tracking, then
 # archive it (user 2026-11-16, as Zoho did); the 945 adds the tracking (app/services/shipments.py).
@@ -69,7 +68,7 @@ OUTBOX = Outbox(OutboxRecord)
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock().now()
 
 
 # ── eligibility: the SQL twin of qualifies() ─────────────────────────────────
@@ -265,10 +264,10 @@ class Outbound940:
         snap = await self.snapshot(s, order, partner)
         ctl = (await s.execute(text("SELECT nextval('sales_x12_control_seq')"))).scalar_one()
         now = self.clock()
-        built = build_940(snap, ctl, now.astimezone(TORONTO))
+        built = build_940(snap, ctl, clock().to_business(now))
         doc = Document(
             direction="OUT", origin="UNIOPS", system="RADIANT", connection_id=conn.id, kind="940_EDI",
-            remote_name=file_name(partner.abbrev, order, now.astimezone(TORONTO)), size=len(built.content),
+            remote_name=file_name(partner.abbrev, order, clock().to_business(now)), size=len(built.content),
             sha256=hashlib.sha256(built.content).hexdigest(), content=built.content,
             body_json={"order_id": order.id, "lines": built.lines_sent, "locked": built.locked,
                        "transliterated": built.issues.changed, "errors": built.errors + built.issues.errors,
@@ -556,7 +555,7 @@ class Outbound940:
             DocumentLink.document_id == doc.id)).with_for_update())).scalar_one()
         if order.fulfillment_status == F.SENT_940:
             FULFILLMENT.transition(order, F.TIMEOUT_940, actor=uow.actor, events=uow.events, reason="no 997 (FR-OB-23)")
-        sent = doc.sent_at.astimezone(TORONTO).strftime("%Y-%m-%d %H:%M")
+        sent = clock().to_business(doc.sent_at).strftime("%Y-%m-%d %H:%M")
         await self._task(uow, EDI_940_TIMEOUT, order, f"No 997 for order {order.label}",
                          f"No 997 arrived within {minutes} minutes for the 940 of order {order.label} "
                          f"sent {sent} Toronto time "
