@@ -38,3 +38,12 @@ describe('a 401 for an account that is not active (user 2026-11-24)', () => {
   })
 })
 
+describe('the name a download carries', () => {
+  it('filename* (UTF-8) when there is one, else filename, else nothing', async () => {
+    const { fileNameOf } = await import('./api')
+    expect(fileNameOf("attachment; filename=\"PO-_.pdf\"; filename*=UTF-8''PO-%E8%AE%A2%E5%8D%95.pdf")).toBe('PO-订单.pdf')
+    expect(fileNameOf('attachment; filename="orders.csv"')).toBe('orders.csv')
+    expect(fileNameOf("attachment; filename=\"x.pdf\"; filename*=UTF-8''%E8%A")).toBe('x.pdf')  // not valid: the plain one
+    expect(fileNameOf(null)).toBeUndefined()
+  })
+})

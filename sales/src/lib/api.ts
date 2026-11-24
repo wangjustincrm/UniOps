@@ -126,12 +126,19 @@ async function request<T>(url: string, method: string, body?: unknown): Promise<
   return res.json()
 }
 
+/** The name a Content-Disposition gives: filename* (UTF-8, RFC 5987) when there is one, else filename. */
+export function fileNameOf(header: string | null): string | undefined {
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header ?? '')?.[1]
+  if (utf8) try { return decodeURIComponent(utf8) } catch { /* not valid: the plain name */ }
+  return /filename="([^"]+)"/.exec(header ?? '')?.[1]
+}
+
 /** A file read with the token (a plain link would carry none): its bytes, its name (the server's,
  *  else the fallback) and its media type — shown by FileViewer, or saved by saveFile. */
 async function fetchFile(url: string, fallbackName: string): Promise<FileData> {
   const res = await authFetch(url)
   if (!res.ok) throw await toApiError(res)
-  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName
+  const name = fileNameOf(res.headers.get('Content-Disposition')) ?? fallbackName
   const blob = await res.blob()
   return { blob, name, type: (res.headers.get('Content-Type') ?? blob.type ?? '').split(';')[0].trim() }
 }

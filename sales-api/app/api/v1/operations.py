@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.deps import get_uow
 from app.models.config import Connection
 from app.platform.crud_router import resource_router
+from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
 from app.schemas.connections import (
@@ -66,9 +67,7 @@ documents = resource_router(DocumentService, uow=get_uow)
 @documents.get("/{id}/raw")
 async def document_raw(u: UoW, id: int) -> Response:
     name, content = await DocumentService(u).raw(id)
-    safe = name.replace('"', "").replace("\r", "").replace("\n", "")
-    return Response(content, media_type="application/octet-stream",
-                    headers={"Content-Disposition": f'attachment; filename="{safe}"'})
+    return FileResult(content, name, media_type="application/octet-stream")
 
 
 class DocumentReason(BaseModel):

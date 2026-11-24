@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
 from app.platform.bulk_actions import action_router
 from app.platform.entities import Deactivatable
+from app.platform.files import FileResult
 from app.platform.query import Page, QuerySpec, export_columns, query_spec
 from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
 
@@ -119,8 +120,7 @@ def _export_route(r: APIRouter, service_cls: type[ReadOnlyService], UoW: Any, Sp
     @r.get("/export.csv")
     async def export(u: UoW, spec: Spec, columns: Annotated[list[str] | None, Depends(export_columns)] = None) -> Response:
         data = await service_cls(u).export_csv(spec, columns)
-        return Response(data, media_type="text/csv",
-                        headers={"Content-Disposition": f'attachment; filename="{service_cls.resolved().file_name}"'})
+        return FileResult(data, service_cls.resolved().file_name, media_type="text/csv")
 
 
 def _import_route(r: APIRouter, service_cls: type[CrudService], UoW: Any) -> None:

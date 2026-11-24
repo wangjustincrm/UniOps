@@ -5,6 +5,7 @@ from fastapi import Depends, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.files import FileResult
 from app.platform.query import QuerySpec, query_spec
 from app.services.settlement_list import SettlementRowService
 
@@ -14,7 +15,7 @@ Spec = Annotated[QuerySpec, Depends(query_spec)]
 
 
 def _pdf(name: str, data: bytes) -> Response:
-    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+    return FileResult(data, name, media_type="application/pdf", inline=True)
 
 
 # Two segments: never taken for the list's "/{id}".

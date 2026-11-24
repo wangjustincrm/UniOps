@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.invoices import (
     ConfirmBulkIn, ConfirmIn, ConfirmResult, InvoiceDetail, InvoiceEdit, ReleaseIn, ReturnIn,
@@ -23,7 +24,7 @@ routes = APIRouter(prefix="/invoices", tags=["invoices"])
 @routes.get("/{id}/invoice.pdf")
 async def invoice_pdf(u: UoW, id: int) -> Response:
     name, pdf = await InvoiceService(u).pdf(id)
-    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+    return FileResult(pdf, name, media_type="application/pdf", inline=True)
 
 
 @routes.post("/confirm", response_model=InvoiceDetail)

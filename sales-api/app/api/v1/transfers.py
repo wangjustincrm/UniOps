@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.transfers import AmendIn, CancelIn, ReleaseIn, ResolveIn, TransferDetail, TransferIn
 from app.services.transfer_views import TransferService
@@ -28,7 +29,7 @@ async def create_transfer(u: UoW, rt: Rt, body: TransferIn):
 @routes.get("/{id}/print.pdf")
 async def transfer_pdf(u: UoW, id: int) -> Response:
     name, pdf = await TransferService(u).pdf(id)
-    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+    return FileResult(pdf, name, media_type="application/pdf", inline=True)
 
 
 @routes.put("/{id}", response_model=TransferDetail)

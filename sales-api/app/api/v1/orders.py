@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
     AmendOrderIn, CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead,
@@ -44,19 +45,19 @@ async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
 @routes.get("/{id}/po.pdf")
 async def po_pdf(u: UoW, id: int) -> Response:
     name, pdf = await OrderService(u).po_pdf(id)
-    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+    return FileResult(pdf, name, media_type="application/pdf", inline=True)
 
 
 @routes.get("/{id}/packet.zip")
 async def packet(u: UoW, id: int) -> Response:
     name, data = await OrderService(u).packet(id)
-    return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return FileResult(data, name, media_type="application/zip")
 
 
 @routes.get("/{id}/shipments/{shipment_id}/packing-list.pdf")
 async def packing_list(u: UoW, id: int, shipment_id: int) -> Response:
     name, pdf = await OrderService(u).packing_list(id, shipment_id)
-    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+    return FileResult(pdf, name, media_type="application/pdf", inline=True)
 
 
 @routes.post("/shipments/{shipment_id}/shopify-retry")
