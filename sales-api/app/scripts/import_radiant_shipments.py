@@ -11,7 +11,9 @@ ship-to, dates, carrier, tracking and rows (item, lot, quantities). Then, in one
 
 1. An order the report has and Sales does not:
    - a retailer's (its address is a DC Sales knows, and it has a PO) → EDI_850, the partner of that DC;
-   - the others (a reship "9451a", a name, "C0031") → MANUAL, partner Manual; a reship names its Shopify order.
+   - the others (a name, "C0031") → MANUAL, partner Manual. "9451a" left after order 9451 had shipped in full: a MANUAL
+     order naming it, its reason "Extra shipment". "9175a" is the only shipment of order 9175, "9138a" the rest of a
+     short one: no order, the shipment is that order's.
    A retailer's order carries the unit price the report names for it (user 2026-11-24: NC's monthly price where it
    is sure), noted as estimated; a line that did not ship, and every other order, has none.
    Internal numbers from FIRST, in shipping order: below Zoho's 1,000,000 and above any Shopify number.
@@ -63,6 +65,7 @@ MANUAL = "Manual"
 NOTE_ORDER = "From Radiant's shipment report (2026-11-24)."
 NOTE = f"{NOTE_ORDER} No prices: the report carries none."
 SOURCE = "Radiant shipment report"
+EXTRA = "Extra shipment"
 ESTIMATED = "Estimated price from NC monthly sales, not an invoice."
 RESHIP = re.compile(r"#?(\d{4})([A-Za-z])")
 
@@ -139,6 +142,7 @@ class Import:
     # ── writing ──────────────────────────────────────────────────────────────
     async def run(self) -> None:
         await self.load()
+        self.by_key = {o["key"]: o for o in self.orders}
         self.orders.sort(key=lambda o: (o["shipped_at"], o["key"]))
         number = FIRST
         for o in self.orders:
@@ -153,10 +157,34 @@ class Import:
                     await self.ship_old(o, r.id)
             elif self.known(o):
                 self.n["retail / manual: here already, left"] += 1
+            elif (parent := await self.part_of(o)) is not None:
+                self.n["a letter's order: its own shipment, or the rest of it"] += 1
+                await self.ship_old(o, parent)
             else:
                 await self.make(o, number)
                 number += 1
         await self.s.flush()
+
+    async def part_of(self, o: dict) -> int | None:
+        """The Shopify order that "9175a" ships itself, or the rest of a short one (FR-OB-28: one trailing letter is the
+        base order). None: what left after the order had shipped in full — its own order, marked EXTRA."""
+        m = RESHIP.fullmatch(o["key"])
+        p = self.shopify.get(m[1]) if m else None
+        if p is None:
+            return None
+        before = self.by_key.get(m[1])
+        if before is None:
+            return None if p.id in self.has_945 else p.id
+        ordered: collections.Counter = collections.Counter()
+        for code, q in (await self.s.execute(select(OrderLine.item_code, OrderLine.qty_ea).where(
+                OrderLine.order_id == p.id, OrderLine.removed.is_(False), OrderLine.item_code.is_not(None)))).all():
+            ordered[code] += int(q or 0)
+        for r in before["rows"]:
+            ordered[r["item"]] -= r["shipped"]
+        sent: collections.Counter = collections.Counter()
+        for r in o["rows"]:
+            sent[r["item"]] += r["shipped"]
+        return p.id if all(q <= max(ordered[item], 0) for item, q in sent.items()) else None
 
     async def make(self, o: dict, number: int) -> None:
         s, key, po = self.s, o["key"], (o["po"] or "").strip()
@@ -185,7 +213,7 @@ class Import:
             notes = [NOTE_ORDER, f"Radiant order {key}.", ESTIMATED]
         order = Order(
             order_number=number, partner_code=partner.code, source_type=kind, source_order_id=source_id, source_order_number=source_no,
-            source_reference=ref, parent_order_id=parent, order_date=moment(o["ordered_at"]).astimezone(TORONTO).date(),
+            source_reference=ref, parent_order_id=parent, manual_reason=EXTRA if parent else None, order_date=moment(o["ordered_at"]).astimezone(TORONTO).date(),
             ship_to=ship_to, notes=" ".join(notes), shipping_method="Purolator" if o["carrier"].startswith("PRL") else
             "LTL" if o["carrier"] == "WIFS" else None, currency="CAD", fulfillment_status=F.SHIPPED.value,
             invoice_status=Inv.NOT_REQUIRED.value, historical=True, shadow=False, first_received_at=moment(o["ordered_at"]),
@@ -238,6 +266,10 @@ class Import:
         sh = await self.shipment(o, order_id, slots)
         if order_id in self.returned_944:
             await self.delivered(sh)
+        for r in o["rows"]:  # the rest of a short order: its line's figure, where a 945 gave one
+            ln = next((x for x in lines if x.item_code == r["item"] and x.shipped_ea is not None and x.shipped_ea < (x.qty_ea or 0)), None)
+            if ln is not None:
+                ln.shipped_ea = min(ln.shipped_ea + r["shipped"], ln.qty_ea)
         gone = list((await s.execute(select(StockMove).where(StockMove.source_type == "order_line",
                                                              StockMove.order_id == order_id))).scalars())
         for m in gone:
