@@ -3,9 +3,11 @@
 that never retries cannot pass by accident."""
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.events import StatusChanged
 from app.integrations.email import ExternalEmail, FakeEmail
 from app.platform.outbox import (
     CANCELLED, DONE, FAILED, IN_FLIGHT, ONCE, PENDING, SUPPRESSED, AcceptedThenFailed, NotAccepted, Outbox,
@@ -452,3 +454,35 @@ async def test_on_done_records_success_in_the_same_transaction_and_cannot_undo_i
     summary = await worker.run_once()
     assert summary.done == 2 and seen == [(DONE, None)]
     assert (await _row(uow_factory, good)).status == DONE and (await _row(uow_factory, bad)).status == DONE
+
+
+@pytest.mark.parametrize("which", ["on_done", "on_failed", "on_hook_failed"])
+async def test_a_hook_that_fails_leaves_no_event_behind(uow_factory, which):
+    """Review 2026-11-24: a hook's events go with its writes — the row still commits, its events must not be dispatched."""
+    heard = []
+
+    async def hear(event, uow):  # noqa: ARG001
+        heard.append(event.new)
+    uow_factory.handlers.on(StatusChanged, hear)
+
+    def raise_(uow, new):
+        uow.events.raise_(StatusChanged(actor=uow.actor, machine="m", entity="x", entity_id=1, old="a", new=new))
+
+    async def effect(payload, ctx):
+        if which == "on_failed":
+            raise OSError("reset")
+
+    async def broken(row, exc, uow):
+        raise_(uow, "gone")
+        raise RuntimeError("hook bug")
+
+    async def report(row, exc, uow):
+        raise_(uow, "reported")
+        if which == "on_hook_failed":
+            raise RuntimeError("the report too")
+    kind = OutboxKind(effect, ONCE, **({"on_failed": broken} if which == "on_failed" else {"on_done": broken}))
+    worker = OutboxWorker(OUTBOX, {"x": kind}, uow_factory, clock=Clock(), on_hook_failed=report)
+    rid = await _queue(uow_factory, "x")
+    await worker.run_once()
+    assert (await _row(uow_factory, rid)).status == (FAILED if which == "on_failed" else DONE)
+    assert heard == ([] if which == "on_hook_failed" else ["reported"])

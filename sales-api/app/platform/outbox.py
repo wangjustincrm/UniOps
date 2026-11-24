@@ -53,6 +53,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock, utc_now
 from app.platform.errors import BusinessError, NotFound
 from app.platform.guard import Suppressed
+from app.platform.uow import Savepoint
 
 logger = logging.getLogger(__name__)
 
@@ -371,19 +372,19 @@ class OutboxWorker:
 
     async def _hook(self, uow, hook: Hook | None, row, exc: BaseException | None) -> None:
         """Runs a business hook in a SAVEPOINT: if it raises, its own writes are
-        undone and the row's status stays. The effect may have happened, so a
+        undone (its events too) and the row's status stays. The effect may have happened, so a
         failed hook is put where a person sees it, not only in the log."""
         if hook is None:
             return
         try:
-            async with uow.session.begin_nested():
+            async with Savepoint.of(uow):
                 await hook(row, exc, uow)
         except Exception as e:  # noqa: BLE001
             logger.exception("outbox %s (%s): hook %s failed", row.id, row.kind, getattr(hook, "__name__", hook))
             row.last_error = f"result not recorded: {_describe(e)}"
             if self.on_hook_failed is not None:
                 try:
-                    async with uow.session.begin_nested():
+                    async with Savepoint.of(uow):
                         await self.on_hook_failed(row, e, uow)
                 except Exception:  # noqa: BLE001
                     logger.exception("outbox %s (%s): could not report the failed hook", row.id, row.kind)

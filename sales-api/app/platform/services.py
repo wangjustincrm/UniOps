@@ -39,6 +39,7 @@ from app.platform.query import Page, QuerySpec
 from app.platform.repository import Repository, _humanise
 from app.platform.resource import ResolvedResource, Resource, resolve
 from app.platform.state import StateMachine
+from app.platform.uow import Savepoint
 
 T = TypeVar("T")
 R = TypeVar("R", bound=BaseModel)
@@ -497,7 +498,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             if plan.action == "unchanged":
                 continue
             try:
-                async with self.uow.session.begin_nested():
+                async with Savepoint.of(self.uow):
                     if plan.action == "create":
                         self.uow.session.add(self.build(changes))
                     else:

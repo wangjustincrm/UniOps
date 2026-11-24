@@ -277,3 +277,18 @@ def test_any_other_database_refusal_is_a_readable_409_naming_the_rule_not_the_va
     out = CrudService._constraint_refusal(err)
     assert isinstance(out, BusinessError) and out.status_code == 409 and out.code == "entity.constraint"
     assert "ck_things_kind" in str(out) and "secret-login" not in str(out)
+
+
+async def test_an_import_row_the_database_refuses_leaves_no_event_behind(uow_factory, person):
+    """Review 2026-11-24: a refused row's events go with its writes."""
+    from app.platform.events import StatusChanged
+
+    class Telling(WidgetService):
+        def build(self, values):
+            self.uow.events.raise_(StatusChanged(actor=self.uow.actor, machine="m", entity="w", entity_id=0, old="", new=values["code"]))
+            return super().build(values)
+    data = b"code,name\nOK1,Fine\n" + b"X" * 25 + b",Too long for the column\nOK2,Fine\n"
+    async with uow_factory(person) as uow:
+        rep = await Telling(uow).import_csv(data, dry_run=False)
+        assert [(e.row, e.code) for e in rep.errors] == [(2, "csv.rejected_by_database")]
+        assert [e.new for e in uow.events.drain()] == ["OK1", "OK2"]
