@@ -285,6 +285,11 @@ async def test_ac71_writing_is_turned_on_only_through_the_notification_gate(api)
     files = {"file": ("c.csv", f"{head}\n{on}\n".encode(), "text/csv")}
     rep = (await api.post("/api/v1/config/connections/import.csv?dry_run=true", files=files, headers=OP)).json()
     assert [(e["code"], e["column"]) for e in rep["errors"]] == [("connection.write_reason", "reason")]  # a file cannot say why
+    rep = (await api.post("/api/v1/config/connections/import.csv?dry_run=false", files=files, headers=OP)).json()
+    assert rep["written"] is False and (await api.get(url, headers=READER)).json()["can_write"] is False  # for real, neither
+    said = {"file": ("c.csv", f"{head},reason\n{on},go live\n".encode(), "text/csv")}
+    rep = (await api.post("/api/v1/config/connections/import.csv?dry_run=true", files=said, headers=OP)).json()
+    assert [(e["code"], e["column"]) for e in rep["errors"]] == [("csv.unknown_column", "reason")]
 
 
 async def test_ac53_health_automatic_runs_not_available_warns_and_a_latch_fails(api):
