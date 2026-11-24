@@ -17,6 +17,8 @@ from app.platform.services import CrudService, ReadOnlyService
 from app.services.shadow import ShadowMatchService
 
 PREFIX = "/api/v1"
+APP = pathlib.Path(__file__).resolve().parents[1] / "app"
+FEATURES = pathlib.Path(__file__).resolve().parents[2] / "sales" / "src" / "features"
 NOT_MOUNTED = {ShadowMatchService: "the shadow comparison: read through the saved views' check only"}
 
 
@@ -124,8 +126,9 @@ async def test_a_detail_is_refused_before_anything_is_read(svc):
 
 
 def test_no_service_calls_round_its_check():
-    root = pathlib.Path("app")
-    assert [str(p) for p in root.rglob("*.py") if "__wrapped__(" in p.read_text()] == []
+    files = list(APP.rglob("*.py"))
+    assert len(files) > 100, APP
+    assert [str(p) for p in files if "__wrapped__(" in p.read_text()] == []
 
 
 def test_a_record_s_attachments_are_declared_by_its_list_and_by_nothing_else():
@@ -146,7 +149,7 @@ def test_every_labelled_list_has_its_page_compared():
 
 @pytest.mark.parametrize("svc", LABELLED, ids=lambda c: c.__name__)
 def test_all_fields_never_says_less_than_the_page(svc):
-    page = (pathlib.Path("../sales/src/features") / PAGES[svc.__name__]).read_text()
+    page = (FEATURES / PAGES[svc.__name__]).read_text()
     block = page[page.index("olumns: ColumnDef<"):]
     block = block[:block.index("\n]")]
     ids = set(re.findall(r"accessorKey: '(\w+)'", block)) | set(re.findall(r"\bid: '(\w+)'", block)) | set(
