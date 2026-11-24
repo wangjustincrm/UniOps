@@ -17,13 +17,17 @@ OUTBOX = Outbox(OutboxRecord)
 NEXT = 'the next run of the system job ("Run the system job now" on Health, for who may retry files: sales.file.retry)'
 
 
+def unknown_outcome(what: str, then: str) -> str:
+    return (f"{what} was started and its outcome was never recorded: it may have gone out. "
+            f"{NEXT[0].upper()}{NEXT[1:]} closes it; then {then}")
+
+
 async def queued_refusal(s: Any, kinds: tuple[str, ...], entity: Any, what: str) -> BusinessError | None:
     state = await OUTBOX.waiting(s, kinds, entity)
     if state is None:
         return None
     if state == "unknown":
-        return BusinessError("send.outcome_unknown", f"{what} was started and its outcome was never recorded: it may have gone out. "
-                             f"{NEXT[0].upper()}{NEXT[1:]} closes it; then check whether it arrived before sending it again", {"state": state})
+        return BusinessError("send.outcome_unknown", unknown_outcome(what, "check whether it arrived before sending it again"), {"state": state})
     text = f"{what} is being sent now: look again in a moment" if state == "sending" else f"{what} is already queued: it goes with {NEXT}"
     return BusinessError("send.queued", text, {"state": state})
 

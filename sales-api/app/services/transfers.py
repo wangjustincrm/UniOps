@@ -70,7 +70,7 @@ from app.services.problems import (
     send_refused,
 )
 from app.services.doc_links import link
-from app.services.queued import refuse_queued
+from app.services.queued import refuse_queued, unknown_outcome
 from app.services.returns_944 import apply_return_944, is_return
 from app.services.settings import (
     ACK_TIMEOUT_MINUTES,
@@ -181,15 +181,28 @@ class Transfers:
         await uow.session.flush()
         return t
 
-    async def cancel(self, uow, id: int, version: int | None, reason: str) -> Transfer:
-        """FR-OB-80 / AC-OB-69: before the 943 is sent, or after it was rejected."""
-        s = uow.session
-        t = await self._get(s, id, version)
+    async def refuse_cancel(self, s, t: Transfer) -> None:
+        """Why this transfer (locked) is not cancelled, raised; nothing: it can. A 943 being sent may arrive: as an order's
+        940 (order.sending)."""
         if T(t.status) not in CANCELLABLE:
             raise BusinessError("transfer.not_cancellable", f"a transfer in {t.status} cannot be cancelled: the 943 is sent")
+        state = await OUTBOX.waiting(s, (SEND_943,), t)
+        if state == "sending":
+            raise BusinessError("transfer.sending", "its 943 is being sent right now: try again in a moment", {"state": state})
+        if state == "unknown":
+            raise BusinessError("transfer.sending", unknown_outcome(f"the 943 of transfer {t.transfer_number}",
+                                "check whether it arrived before cancelling"), {"state": state})
+
+    async def cancel(self, uow, id: int, version: VersionArg, reason: str) -> Transfer:
+        """FR-OB-80 / AC-OB-69: before the 943 is sent, or after it was rejected."""
+        s = uow.session
+        t = await self._get(s, id, ANY_VERSION)
+        await self.refuse_cancel(s, t)  # what is being sent says so, whatever the version
+        check_version(t, version, "this transfer")
         uow.set_reason(f"transfer cancelled: {reason}")
         if t.status == T.GENERATED_943.value:  # queued, not sent: the row and the file stop here
-            await OUTBOX.cancel_for(s, t, "transfer cancelled")
+            # A row the outbox is claiming right now waits for this transfer's lock and stops at its pre_check: not waited for.
+            await OUTBOX.cancel_for(s, t, "transfer cancelled", skip_locked=True)
             doc = await s.get(Document, t.document_id, with_for_update=True) if t.document_id else None
             if doc is not None and doc.file_status in (OutboundFile.READY_TO_SEND.value, OutboundFile.SUPPRESSED.value):
                 OUTBOUND_FILE.transition(doc, OutboundFile.CANCELLED, actor=uow.actor, events=uow.events, reason="transfer cancelled")

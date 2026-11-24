@@ -8,7 +8,6 @@ from app.models.transfers import Transfer
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
 from app.services.transfer_views import MANAGE, TransferRepository, TransferService, not_on_hold
-from app.services.transfers import CANCELLABLE
 
 
 async def ready_check(uow, t: Transfer) -> str | None:  # noqa: ARG001
@@ -19,8 +18,8 @@ async def ready_run(uow, t: Transfer, data, ctx) -> None:  # noqa: ARG001
     await ctx.runtime.transfers.ready(uow, t.id, ANY_VERSION)  # locked, its version checked: by run_action
 
 
-async def cancel_check(uow, t: Transfer) -> str | None:  # noqa: ARG001
-    return None if T(t.status) in CANCELLABLE else f"a transfer in {t.status} cannot be cancelled: the 943 is sent"
+async def cancel_check(uow, t: Transfer, ctx) -> str | None:
+    return await refusal(ctx.runtime.transfers.refuse_cancel(uow.session, t))
 
 
 async def cancel_run(uow, t: Transfer, data, ctx) -> None:  # noqa: ARG001
@@ -48,6 +47,6 @@ TRANSFER_ACTIONS = ActionRegistry(TransferRepository, [
            sends="the 943, on the next pass"),
     Action("resend", label="Resend 943", permission=MANAGE, check=resend_check, check_context=True, run=resend_run, context=True, bulk=False,
            sends="a new 943 (a new control number) to the warehouse"),
-    Action("cancel", label="Cancel", permission=MANAGE, check=cancel_check, run=cancel_run, context=True, bulk=False, reason="required"),
+    Action("cancel", label="Cancel", permission=MANAGE, check=cancel_check, check_context=True, run=cancel_run, context=True, bulk=False, reason="required"),
     Action("release", label="Release hold", permission=MANAGE, check=release_check, run=release_run, context=True, bulk=False, reason="required"),
 ])

@@ -220,15 +220,18 @@ class Outbox:
         row = await self._locked(session, row_id)
         return self._cancel_row(row, reason)
 
-    async def cancel_for(self, session, entity: Any, reason: str = "cancelled") -> CancelResult:
+    async def cancel_for(self, session, entity: Any, reason: str = "cancelled", *, skip_locked: bool = False) -> CancelResult:
         """Cancel every not-yet-started row of an entity, in the caller's
         transaction. Rows already IN_FLIGHT are reported, so the caller can
-        refuse the cancellation (the effect may be happening now)."""
+        refuse the cancellation (the effect may be happening now).
+        `skip_locked`: a row a worker is claiming is not waited for (the worker
+        may wait for the entity the caller holds): the kind's pre_check, which
+        re-reads the entity, must stop it."""
         etype, eid = entity_ref(entity)
         m = self.model
         rows = (await session.execute(
             select(m).where(m.entity_type == etype, m.entity_id == eid, m.status.in_((PENDING, IN_FLIGHT)))
-            .order_by(m.id).with_for_update()
+            .order_by(m.id).with_for_update(skip_locked=skip_locked)
         )).scalars().all()
         out = CancelResult()
         for row in rows:
