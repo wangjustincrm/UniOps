@@ -116,7 +116,8 @@ async def test_a_job_follows_a_fixed_clock(uow_factory):
 def test_no_copy_comes_back():
     """`now` and the business zone come from the clock only (one-off scripts aside)."""
     root = pathlib.Path(__file__).parents[2] / "app"
-    bad = re.compile(r"datetime\.(now|utcnow|today)\(|date\.today\(|ZoneInfo\(\"|[\"']America/Toronto[\"']")
+    bad = re.compile(r"datetime\.(now|utcnow|today)\(|date\.today\(|ZoneInfo\(\"|[\"']America/Toronto[\"']"
+                     r"|\bcurrent_date\b|\bCURRENT_DATE\b")  # the database session's day (UTC), not the business day
     allowed = {"platform/clock.py", "platform/options.py"}
     found = [f"{p.relative_to(root)}:{n}" for p in sorted(root.rglob("*.py")) for n, line in enumerate(p.read_text().splitlines(), 1)
              if bad.search(line) and str(p.relative_to(root)) not in allowed and "scripts" not in p.parts]

@@ -15,6 +15,7 @@ from app.db.base import Base
 from app.models.config import Partner
 from app.models.orders import Order
 from app.models.shipments import Shipment, ShipmentRow
+from app.platform.clock import business_date_sql
 
 
 def _ship_to(key: str):
@@ -28,7 +29,7 @@ _TRACE = (
         ShipmentRow.lot.label("lot"),
         ShipmentRow.item_code.label("item_code"),
         ShipmentRow.expiry.label("expiry"),
-        cast(ShipmentRow.expiry - func.current_date(), Integer).label("days_to_expiry"),
+        cast(ShipmentRow.expiry - business_date_sql(), Integer).label("days_to_expiry"),
         ShipmentRow.qty_shipped_ea.label("qty_shipped_ea"),
         ShipmentRow.sscc.label("sscc"),
         func.coalesce(ShipmentRow.tracking, Shipment.tracking[0].astext).label("tracking"),

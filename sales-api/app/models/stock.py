@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.platform.clock import business_date_sql
 from app.platform.entities import Audited, Versioned
 
 PLANT, TO_RADIANT, RADIANT, TO_CUSTOMER, CUSTOMER, RETURNING, ADJUSTED = (
@@ -164,7 +165,7 @@ _hold = case((_BY_LOT.c.on_hand_ea > 0, func.least(func.coalesce(_REPORT.c.hold,
 _LOTS = (
     select(
         _BY_LOT.c.id, _BY_LOT.c.item_code, _BY_LOT.c.lot, _expiry.label("expiry"),
-        cast(_expiry - func.current_date(), Integer).label("days_to_expiry"),
+        cast(_expiry - business_date_sql(), Integer).label("days_to_expiry"),
         cast(_received, Integer).label("received_ea"), _BY_LOT.c.returned_ea, _BY_LOT.c.shipped_ea,
         # people's adjustments after the start: what on hand holds beyond received − shipped
         cast(_BY_LOT.c.on_hand_ea - _received + _BY_LOT.c.shipped_ea, Integer).label("adjusted_ea"),
@@ -229,7 +230,7 @@ def _item_read_model():
                n(lots.c.to_radiant).label("to_radiant_ea"), n(lots.c.to_customer).label("to_customer_ea"),
                n(lots.c.returning).label("returning_ea"), n(lots.c.lots).label("lots"),
                lots.c.first_expiry.label("first_expiry"),
-               cast(lots.c.first_expiry - func.current_date(), Integer).label("days_to_first_expiry"),
+               cast(lots.c.first_expiry - business_date_sql(), Integer).label("days_to_first_expiry"),
                lots.c.last_move_at.label("last_move_at"))
         .select_from(Item)
         .outerjoin(lots, lots.c.item_code == Item.item_code)
