@@ -12,7 +12,7 @@ from typing import Any
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.platform import correlation
-from app.platform.auditing.scope import _matches, begin_scope
+from app.platform.auditing.scope import begin_scope, matches
 from app.platform.options import AuditingOptions, LoggingOptions, options
 
 
@@ -87,7 +87,7 @@ class AuditingMiddleware:
                 raise
             finally:
                 info.route = route_of(scope)
-                if (query := scope.get("query_string")) and _matches(info.route, options(AuditingOptions).always_log_routes):
+                if (query := scope.get("query_string")) and matches(info.route, options(AuditingOptions).always_log_routes):
                     info.extra["query"] = query.decode("latin-1")  # bulk data handed out: what was taken, whole
                 endpoint = scope.get("endpoint")
                 info.forced = getattr(endpoint, "__auditing__", None)

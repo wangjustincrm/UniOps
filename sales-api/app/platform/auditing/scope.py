@@ -98,7 +98,8 @@ def current_scope() -> AuditScope | None:
     return _current.get()
 
 
-def _matches(route: str | None, patterns: tuple[str, ...]) -> bool:
+def matches(route: str | None, patterns: tuple[str, ...]) -> bool:
+    """Whether a route template fits one of the options' patterns (fnmatch)."""
     return bool(route) and any(fnmatch.fnmatchcase(route, p) for p in patterns)
 
 
@@ -109,7 +110,7 @@ def should_save(info: AuditLogInfo, o: AuditingOptions | None = None) -> bool:
         return False
     if info.kind != "request":
         return o.save_background_scopes and bool(info.entity_changes or info.actions or info.exceptions)
-    if _matches(info.route, o.ignored_routes):
+    if matches(info.route, o.ignored_routes):
         return False
     if info.forced:
         return True
@@ -118,7 +119,7 @@ def should_save(info: AuditLogInfo, o: AuditingOptions | None = None) -> bool:
     failed = bool(info.exceptions) or (info.http_status or 0) >= 400
     if failed and o.always_log_on_exception:
         return True
-    if _matches(info.route, o.always_log_routes):
+    if matches(info.route, o.always_log_routes):
         return True
     if (info.http_method or "").upper() in SAFE_METHODS:  # ≈ ABP: GET / HEAD (and a CORS preflight) are not saved
         return o.is_enabled_for_get_requests
