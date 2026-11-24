@@ -92,6 +92,10 @@ class ScheduledJob(ABC):
         self.heartbeat_every = heartbeat_every
         self.clock = clock
 
+    async def audit_label(self, session) -> str:  # noqa: ARG002 — a hook (Template Method): a job may read what names it
+        """How the job's audit log names it (a person reads it in Operations → Audit log)."""
+        return self.name if self.scope is None else f"{self.name} {self.scope}"
+
     @abstractmethod
     async def run_once(self, run: Any) -> RunSummary: ...
 
@@ -208,8 +212,10 @@ class ScheduledJob(ABC):
         try:
             async with self.uow_factory(SYSTEM_ACTOR) as uow:
                 run = await uow.session.get(self.run_model, run_id)
-            # A run is an audit scope (≈ ABP's IAuditingManager.BeginScope): saved when it changed data or failed.
-            async with begin_scope("job", self.name):
+                label = await self.audit_label(uow.session)
+            # A run is an audit scope (≈ ABP's IAuditingManager.BeginScope): saved when it changed data or failed; its
+            # header says which job and run ("connection PayPal · run 1234"), the run and the job also in its extra.
+            async with begin_scope("job", f"{label} · run {run_id}", extra={"run_id": run_id, "job": self.name, "scope": self.scope}):
                 summary = await self.run_once(run)
             status = PARTIAL if summary.partial else SUCCEEDED
         except asyncio.CancelledError:

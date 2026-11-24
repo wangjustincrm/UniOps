@@ -429,3 +429,24 @@ async def test_with_read_off_nothing_is_listed(env):
     env.fake.files["/in/a.945"] = x12("945")
     r = await env.intake.run_pass(c)
     assert r.status == "read_off" and r.listed == 0 and env.fake.calls == []
+
+
+async def test_a_connection_run_s_audit_log_names_its_connection_and_run(env):
+    """User 2026-11-24: a background audit log says which job ("connection b-named · run 7"), the run id in its extra,
+    for every kind of connection (the job's audit_label hook, platform/jobs.py). Seen through a contributor, which
+    sees every scope, saved or not."""
+    from app.platform.auditing import AuditLogContributor, add_contributor
+    from app.platform.auditing.contributors import _contributors
+    seen = []
+
+    class Capture(AuditLogContributor):
+        def post_contribute(self, scope):
+            seen.append(scope.log)
+    add_contributor(Capture())
+    c = await env.add_conn(name="b-named", folder="/in-b")
+    try:
+        run = await make_cycle(env, c.id).tick(trigger="MANUAL", force=True)
+    finally:
+        _contributors[:] = [x for x in _contributors if not isinstance(x, Capture)]
+    [log] = [x for x in seen if x.kind == "job"]
+    assert log.name == f"connection b-named · run {run.id}" and log.extra["run_id"] == run.id and log.extra["job"] == "sales_connection"

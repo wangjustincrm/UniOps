@@ -85,6 +85,11 @@ class ConnectionJob(ScheduledJob):
         # Finance: each payment gateway's pull, by the connection's kind (read only)
         self.gateways = {"AUTHORIZE_NET": gateway_intake, "PAYPAL": paypal_intake}
 
+    async def audit_label(self, session) -> str:
+        """Every kind of connection the same way: "connection <its name>" (the run id follows, platform/jobs.py)."""
+        c = await session.get(Connection, self.conn_id)
+        return f"connection {c.name}" if c is not None else f"connection {self.conn_id}"
+
     async def due(self, session, now: datetime) -> bool:
         c = await session.get(Connection, self.conn_id)
         if c is None or not c.active or await SETTINGS.get(session, SCHEDULER_PAUSED):
@@ -162,6 +167,9 @@ class SystemJob(ScheduledJob):
     name = "sales_system"
     lock_key = SYSTEM_LOCK_KEY
     scope = SYSTEM
+
+    async def audit_label(self, session) -> str:  # noqa: ARG002
+        return "system job"
 
     def __init__(self, *, outbox_worker, outbound=None, shadow=None, invoicing=None, transfers=None, tasks=None,
                  **kw) -> None:

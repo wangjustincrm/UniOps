@@ -126,12 +126,14 @@ def should_save(info: AuditLogInfo, o: AuditingOptions | None = None) -> bool:
 
 @asynccontextmanager
 async def begin_scope(kind: str, name: str | None = None, *, correlation_id: str | None = None,
-                      request_scope: dict | None = None, store: Any = None) -> AsyncIterator[AuditScope]:
+                      request_scope: dict | None = None, store: Any = None,
+                      extra: dict[str, Any] | None = None) -> AsyncIterator[AuditScope]:
     """≈ IAuditingManager.BeginScope + SaveAsync in `finally`: always saved when the options say, also on failure."""
     from app.platform.auditing.contributors import contributors
     from app.platform.auditing.store import current_store
     cid = correlation_id or correlation.current() or correlation.new_id()
-    info = AuditLogInfo(kind=kind, name=name, correlation_id=cid, application_name=options(AuditingOptions).application_name)
+    info = AuditLogInfo(kind=kind, name=name, correlation_id=cid, application_name=options(AuditingOptions).application_name,
+                        extra=dict(extra or {}))
     scope = AuditScope(info, request_scope)
     token, ctoken = _current.set(scope), correlation.set_current(cid)
     start = time.perf_counter()
