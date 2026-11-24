@@ -33,7 +33,8 @@ from app.platform.services import ReadOnlyService
 from app.schemas.stock import CountCompareRow, StockCountLineRead, StockCountRead
 from app.platform.audit import audit_also
 from app.services import oplog
-from app.services.record_files import MAX_BYTES
+
+MAX_BYTES = 20 * 1024 * 1024  # Radiant's report file: its own limit, not a record's attachments'
 
 READ = "sales.read"
 ADJUST = "sales.inventory.adjust"

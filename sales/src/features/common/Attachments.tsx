@@ -12,8 +12,6 @@ const col = columnsOf<RecordDocument>()
 type Offer = NonNullable<ListCapabilities['attachments']>
 const megabytes = (o: Offer) => Math.floor(o.max_bytes / 1024 / 1024)
 const errorMessages: Record<string, string> = {
-  'attachment.type': 'This kind of file cannot be attached: PDF, pictures, mail, Office, CSV, text or EDI.',
-  'attachment.too_large': 'The file is too large.',
   'attachment.empty': 'The file is empty.',
   'attachment.already': 'This file is already attached here.',
   'auth.forbidden': 'You may not attach files here.',
@@ -35,7 +33,8 @@ function AttachDialog({ type, id, offer, open, onOpenChange }: { type: RecordTyp
     <FormDialog open={open} onOpenChange={onOpenChange} title="Attach a file"
       description={`A delivery note, a signed BOL, a photo, an email… up to ${megabytes(offer)} MB. It stays with this record; everyone who can see the record can open it.`}>
       <SchemaForm schema={attachSchema} fields={attachFields(offer)} defaultValues={{ file: null, note: '' }} submitLabel="Attach"
-        errorMessages={{ ...errorMessages, 'attachment.too_large': `The file is too large: at most ${megabytes(offer)} MB.` }} onCancel={() => onOpenChange(false)}
+        errorMessages={{ ...errorMessages, 'attachment.too_large': `The file is too large: at most ${megabytes(offer)} MB.`,
+          'attachment.type': `This kind of file cannot be attached: ${offer.extensions.join(', ')}.` }} onCancel={() => onOpenChange(false)}
         done="Attached" invalidates={[['attachments', type, id]]} after={() => onOpenChange(false)}
         onSubmit={(v) => attachFile(type, id, v.file as File, (v.note as string | null)?.trim() || null)} />
     </FormDialog>

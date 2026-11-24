@@ -30,7 +30,6 @@ MAX_BYTES = 20 * 1024 * 1024
 # What a person may attach: documents, pictures, mail, spreadsheets, text (no programs, no archives).
 EXTENSIONS = ("pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff", "txt", "csv", "xls", "xlsx", "doc", "docx", "ppt", "pptx",
               "msg", "eml", "edi", "json", "xml")
-ALLOWED = re.compile(rf"\.({'|'.join(EXTENSIONS)})$", re.I)
 
 
 @dataclass(frozen=True)
@@ -42,8 +41,12 @@ class RecordKind:
     read: str
     change: str             # the permission to attach / remove
     label: str
-    max_bytes: int = MAX_BYTES
+    max_bytes: int = MAX_BYTES                # what /meta says is what is enforced: the kind's own, here and in the route
     extensions: tuple[str, ...] = EXTENSIONS
+    kinds: str = "PDF, pictures, mail, Office, CSV, text, EDI"  # the extensions, in words (a refusal)
+
+    def accepts(self, name: str) -> bool:
+        return name.lower().endswith(tuple(f".{e}" for e in self.extensions))
 
 
 # Declared on the record's list (Resource.attachments); tests/test_list_resources.py holds the two together.
@@ -123,10 +126,10 @@ class Attachments(Service):
         name = re.sub(r"[\\/\x00-\x1f]+", "_", (name or "").strip())[:200] or "file"
         if not data:
             raise BusinessError("attachment.empty", "the file is empty")
-        if len(data) > MAX_BYTES:
-            raise BusinessError("attachment.too_large", f"at most {MAX_BYTES // (1024 * 1024)} MB")
-        if not ALLOWED.search(name):
-            raise BusinessError("attachment.type", "this kind of file cannot be attached (PDF, pictures, mail, Office, CSV, text, EDI)")
+        if len(data) > k.max_bytes:
+            raise BusinessError("attachment.too_large", f"at most {k.max_bytes // (1024 * 1024)} MB")
+        if not k.accepts(name):
+            raise BusinessError("attachment.type", f"this kind of file cannot be attached ({k.kinds})")
         note = (note or "").strip()[:500] or None
         sha = hashlib.sha256(data).hexdigest()
         doc = (await self.s.execute(select(Document).where(Document.sha256 == sha, Document.content.is_not(None)))).scalar_one_or_none()

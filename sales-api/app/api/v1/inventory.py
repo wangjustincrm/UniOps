@@ -10,9 +10,8 @@ from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
 from app.schemas.stock import (AdjustIn, CountCompareRow, CountUndoIn, CountUpdateIn, CountVersionIn, StockCountLineRead,
                                StockCountRead, StockMoveRead)
-from app.services.record_files import MAX_BYTES
 from app.services.stock import StockItemService, StockLotService, StockMoveService
-from app.services.stock_counts import StockCountService
+from app.services.stock_counts import MAX_BYTES, StockCountService
 
 UoW = Annotated[Any, Depends(get_uow)]
 

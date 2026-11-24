@@ -108,3 +108,49 @@ async def test_the_list_says_who_may_attach_what_and_an_order_s_activity_names_i
     async with p6.factory(READER) as u:
         assert (await OrderService(u).meta())["capabilities"]["attachments"]["allowed"] is False
         assert (await TransferService(u).meta())["capabilities"]["attachments"] == {**cap, "type": "transfer", "allowed": False}
+
+
+async def test_a_kind_s_own_limits_are_enforced_and_said(p6, monkeypatch):  # noqa: F811
+    """Review 2026-11-24: /meta said the kind's limit while the server kept the module's — one rule, one place."""
+    import dataclasses
+
+    from app.services import record_files as rf
+    o = await shipped_850(p6, "PO-A10")
+    small = dataclasses.replace(rf.RECORDS["order"], max_bytes=2 * 1024 * 1024, extensions=("pdf", "zip"), kinds="PDF, archives")
+    monkeypatch.setitem(rf.RECORDS, "order", small)
+    async with p6.factory(OP) as u:
+        for name, data, code, words in (("a.pdf", b"x" * (2 * 1024 * 1024 + 1), "attachment.too_large", "at most 2 MB"),
+                                        ("a.png", PDF, "attachment.type", "PDF, archives")):
+            with pytest.raises(BusinessError) as e:
+                await Attachments(u).attach("order", o.id, name=name, data=data, note=None)
+            assert e.value.code == code and words in e.value.message
+        a = await Attachments(u).attach("order", o.id, name="a.zip", data=b"x" * (2 * 1024 * 1024), note=None)  # this kind's own
+        assert a.size == 2 * 1024 * 1024
+
+
+async def test_the_route_reads_no_more_than_the_kind_s_limit(monkeypatch):
+    import dataclasses
+
+    from app.api.v1 import attachments as route
+    from app.services import record_files as rf
+    monkeypatch.setitem(rf.RECORDS, "order", dataclasses.replace(rf.RECORDS["order"], max_bytes=1000))
+    asked = []
+
+    class File:
+        filename = "a.pdf"
+
+        async def read(self, n):
+            asked.append(n)
+            return b"x"
+
+    async def attach(self, *a, **kw):
+        return None
+    monkeypatch.setattr(rf.Attachments, "attach", attach)
+
+    async def commit():
+        return None
+    uow = SimpleNamespace(commit=commit)
+    await route.attach(uow, "order", 1, File())
+    with pytest.raises(BusinessError) as e:
+        await route.attach(uow, "invoice", 1, File())
+    assert asked == [1001] and e.value.status_code == 404
