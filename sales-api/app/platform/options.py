@@ -61,6 +61,15 @@ class LoggingOptions:
     request_logger: str = "request"              # the module names it, e.g. "<module>.request"
 
 
+@dataclass(frozen=True)
+class AuthenticationOptions:
+    """Who may still use a valid token (≈ ABP: an inactive IdentityUser is refused at sign-in, and dynamic claims /
+    the security stamp end a live session). A principal's status is read through a short cache: a deactivation takes
+    effect within `principal_cache_seconds`, with no read of the users table on every request."""
+    principal_cache_seconds: float = 30.0
+    refuse_missing_principals: bool = True  # a token for a user who does not exist (deleted) is refused too
+
+
 _options: dict[type, Any] = {}
 
 
@@ -81,5 +90,5 @@ def reset() -> None:
     _options.clear()
 
 
-__all__ = ["AuditingOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "configure", "options",
+__all__ = ["AuditingOptions", "AuthenticationOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "configure", "options",
            "replace", "reset", "field"]

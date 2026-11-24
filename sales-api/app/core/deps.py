@@ -15,6 +15,7 @@ from app.db.session import AsyncSessionLocal, get_session
 from uniops_authz import has_permission
 
 from app.models.records import AuditRecord
+from app.platform.principal import ensure_active
 from app.platform.request_log import note_actor
 from app.services import security_log  # noqa: F401 — registers the refusal listener (≈ ABP SecurityLog)
 from app.platform.actors import Actor, actor_from_token
@@ -40,6 +41,12 @@ async def get_current_user_payload(
         raise credentials_exception
     if payload.get("type") != "access":
         raise credentials_exception
+    # A valid token is not enough: its user must still be active (platform/principal.py, ≈ ABP; user 2026-11-24).
+    try:
+        user_id = uuid.UUID(str(payload.get("sub")))
+    except ValueError:
+        raise credentials_exception
+    await ensure_active(user_id, payload)
     return payload
 
 

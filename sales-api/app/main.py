@@ -24,6 +24,13 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     from app.runtime import get_runtime
     from app.services.audit_logs import SqlAuditingStore
     use_store(SqlAuditingStore(AsyncSessionLocal))  # sales36: the audit logs are saved (own session, ≈ ABP requiresNew)
+    # A valid token of a user who is no longer active is refused (≈ ABP; user 2026-11-24): the users table, read
+    # only, behind a short cache; a refusal is a security event.
+    from app.platform.principal import CachedPrincipalStatus, on_inactive, use_principal_status
+    from app.services.principals import UsersTablePrincipalStatus
+    from app.services.security_log import inactive_listener
+    use_principal_status(CachedPrincipalStatus(UsersTablePrincipalStatus(AsyncSessionLocal)))
+    on_inactive(inactive_listener(AsyncSessionLocal))
     from app.services.security_log import log_startup
     await log_startup(settings, AsyncSessionLocal)  # the switches (values) and the secrets set (names only)
     runtime = get_runtime()

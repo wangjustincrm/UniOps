@@ -41,6 +41,7 @@ ENGINES = {
     "health.Health": "HealthService checks first",
     "security_log.SalesLogSecurityStore": "the refusal listener's store: it records a refusal the check already made",
     "audit_logs.SqlAuditingStore": "the audit log store: the auditing scope saves through it (no request calls it)",
+    "principals.UsersTablePrincipalStatus": "whether a token's user is still active: the token check itself (no permission to check yet)",
 }
 
 

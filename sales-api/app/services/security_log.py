@@ -34,10 +34,11 @@ class SalesLogSecurityStore:
         if factory is None:
             return
         async with factory() as s:
-            await oplog.write(s, "WARNING", STEP, f"refused: {e.user_name} ({e.role or 'no role'}) needs {e.permission}"
+            what = f"needs {e.permission}" if e.permission else f"{e.action.replace('_', ' ')} (token refused)"
+            await oplog.write(s, "WARNING", STEP, f"refused: {e.user_name} ({e.role or 'no role'}) {what}"
                               + (f" on {e.route}" if e.route else ""),
-                              context={"user_id": e.user_id, "user_name": e.user_name, "role": e.role,
-                                       "permission": e.permission, "route": e.route})
+                              context={"user_id": e.user_id, "user_name": e.user_name, "role": e.role, "action": e.action,
+                                       "permission": e.permission, "route": e.route, **e.detail})
             await s.commit()
 
 
@@ -50,6 +51,20 @@ async def log_refusal(uow: Any, key: str) -> None:
     await STORE.save(SecurityEvent(action="permission_denied", user_id=str(a.user_id) if a.user_id else None,
                                    user_name=a.name, role=a.role, permission=key, route=current_route(),
                                    correlation_id=correlation.current()), uow)
+
+
+def inactive_listener(session_factory):
+    """A token refused because its user is no longer active (platform/principal.py): a security event, in its own
+    session (the composition root registers it with the session factory)."""
+    class _Uow:  # the store reads the session factory off its unit of work
+        _session_factory = session_factory
+
+    async def listen(user_id: Any, state: str, payload: Any) -> None:
+        p = payload or {}
+        await STORE.save(SecurityEvent(action=f"user_{state}", user_id=str(user_id), user_name=p.get("full_name") or p.get("email") or str(user_id),
+                                       role=p.get("role"), route=current_route(), correlation_id=correlation.current(),
+                                       detail={"refused": "a valid token of a user who is not active"}), _Uow())
+    return listen
 
 
 def switches(settings: Any, environ: dict[str, str] | None = None) -> dict[str, Any]:
