@@ -10,7 +10,6 @@ from app.core.config import settings
 from app.core.deps import get_uow
 from app.models.config import NotificationRule
 from app.platform.crud_router import resource_router
-from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
 from app.schemas.health import DashboardRead, HealthRead, InboxTarget
@@ -22,7 +21,6 @@ from app.services.notifications import READ, NotificationRuleService, Notificati
 
 UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
-Spec = Annotated[QuerySpec, Depends(query_spec)]
 
 rules = resource_router(NotificationRuleService, uow=get_uow)
 
@@ -57,17 +55,7 @@ async def notification_gate(u: UoW):
     return await NotificationRuleService(u).gate()
 
 
-history = APIRouter(prefix="/notifications", tags=["notifications"])
-
-
-@history.get("/meta")
-async def history_meta(u: UoW):
-    return await NotificationService(u).meta()
-
-
-@history.get("")
-async def history_list(u: UoW, spec: Spec):
-    return await NotificationService(u).list(spec)
+history = resource_router(NotificationService, uow=get_uow)
 
 
 @ops.get("/operations/health", response_model=HealthRead)

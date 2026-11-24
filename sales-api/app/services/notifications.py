@@ -289,6 +289,8 @@ class NotificationService(ReadOnlyService[NotificationRecord, NotificationRead])
     repo_cls = NotificationRepository
     read_schema = NotificationRead
     read_permission = READ
+    resource = Resource(path="/notifications", tags=("notifications",), get=False, suggest=False,
+                        export=False)  # what each person was told: read here, never handed out in bulk
 
     async def _delivery(self, ids: list[int]) -> dict[int, tuple[str, str | None]]:
         if not ids:
