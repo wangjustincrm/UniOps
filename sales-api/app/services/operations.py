@@ -288,7 +288,9 @@ class DocumentActions(Service):
             raise BusinessError("document.not_outbound", "only a file we send can be sent again")
         if doc.kind == "940_EDI":
             order_id = (await self.s.execute(select(DocumentLink.entity_id).where(
-                DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order"))).scalar_one()
+                DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order"))).scalar_one_or_none()
+            if order_id is None:
+                raise BusinessError("document.no_order", "this file is linked to no order: it cannot be sent again from here")
             return Owner("order", order_id, "sales.order.operate")
         if doc.kind == "943_EDI":
             return Owner("transfer", int((doc.body_json or {})["transfer_id"]), "sales.transfer.manage")

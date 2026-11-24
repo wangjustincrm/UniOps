@@ -4,10 +4,11 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy as sa
 
 from app.domain.status import Fulfillment as F
 from app.models.config import Connection
-from app.models.documents import Document
+from app.models.documents import Document, DocumentLink
 from app.models.orders import Order
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import PermissionDenied
@@ -182,6 +183,19 @@ async def test_a_live_940_is_replaced_only_from_its_order(t):
     assert (await says(press(t, did, WHY))).code == "send940.live"
     assert (await act(t, did, WHY)).code == "send940.live" and await status(t.edi, o.id) == F.SENT_940
     assert len(await docs(t.edi)) == 1
+
+
+async def test_a_940_s_file_linked_to_no_order_is_said_on_both_ways(t):
+    """Some old files have no order link: a refusal, never an error of the server's."""
+    _, did = await refused_940(t)
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.delete(DocumentLink).where(DocumentLink.document_id == did))
+        await u.commit()
+    e = await says(press(t, did, WHY))
+    assert e.code == "document.no_order" and "linked to no order" in e.message
+    r = await act(t, did, WHY)
+    assert (r.status, r.reason) == ("skipped", e.message)
+    assert len(await docs(t.edi)) == 1 and len(await rows(t, SEND_940)) == 1  # nothing made, nothing queued
 
 
 async def test_a_943_that_went_is_not_sent_again(p7):  # noqa: F811
