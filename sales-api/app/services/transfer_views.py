@@ -50,7 +50,8 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     read_schema = TransferRead
     read_permission = READ
     resource = Resource(path="/transfers", detail=TransferDetail, attachments=RECORDS["transfer"], export_headers="labels",
-                        export_fields=(*TransferRepository.list_fields, "from_warehouse", "to_warehouse"))
+                        export_fields=("id", "transfer_number", "from_warehouse", "from_warehouse_id", "to_warehouse", "to_warehouse_id",
+                                       *(f for f in TransferRepository.list_fields if f not in ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id"))))
 
     @requires(READ)
     async def pdf(self, transfer_id: int) -> tuple[str, bytes]:

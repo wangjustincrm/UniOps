@@ -39,7 +39,7 @@ class InvoiceRepository(Repository[Invoice]):
     filterable = {"order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
                   "order_number": FilterRule(Invoice.order_number_sql, kind="number", cast=int),
                   "partner_name": FilterRule(Invoice.partner_name_sql, kind="text")}
-    labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner",
+    labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "po": "PO",
               "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "total": "Amount", "send_count": "Times sent"}
     enums = {"method": ("810_JSON", "EMAIL", "NONE")}
     default_sort = ("-invoice_date", "-id")
