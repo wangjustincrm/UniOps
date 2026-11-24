@@ -2,6 +2,8 @@
 (`in_row`) and the amounts of money (`money` + the row's currency field), declared per list, never guessed.
 The gate: for every list the Sales UI shows, what /meta offers as a column is in the read schema the
 list returns, and a filter-only key is never offered (it would be an empty column)."""
+import csv
+import io
 from decimal import Decimal
 
 import pytest
@@ -70,7 +72,7 @@ async def test_the_csv_follows_the_view_columns_labels_currency_and_refuses_what
     assert head == "Order ref,Subtotal,Currency,Connection,Tags"  # the amount's currency beside it, once
     assert row.split(",")[:4] == [row.split(",")[0], "90.00", "CAD", "store"] and row.split(",")[0].endswith("9301")
     assert "'=HYPERLINK" in row                                    # the formula guard stays
-    assert full.splitlines()[0].startswith("order_number,")
+    assert full.splitlines()[0].startswith("Internal no.,")  # the full export: labels too (user 2026-11-24)
 
 
 def test_amounts_are_totalled_unless_repeated_per_row():
@@ -132,5 +134,7 @@ async def test_the_visible_columns_csv_writes_times_in_toronto_and_dates_plainly
     _, received, ordered = row.split(",")
     want = o.first_received_at.replace(tzinfo=o.first_received_at.tzinfo or timezone.utc).astimezone(ZoneInfo("America/Toronto"))
     assert received == want.strftime("%Y-%m-%d %H:%M") and re.fullmatch(r"\d{4}-\d\d-\d\d", ordered)
-    assert "T" in full.splitlines()[1].split(",")[full.splitlines()[0].split(",").index("first_received_at")]  # All fields: as stored
+    rows = list(csv.reader(io.StringIO(full)))
+    assert rows[1][rows[0].index("Received (Toronto)")] == received  # All fields: as people read them too
+    assert len(set(rows[0])) == len(rows[0])                         # each label once
     assert isinstance(o.first_received_at, datetime)

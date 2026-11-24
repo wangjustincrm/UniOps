@@ -13,6 +13,7 @@ from app.platform.authorization import requires
 from app.platform.commands import ANY_VERSION, VersionArg, load_for_command
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog, print_docs
@@ -48,6 +49,7 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     repo_cls = TransferRepository
     read_schema = TransferRead
     read_permission = READ
+    resource = Resource(path="/transfers", detail=TransferDetail, export_headers="labels")
 
     @requires(READ)
     async def pdf(self, transfer_id: int) -> tuple[str, bytes]:

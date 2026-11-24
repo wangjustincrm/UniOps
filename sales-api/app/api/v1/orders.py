@@ -5,123 +5,108 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
-from app.platform.crud_router import page_body
-from app.platform.query import QuerySpec, query_spec
+from app.platform.crud_router import resource_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
     AmendOrderIn, CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead,
     ReleaseHoldIn, ResolveRowIn, ReviewResult, SettleIn, UnsettleIn,
 )
 from app.services.order_holds import OrderActions
-from app.platform.bulk_actions import action_router
-from app.services.order_payment import ORDER_ACTIONS, OrderPaymentService
+from app.services.order_payment import OrderPaymentService
 from app.services.order_views import ManualOrderService, OrderService
 
 UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
-Spec = Annotated[QuerySpec, Depends(query_spec)]
 Version = Annotated[int | None, Query()]
 
-router = APIRouter(prefix="/orders", tags=["orders"])
-# Record actions on one order or many (Mark settled…): before every /{id}/… route.
-router.include_router(action_router(ORDER_ACTIONS, get_uow))
+routes = APIRouter(prefix="/orders", tags=["orders"])
 
 
-@router.get("")
-async def list_orders(u: UoW, spec: Spec) -> dict:
-    return page_body(await OrderService(u).list(spec))
-
-
-@router.get("/eligibility-preview")
+@routes.get("/eligibility-preview")
 async def eligibility_preview(u: UoW, rt: Rt) -> list[dict]:
     return await OrderService(u).eligibility_preview(rt.outbound)
 
 
-@router.post("/{id}/amend")
+@routes.post("/{id}/amend")
 async def amend_order(u: UoW, rt: Rt, id: int, body: AmendOrderIn) -> dict:
     out = await OrderService(u).amend(id, body, rt.outbound)
     await u.commit()
     return out
 
 
-@router.post("/{id}/send-940")
+@routes.post("/{id}/send-940")
 async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
     out = await OrderService(u).send_940_now(id, rt.outbound, replace=replace)
     await u.commit()
     return out
 
 
-@router.get("/{id}/po.pdf")
+@routes.get("/{id}/po.pdf")
 async def po_pdf(u: UoW, id: int) -> Response:
     name, pdf = await OrderService(u).po_pdf(id)
     return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
 
 
-@router.get("/{id}/packet.zip")
+@routes.get("/{id}/packet.zip")
 async def packet(u: UoW, id: int) -> Response:
     name, data = await OrderService(u).packet(id)
     return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
-@router.get("/{id}/shipments/{shipment_id}/packing-list.pdf")
+@routes.get("/{id}/shipments/{shipment_id}/packing-list.pdf")
 async def packing_list(u: UoW, id: int, shipment_id: int) -> Response:
     name, pdf = await OrderService(u).packing_list(id, shipment_id)
     return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
 
 
-@router.post("/shipments/{shipment_id}/shopify-retry")
+@routes.post("/shipments/{shipment_id}/shopify-retry")
 async def retry_shopify(u: UoW, rt: Rt, shipment_id: int) -> dict:
     out = await OrderService(u).retry_shopify(shipment_id, rt.shipments)
     await u.commit()
     return out
 
 
-@router.post("/{order_id}/shopify-fulfil")
+@routes.post("/{order_id}/shopify-fulfil")
 async def fulfil_at_997(u: UoW, rt: Rt, order_id: int) -> dict:
     out = await OrderService(u).fulfil_at_997(order_id, rt.shipments)
     await u.commit()
     return out
 
 
-@router.post("/shipments/{shipment_id}/rows/{row_id}/resolve", response_model=OrderRead)
+@routes.post("/shipments/{shipment_id}/rows/{row_id}/resolve", response_model=OrderRead)
 async def resolve_945_row(u: UoW, rt: Rt, shipment_id: int, row_id: int, body: ResolveRowIn):
     o = await OrderActions(u, rt.tasks).resolve_row(shipment_id, row_id, body.order_line_id, body.reason)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.get("/meta")
-async def orders_meta(u: UoW) -> dict:
-    return await OrderService(u).meta()
-
-
-@router.post("/manual/preview", response_model=list[LinePreview])
+@routes.post("/manual/preview", response_model=list[LinePreview])
 async def manual_preview(u: UoW, lines: list[ManualLineIn]):
     return await ManualOrderService(u).preview(lines)  # reads only
 
 
-@router.post("/manual", response_model=OrderRead, status_code=201)
+@routes.post("/manual", response_model=OrderRead, status_code=201)
 async def manual_create(u: UoW, data: ManualOrderIn):
     o = await ManualOrderService(u).create(data)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.put("/manual/{id}", response_model=OrderRead)
+@routes.put("/manual/{id}", response_model=OrderRead)
 async def manual_update(u: UoW, id: int, data: ManualOrderIn, version: Version = None):
     o = await ManualOrderService(u).update(id, data, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.post("/manual/{id}/submit", response_model=OrderRead)
+@routes.post("/manual/{id}/submit", response_model=OrderRead)
 async def manual_submit(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).submit(id, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.post("/{id}/reorder", response_model=OrderRead)
+@routes.post("/{id}/reorder", response_model=OrderRead)
 async def reorder(u: UoW, id: int):
     """Reorder for this customer (user 2026-11-19): a Draft manual order copied from this one, no lines."""
     o = await ManualOrderService(u).reorder(id)
@@ -129,62 +114,60 @@ async def reorder(u: UoW, id: int):
     return await OrderService(u).get(o.id)
 
 
-@router.post("/manual/{id}/cancel", response_model=OrderRead)
+@routes.post("/manual/{id}/cancel", response_model=OrderRead)
 async def manual_cancel(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).cancel(id, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.post("/{id}/settle", response_model=OrderRead)
+@routes.post("/{id}/settle", response_model=OrderRead)
 async def settle_order(u: UoW, id: int, body: SettleIn, version: Version = None):
     o = await OrderPaymentService(u).settle(id, body, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.post("/{id}/unsettle", response_model=OrderRead)
+@routes.post("/{id}/unsettle", response_model=OrderRead)
 async def unsettle_order(u: UoW, id: int, body: UnsettleIn, version: Version = None):
     o = await OrderPaymentService(u).unsettle(id, body.reason, version)
     await u.commit()
     return await OrderService(u).get(o.id)
 
 
-@router.get("/{id}", response_model=OrderDetail)
-async def order_detail(u: UoW, id: int):
-    return await OrderService(u).detail(id)
-
-
-@router.put("/{id}/returned", response_model=OrderDetail)
+@routes.put("/{id}/returned", response_model=OrderDetail)
 async def set_returned(u: UoW, id: int, body: ReturnedIn):
     out = await OrderService(u).set_returned(id, body)
     await u.commit()
     return out
 
 
-@router.put("/{id}/invoice-prices", response_model=OrderDetail)
+@routes.put("/{id}/invoice-prices", response_model=OrderDetail)
 async def set_invoice_prices(u: UoW, id: int, body: InvoicePricesIn):
     out = await OrderService(u).set_invoice_prices(id, body)
     await u.commit()
     return out
 
 
-@router.post("/{id}/resolve-review", response_model=ReviewResult)
+@routes.post("/{id}/resolve-review", response_model=ReviewResult)
 async def resolve_review(u: UoW, rt: Rt, id: int):
     out = await OrderService(u).resolve_review(id, rt.intake.tasks, rt.container.shopify)
     await u.commit()
     return out
 
 
-@router.post("/{id}/cancel", response_model=OrderRead)
+@routes.post("/{id}/cancel", response_model=OrderRead)
 async def cancel_order(u: UoW, rt: Rt, id: int, body: CancelOrderIn, version: Version = None):
     o = await OrderActions(u, rt.tasks).cancel(id, body.reason, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-@router.post("/{id}/release-hold", response_model=OrderRead)
+@routes.post("/{id}/release-hold", response_model=OrderRead)
 async def release_hold(u: UoW, rt: Rt, id: int, body: ReleaseHoldIn, version: Version = None):
     o = await OrderActions(u, rt.tasks).release_hold(id, body.to, body.reason, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
+
+
+router = resource_router(OrderService, uow=get_uow, custom=routes)

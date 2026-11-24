@@ -40,6 +40,7 @@ from app.domain.order_status import (
 )
 from app.domain.order_payment import PAYMENT_STATUSES
 from app.platform.clock import clock
+from app.services.order_columns import ORDER_COLUMNS
 from app.services.record_files import link_audit
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
@@ -64,6 +65,7 @@ from app.platform.commands import check_version
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.orders import (
@@ -299,10 +301,18 @@ def shadow_figures(lines: list[OrderLine], packed: dict[int, list[PackingRead]])
     return out
 
 
+def _order_actions():
+    from app.services.order_payment import ORDER_ACTIONS  # it imports this module's repository
+    return ORDER_ACTIONS
+
+
 class OrderService(ReadOnlyService[Order, OrderRead]):
     repo_cls = OrderRepository
     read_schema = OrderRead
     read_permission = READ
+    # Everyone who sees Orders may export them (user 2026-11-24); the full export is the list's fields and three more.
+    resource = Resource(path="/orders", detail=OrderDetail, actions=lambda: _order_actions(), computed=ORDER_COLUMNS,
+                        export_headers="labels", export_fields=(*OrderRepository.list_fields, "partner_name", "payment_status", "ship_to_place"))
 
     # Whether automatic runs happen: what "by itself" and "the next run" in an order's next step depend on.
     # Read once per request, before the rows; never read (a path that forgot): no step, never a false promise.
