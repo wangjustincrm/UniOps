@@ -12,6 +12,8 @@ ship-to, dates, carrier, tracking and rows (item, lot, quantities). Then, in one
 1. An order the report has and Sales does not:
    - a retailer's (its address is a DC Sales knows, and it has a PO) → EDI_850, the partner of that DC;
    - the others (a reship "9451a", a name, "C0031") → MANUAL, partner Manual; a reship names its Shopify order.
+   A retailer's order carries the unit price the report names for it (user 2026-11-24: NC's monthly price where it
+   is sure), noted as estimated; a line that did not ship, and every other order, has none.
    Internal numbers from FIRST, in shipping order: below Zoho's 1,000,000 and above any Shopify number.
    A 945 that is here with no order is linked to it (its rows, its stock moves, its task); else a
    shipment is made from the report, with the order's own rows kept as its file.
@@ -29,6 +31,7 @@ import json
 import re
 import sys
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -57,8 +60,10 @@ from app.services.stock import ship_moment
 FIRST, LAST = 800_001, 899_999
 TORONTO = ZoneInfo("America/Toronto")
 MANUAL = "Manual"
-NOTE = "From Radiant's shipment report (2026-11-24). No prices: the report carries none."
+NOTE_ORDER = "From Radiant's shipment report (2026-11-24)."
+NOTE = f"{NOTE_ORDER} No prices: the report carries none."
 SOURCE = "Radiant shipment report"
+ESTIMATED = "Estimated price from NC monthly sales, not an invoice."
 RESHIP = re.compile(r"#?(\d{4})([A-Za-z])")
 
 
@@ -173,6 +178,11 @@ class Import:
             if m := RESHIP.fullmatch(key):
                 parent = self.shopify[m[1]].id
                 notes.append(f"A later shipment of SHP-{m[1]}.")
+        prices = {k: Decimal(v) for k, v in (o.get("prices") or {}).items()}  # per EA, only for the items that shipped
+        if prices and not retail:
+            raise SystemExit(f"{key}: a price on an order that is not a retailer's")
+        if prices:
+            notes = [NOTE_ORDER, f"Radiant order {key}.", ESTIMATED]
         order = Order(
             order_number=number, partner_code=partner.code, source_type=kind, source_order_id=source_id, source_order_number=source_no,
             source_reference=ref, parent_order_id=parent, order_date=moment(o["ordered_at"]).astimezone(TORONTO).date(),
@@ -186,10 +196,11 @@ class Import:
         lines: dict[str, OrderLine] = {}
         for i, (item, q) in enumerate(by_item(o["rows"]).items(), start=1):
             lines[item] = OrderLine(order_id=order.id, line_no=i, item_code=item, source={"item_code": item}, ordered_qty=q["ordered"],
-                                    order_unit="EA", factor_ea=1, qty_ea=q["ordered"], shipped_ea=q["shipped"])
+                                    order_unit="EA", factor_ea=1, qty_ea=q["ordered"], shipped_ea=q["shipped"], unit_price=prices.get(item))
             s.add(lines[item])
         await s.flush()
         self.n["made: retailer" if retail else "made: reship" if parent else "made: manual"] += 1
+        self.n["made: with an estimated price"] += bool(prices)
         self.n["made EA"] += sum(r["shipped"] for r in o["rows"])
         here = self.loose.get(key)
         if here is not None:
