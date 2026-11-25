@@ -32,7 +32,7 @@ from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
-from app.platform.resource import Resource
+from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.operations import DocumentRead, EntityRef, LogRead, RunRead
@@ -109,7 +109,8 @@ class DocumentService(ReadOnlyService[Document, DocumentRead]):
     repo_cls = DocumentRepository
     read_schema = DocumentRead
     read_permission = READ
-    resource = Resource(path="/documents", tags=("documents",), actions=lambda: _document_actions(), export=False)  # partner files' names and errors: not handed out in bulk until the user decides (2026-11-24)
+    resource = Resource(path="/documents", tags=("documents",), actions=lambda: _document_actions(),
+                        files=(RecordFile("raw", "raw", media_type="application/octet-stream", inline=False),), export=False)  # partner files' names and errors: not handed out in bulk until the user decides (2026-11-24)
 
     async def enrich(self, rows: list[DocumentRead], docs) -> None:
         """Each row's orders (the first MAX_REFS and the count) and transfers, two queries for the page."""

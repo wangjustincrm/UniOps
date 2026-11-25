@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.core.deps import get_uow
+from app.platform.files import read_upload
 from app.schemas.records import AttachmentRead, RemoveAttachmentIn
 from app.services.record_files import Attachments, kind_of
 
@@ -21,7 +22,7 @@ async def list_attachments(u: UoW, entity_type: str, entity_id: int):
 @router.post("/{entity_type}/{entity_id}", response_model=AttachmentRead, status_code=201)
 async def attach(u: UoW, entity_type: str, entity_id: int, file: Annotated[UploadFile, File()],
                  note: Annotated[str | None, Form()] = None):
-    data = await file.read(kind_of(entity_type).max_bytes + 1)  # one byte past the kind's own limit: enough to refuse it
+    data = await read_upload(file, kind_of(entity_type).max_bytes)
     out = await Attachments(u).attach(entity_type, entity_id, name=file.filename or "file", data=data, note=note)
     await u.commit()
     return out

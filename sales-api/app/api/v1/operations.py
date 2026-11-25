@@ -2,14 +2,13 @@
 checked by the services; each write endpoint commits once."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends
 
 from pydantic import ConfigDict, BaseModel, Field
 
 from app.core.config import settings
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
-from app.platform.files import FileResult
 from app.platform.settings_router import settings_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.connections import (
@@ -55,12 +54,6 @@ async def connection_clear_latch(u: UoW, rt: Rt, id: int):
 
 
 documents = resource_router(DocumentService, uow=get_uow, runtime=get_runtime)
-
-
-@documents.get("/{id}/raw")
-async def document_raw(u: UoW, id: int) -> Response:
-    name, content = await DocumentService(u).raw(id)
-    return FileResult(content, name, media_type="application/octet-stream")
 
 
 runs = resource_router(RunService, uow=get_uow)

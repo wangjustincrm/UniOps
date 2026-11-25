@@ -1,10 +1,11 @@
-"""A file answered over HTTP, one way (user 2026-11-24): its name is data (a customer's PO number, a partner's file) and
+"""A file over HTTP, one way: answered (FileResult) or sent by a person (read_upload). Answered (user 2026-11-24): its name is data (a customer's PO number, a partner's file) and
 may hold any character, while a header holds latin-1 only — a name outside it answered 500. RFC 6266 / 5987: an ASCII
 `filename` for every reader, and `filename*` (UTF-8) beside it when the name needs it."""
 from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import Response
@@ -21,6 +22,11 @@ def content_disposition(name: str, *, inline: bool = False) -> str:
     ascii_name = re.sub(r'[^\x20-\x7e]+|["%]+', "_", plain)
     head = f'{"inline" if inline else "attachment"}; filename="{ascii_name}"'
     return head if ascii_name == clean else f"{head}; filename*=UTF-8''{quote(clean, safe='')}"
+
+
+async def read_upload(file: Any, limit: int) -> bytes:
+    """What a person sent, at most one byte past the limit: enough for the service to refuse it, never the whole of a huge file."""
+    return await file.read(limit + 1)
 
 
 class FileResult(Response):

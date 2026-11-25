@@ -18,7 +18,7 @@ from app.platform.authorization import authorize, requires
 from app.platform.commands import ANY_VERSION
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
-from app.platform.resource import Resource
+from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.invoices import InvoiceDetail, InvoiceLineRead, InvoiceRead
@@ -77,7 +77,8 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     repo_cls = InvoiceRepository
     read_schema = InvoiceRead
     read_permission = READ
-    resource = Resource(path="/invoices", detail=InvoiceDetail, timeline=TIMELINES["invoice"], actions=lambda: _actions(), export_headers="labels",
+    resource = Resource(path="/invoices", detail=InvoiceDetail, timeline=TIMELINES["invoice"], actions=lambda: _actions(),
+                        files=(RecordFile("invoice.pdf", "pdf"),), export_headers="labels",
                         export_fields=(*InvoiceRepository.list_fields, "order_ref", "order_number", "partner_name", "po", "status"))
 
     @requires(READ)

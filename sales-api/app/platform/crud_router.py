@@ -3,7 +3,7 @@ declares (platform/resource.py).
 
     router = resource_router(PartnerService, uow=get_uow)
 
-list · meta · suggest · export.csv · actions · history · get, and for a CrudService create · update (`?version=`) · deactivate ·
+list · meta · suggest · export.csv · actions · history · files · get, and for a CrudService create · update (`?version=`) · deactivate ·
 import.csv (`?dry_run=`). Deactivate is mounted only for a Deactivatable model, and the CSV import only for a service
 that declares its CSV columns and key: a route that can only fail is never offered. The router enforces no permission
 of its own: the service checks the keys it declares (app/platform/authorization.py), so the same rule holds for any
@@ -21,8 +21,9 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from app.platform.audit import AuditEntryRead
 from app.platform.bulk_actions import action_router
 from app.platform.entities import Deactivatable
-from app.platform.files import FileResult
+from app.platform.files import FileResult, read_upload
 from app.platform.query import Page, QuerySpec, export_columns, query_spec
+from app.platform.resource import RecordFile
 from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
 
 
@@ -81,6 +82,9 @@ def resource_router(
         async def history(u: UoW, id: int):
             return await service_cls(u).history(id)
 
+    for f in res.files:
+        _file_route(r, service_cls, f, UoW, Spec)
+
     if custom is not None:
         if custom.prefix != r.prefix:
             raise ValueError(f"the custom routes of {res.path} are under {custom.prefix!r}")
@@ -129,12 +133,26 @@ def _export_route(r: APIRouter, service_cls: type[ReadOnlyService], UoW: Any, Sp
         return FileResult(data, service_cls.resolved().file_name, media_type="text/csv")
 
 
+def _file_route(r: APIRouter, service_cls: type[ReadOnlyService], f: RecordFile, UoW: Any, Spec: Any) -> None:
+    def answer(made: tuple[str, bytes]) -> Response:
+        return FileResult(made[1], made[0], media_type=f.media_type, inline=f.inline)
+
+    if f.over == "list":
+        @r.get(f"/{f.path}")
+        async def list_file(u: UoW, spec: Spec) -> Response:
+            return answer(await getattr(service_cls(u), f.method)(spec))
+    else:
+        @r.get(f"/{{id}}/{f.path}")
+        async def record_file(u: UoW, id: int) -> Response:
+            return answer(await getattr(service_cls(u), f.method)(id))
+
+
 def _import_route(r: APIRouter, service_cls: type[CrudService], UoW: Any) -> None:
     @r.post("/import.csv")
     async def import_(u: UoW, file: Annotated[UploadFile, File()], dry_run: bool = True) -> dict:
         # Read one byte past the limit: the service refuses an oversized file
         # without the whole upload ever being held in memory.
-        report = await service_cls(u).import_csv(await file.read(MAX_IMPORT_BYTES + 1), dry_run=dry_run)
+        report = await service_cls(u).import_csv(await read_upload(file, MAX_IMPORT_BYTES), dry_run=dry_run)
         if report.ok and not dry_run:
             await u.commit()
         body = dataclasses.asdict(report)

@@ -67,7 +67,7 @@ async def test_meta_says_what_the_list_offers_and_whether_this_person_may(uow_fa
     svc = type("Kept", (WidgetService,), {"resource": Resource(export_permission="pt.config", computed={"shout": Computed("Shout", lambda r: r.name.upper())})})
     async with uow_factory(RW) as u:
         m = await svc(u).meta()
-        assert m["capabilities"] == {"export": {"allowed": True, "computed": [{"id": "shout", "label": "Shout"}]}, "history": False, "attachments": None, "suggest": False, "actions": []}
+        assert m["capabilities"] == {"export": {"allowed": True, "computed": [{"id": "shout", "label": "Shout"}]}, "history": False, "attachments": None, "files": [], "suggest": False, "actions": []}
     async with uow_factory(actor_with("pt.read")) as u:
         assert (await svc(u).meta())["capabilities"]["export"]["allowed"] is False
         with pytest.raises(PermissionDenied):

@@ -34,6 +34,17 @@ class Computed:
 
 
 @dataclass(frozen=True)
+class RecordFile:
+    """A file a record (or the list as it is filtered) gives: GET /{id}/<path>, or GET /<path> with the list's query. The
+    service's method answers (name, bytes) and checks its own permission."""
+    path: str                 # "invoice.pdf"; a list's: two segments, never taken for an id
+    method: str               # (id) or, over the list, (spec) → (name, bytes)
+    media_type: str = "application/pdf"
+    inline: bool = True       # shown by the browser; False: downloaded
+    over: Literal["record", "list"] = "record"
+
+
+@dataclass(frozen=True)
 class Resource:
     """One list resource. A field left out is the base's, else the platform's (ResourceOptions)."""
     path: str = INHERIT                      # "/lots"; without one the service has no routes
@@ -49,6 +60,7 @@ class Resource:
     history: bool = INHERIT                  # GET /{id}/audit: what changed, when, by whom and why
     timeline: Any = INHERIT                  # its detail carries a `timeline` (its Activity): what it is read from
     attachments: Any = INHERIT               # a person's files on a record: its kind (entity_type, change, max_bytes, extensions)
+    files: tuple[RecordFile, ...] = INHERIT  # what a record, or the list, gives as a file
     actions: Any = INHERIT                   # an ActionRegistry, or a function that gives it (import order)
 
 
@@ -67,6 +79,7 @@ class ResolvedResource:
     history: bool = False
     timeline: Any = None
     attachments: Any = None
+    files: tuple[RecordFile, ...] = ()
     actions: Any = None
 
     @property

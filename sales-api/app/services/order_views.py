@@ -64,7 +64,7 @@ from app.platform.commands import VersionArg, check_version, touch
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
-from app.platform.resource import Resource
+from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.orders import (
@@ -310,7 +310,8 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     read_permission = READ
     # Everyone who sees Orders may export them (user 2026-11-24); the full export is the list's fields and whatever else
     # the page or a view of it shows (tests/test_list_resources.py: never less than the page).
-    resource = Resource(path="/orders", detail=OrderDetail, timeline=TIMELINES["order"], attachments=RECORDS["order"], actions=lambda: _order_actions(), computed=ORDER_COLUMNS,
+    resource = Resource(path="/orders", detail=OrderDetail, timeline=TIMELINES["order"], attachments=RECORDS["order"], actions=lambda: _order_actions(),
+                        files=(RecordFile("po.pdf", "po_pdf"), RecordFile("packet.zip", "packet", media_type="application/zip", inline=False)), computed=ORDER_COLUMNS,
                         export_headers="labels", export_fields=(*OrderRepository.list_fields, "partner_name", "payment_status", "ship_to_place", "order_status",
                                        "status_detail", "shopify", "total_amount", "returned_ea", "ordered_ea", "parent_reference",
                                        "delivery_due_date", "received_month"))

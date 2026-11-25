@@ -34,18 +34,6 @@ async def amend_order(u: UoW, rt: Rt, id: int, body: AmendOrderIn, version: Vers
     return out
 
 
-@routes.get("/{id}/po.pdf")
-async def po_pdf(u: UoW, id: int) -> Response:
-    name, pdf = await OrderService(u).po_pdf(id)
-    return FileResult(pdf, name, media_type="application/pdf", inline=True)
-
-
-@routes.get("/{id}/packet.zip")
-async def packet(u: UoW, id: int) -> Response:
-    name, data = await OrderService(u).packet(id)
-    return FileResult(data, name, media_type="application/zip")
-
-
 @routes.get("/{id}/shipments/{shipment_id}/packing-list.pdf")
 async def packing_list(u: UoW, id: int, shipment_id: int) -> Response:
     name, pdf = await OrderService(u).packing_list(id, shipment_id)

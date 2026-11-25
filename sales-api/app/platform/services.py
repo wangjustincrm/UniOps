@@ -279,6 +279,7 @@ class ReadOnlyService(Service, Generic[T, R]):
             "attachments": {"type": kind.entity_type, "allowed": await may(self.uow, kind.change), "max_bytes": kind.max_bytes,
                             "extensions": list(kind.extensions)} if (kind := res.attachments) is not None else None,
             "suggest": res.suggest and bool(self.repo_cls.suggestable),
+            "files": [{"path": f.path, "media_type": f.media_type, "over": f.over} for f in res.files],
             "actions": [{"id": a.id, "allowed": await may(self.uow, a.permission), "label": a.label, "bulk": a.bulk,
                          "reason": a.reason, "confirm": a.confirm, "sends": a.sends} for a in registry.actions.values()]
             if registry is not None else []}

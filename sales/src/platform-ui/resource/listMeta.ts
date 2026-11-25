@@ -56,6 +56,8 @@ export interface ListCapabilities {
   history?: boolean
   /** A person's files on a record; null: none. `allowed`: this person may attach and remove. */
   attachments?: { type: string; allowed: boolean; max_bytes: number; extensions: string[] } | null
+  /** What a record (or the list as it is filtered) gives as a file. */
+  files?: { path: string; media_type: string; over: 'record' | 'list' }[]
   actions: { id: string; allowed: boolean; label?: string; bulk?: boolean; reason?: string; confirm?: string | null; sends?: string | null }[]
 }
 

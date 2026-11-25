@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.files import read_upload
 from app.schemas.stock import (AdjustIn, CountCompareRow, CountUpdateIn, StockCountLineRead,
                                StockCountRead, StockMoveRead)
 from app.services.stock import StockItemService, StockLotService, StockMoveService
@@ -30,7 +31,7 @@ async def adjust(u: UoW, body: AdjustIn):
 @routes.post("/counts", response_model=StockCountRead, status_code=201)
 async def upload_count(u: UoW, file: Annotated[UploadFile, File()], counted_at: Annotated[datetime, Form()],
                        note: Annotated[str | None, Form()] = None):
-    data = await file.read(MAX_BYTES + 1)
+    data = await read_upload(file, MAX_BYTES)
     out = await StockCountService(u).create(name=file.filename or "inventory", data=data, counted_at=counted_at, note=note)
     await u.commit()
     return out

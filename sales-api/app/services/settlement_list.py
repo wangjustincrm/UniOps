@@ -6,7 +6,7 @@ from app.models.settlement_list import GATEWAY_NAMES, ISSUES, SettlementRow
 from app.platform.authorization import requires
 from app.platform.query import QuerySpec
 from app.platform.repository import Repository
-from app.platform.resource import Resource
+from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.settlement_list import SettlementRowRead
@@ -72,7 +72,8 @@ class SettlementRowService(ReadOnlyService[SettlementRow, SettlementRowRead]):
     repo_cls = SettlementRowRepository
     read_schema = SettlementRowRead
     read_permission = READ
-    resource = Resource(path="/settlements", tags=("settlements",))
+    resource = Resource(path="/settlements", tags=("settlements",),
+                        files=(RecordFile("report/settlements.pdf", "report_pdf", over="list"), RecordFile("statement.pdf", "statement_pdf")))
 
     @requires(READ)
     async def statement_pdf(self, id: int) -> tuple[str, bytes]:

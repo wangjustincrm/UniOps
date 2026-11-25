@@ -4,11 +4,10 @@ hold are record actions (app/services/transfer_actions.py). Permissions are
 checked by the service; each write commits once."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
-from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.transfers import AmendIn, ResolveIn, TransferDetail, TransferIn
 from app.services.transfer_views import TransferService
@@ -25,12 +24,6 @@ async def create_transfer(u: UoW, rt: Rt, body: TransferIn):
     out = await TransferService(u).create(rt.transfers, body)
     await u.commit()
     return out
-
-
-@routes.get("/{id}/print.pdf")
-async def transfer_pdf(u: UoW, id: int) -> Response:
-    name, pdf = await TransferService(u).pdf(id)
-    return FileResult(pdf, name, media_type="application/pdf", inline=True)
 
 
 @routes.put("/{id}", response_model=TransferDetail)

@@ -192,3 +192,54 @@ def test_no_single_route_comes_back_beside_its_record_action():
     assert not paths & {f"/api/v1{p}" for p in GONE}
     for lst in ("orders", "invoices", "transfers", "documents", "inventory/counts"):
         assert f"/api/v1/{lst}/actions/{{action_id}}" in paths  # and the one that stands in their place is there
+
+
+# ── files a record (or the list) gives (stage 4, Resource.files) ─────────────
+BY_HAND = {"/orders/{id}/shipments/{shipment_id}/packing-list.pdf"}  # two ids: a shipment of its order
+
+
+def file_path(svc, f) -> str:
+    return svc.resolved().path + ("" if f.over == "list" else "/{id}") + "/" + f.path
+
+
+def test_the_files_we_know_are_declared():
+    assert {file_path(c, f): (f.media_type, f.inline) for c in LISTS for f in c.resolved().files} == {
+        "/orders/{id}/po.pdf": ("application/pdf", True), "/orders/{id}/packet.zip": ("application/zip", False),
+        "/invoices/{id}/invoice.pdf": ("application/pdf", True), "/transfers/{id}/print.pdf": ("application/pdf", True),
+        "/settlements/report/settlements.pdf": ("application/pdf", True), "/settlements/{id}/statement.pdf": ("application/pdf", True),
+        "/documents/{id}/raw": ("application/octet-stream", False)}
+
+
+def test_a_declared_file_is_mounted_by_the_router_and_no_file_is_by_hand():
+    from app.platform.files import FileResult  # noqa: F401 — what they answer with
+    by_router = {r.path.removeprefix(PREFIX) for r in app.routes if getattr(r, "endpoint", None) and r.endpoint.__module__ == "app.platform.crud_router"
+                 and r.endpoint.__name__ in ("record_file", "list_file")}
+    assert by_router == {file_path(c, f) for c in LISTS for f in c.resolved().files}
+    files = {p for m, p in ROUTES if m == "GET" and re.search(r"\.(pdf|zip)$|/raw$", p)}
+    assert files - by_router == BY_HAND
+
+
+@pytest.mark.parametrize(("svc", "f"), [(c, f) for c in LISTS for f in c.resolved().files], ids=lambda x: getattr(x, "path", getattr(x, "__name__", "")))
+def test_a_declared_file_s_method_is_there_and_checks_the_permission_first(svc, f):
+    method = getattr(svc, f.method)
+    assert getattr(method, "__requires__", None) == (svc.read_permission, False), "its own @requires: the router checks nothing"
+
+
+def test_a_list_s_file_is_never_taken_for_an_id():
+    assert all("/" in f.path for c in LISTS for f in c.resolved().files if f.over == "list")
+
+
+def test_what_a_person_sends_is_read_bounded_in_one_place():
+    """platform/files.read_upload: at most a byte past the limit, never the whole of a huge file."""
+    from pathlib import Path
+    root = Path(app_dir())
+    hand = [str(p.relative_to(root)) for d in ("api", "platform") for p in (root / d).rglob("*.py")
+            if re.search(r"await \w+\.read\((?!\))", p.read_text()) and p.name != "files.py"]
+    assert hand == []
+    uses = sorted(str(p.relative_to(root)) for p in root.rglob("*.py") if re.search(r"await read_upload\(", p.read_text()))
+    assert uses == ["api/v1/attachments.py", "api/v1/inventory.py", "platform/crud_router.py"]
+
+
+def app_dir() -> str:
+    import app as package
+    return package.__path__[0]
