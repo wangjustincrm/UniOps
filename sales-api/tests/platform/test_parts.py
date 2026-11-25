@@ -15,7 +15,9 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform import parts
 from app.platform.bulk_actions import Action, ActionIn, ActionRegistry, run_action
+from app.platform.auditing import begin_scope
 from app.platform.clock import ClockOptions, FixedClock
+from app.platform.commands import lock
 from app.platform.entities import Audited, Entity, Versioned
 from app.platform.errors import install_error_handlers
 from app.platform.options import configure, restore, snapshot
@@ -317,10 +319,105 @@ async def test_the_tests_check_refuses_a_part_written_before_its_root_s_lock(uni
     with pytest.raises(root_locks.NotLocked):  # the next transaction holds nothing of the last
         await write(get_lock, then=True)
 
+    async def same_value(s):
+        b = await s.get(Box, id)
+        b.note = b.note  # in dirty, and no UPDATE
+        b.note, b.code = "x", "x"
+        b.note, b.code = "its own change, flushed", "B1"
+        await s.flush()
+    with pytest.raises(root_locks.NotLocked):
+        await write(same_value)
+    assert len(root_locks.violations) == 5
+    root_locks.violations.clear()
+
+
+async def test_a_refusal_a_job_swallows_still_fails_its_test(unit, uow_factory):
+    from app.platform.pipeline import isolated
+    id, [pid] = await box(unit)
+
+    async def job(u):
+        (await u.session.get(Piece, pid)).n = 9
+
+    async def log(outcome):
+        pass
+    out = await isolated("a job", job, uow_factory=uow_factory, log=log)
+    assert out.ok is False and root_locks.violations == [f"Box ({id},)"]  # the fixture would fail the test here
+    root_locks.violations.clear()
+
+
+def test_every_test_ends_with_no_violation(request):
+    """The fixture is on for every test, and fails one that leaves a violation."""
+    name = "_parts_written_under_their_root_s_lock"
+    assert name in request.fixturenames
+    [d] = request._fixturemanager.getfixturedefs(name, request.node)
+    run = d.func()
+    next(run)
+    root_locks.violations.append("Box (1,)")
+    with pytest.raises(AssertionError):
+        next(run)
+    root_locks.violations.clear()
+
+
+async def test_a_stale_record_in_an_action_is_kept_in_the_log(uow_factory, person, caplog):
+    async with uow_factory(person) as u:
+        w = Widget(code="W2", name="one", version=1)
+        u.session.add(w)
+        await u.session.flush()
+        id = w.id
+        await u.commit()
+
+    async def run(uow, w, data, ctx=None):  # noqa: ARG001
+        raise StaleDataError("UPDATE statement on table 'pt_x' expected to update 1 row(s); 0 were matched.")
+    async with uow_factory(person) as u:
+        await run_action(u, ActionRegistry(WidgetRepository, [Action("x", label="X", permission="pt.operate", run=run)]), "x", ActionIn(ids={id: 1}))
+    assert any("pt_x" in r.getMessage() and r.exc_info and r.exc_info[0] is StaleDataError for r in caplog.records)
+
+
+# ── locked and read again ────────────────────────────────────────────────────
+
+async def test_lock_reads_again_what_another_changed(unit):
+    id, _ = await box(unit)
+    async with unit() as u:
+        b = await u.session.get(Box, id)
+        async with unit() as w:
+            (await locked(w, id)).note = "theirs"
+            await w.commit()
+        assert b.note is None and await lock(u.session, Box, id) is b and (b.note, b.version) == ("theirs", 2)
+
+
+@pytest.mark.parametrize("pending", ["changed", "deleted"])
+async def test_lock_refuses_a_row_with_changes_not_yet_written(unit, pending):
+    id, _ = await box(unit, 0)
+    async with unit() as u:
+        b = await u.session.get(Box, id)
+        if pending == "changed":
+            b.note = "typed"
+        else:
+            await u.session.delete(b)
+        with pytest.raises(RuntimeError, match=f"Box {id} has changes not yet written"):
+            await lock(u.session, Box, id)
+        assert b.note == ("typed" if pending == "changed" else None)  # nothing lost
+        if pending == "changed":
+            b.note = None  # back to what it was: nothing pending
+            assert await lock(u.session, Box, id) is b
+            b.note = "after its lock"
+            await u.session.flush()
+            assert (await lock(u.session, Box, id)).note == "after its lock"  # written: no longer pending
+
+
+async def test_another_row_s_pending_changes_do_not_matter(unit):
+    id, [pid] = await box(unit)
+    async with unit() as u:
+        (await u.session.get(Piece, pid)).n = 3
+        await lock(u.session, Box, id)
+        await u.session.commit()
+    async with unit() as u:
+        assert (await u.session.get(Piece, pid)).n == 3
+
 
 # ── what a person is told ────────────────────────────────────────────────────
 
-async def test_a_stale_record_anywhere_in_a_request_is_409_and_keeps_nothing(unit, uow_factory, person, anyhow):
+async def test_a_stale_record_anywhere_in_a_request_is_409_and_keeps_nothing(unit, uow_factory, person, anyhow, caplog):
     id, [pid] = await box(unit)
     app = FastAPI()
     install_error_handlers(app)
@@ -344,7 +441,14 @@ async def test_a_stale_record_anywhere_in_a_request_is_409_and_keeps_nothing(uni
     app.include_router(r)
     async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://t") as c:
         for flush in ("true", "false"):  # in the endpoint, and at the commit
-            a = await c.post("/w", params={"flush": flush})
+            caplog.clear()
+            async with begin_scope("request", "test") as scope:
+                a = await c.post("/w", params={"flush": flush})
+            # what it was is kept: the table and the rows, in the log with its stack and in the request's record
+            [kept] = scope.log.exceptions if isinstance(scope.log.exceptions, list) else [scope.log.exceptions]
+            assert "pt_boxes" in str(kept) and "0 were matched" in str(kept) and "entity.stale" in str(kept)
+            assert any("pt_boxes" in r.getMessage() and r.exc_info and r.exc_info[0] is StaleDataError for r in caplog.records)
+            assert "pt_boxes" not in a.text  # not for the person
             assert (a.status_code, a.json()["error"]["code"]) == (409, "entity.stale") and "reload" in a.json()["error"]["message"]
     async with unit() as u:
         assert (await u.session.execute(select(sa.func.count(Piece.id)))).scalar_one() == 1

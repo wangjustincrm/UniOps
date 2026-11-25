@@ -13,6 +13,7 @@ import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.session import SESSION_OPTIONS
 from app.core.deps import get_uow_factory
 from app.main import app
 from app.models.records import AuditRecord
@@ -34,7 +35,7 @@ async def http(db_engine):
     async with db_engine.begin() as conn:
         await conn.execute(sa.text("TRUNCATE sales_partners, sales_audit RESTART IDENTITY CASCADE"))
     factory = UnitOfWorkFactory(
-        async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
+        async_sessionmaker(db_engine, **SESSION_OPTIONS),
         permissions=fake_matrix, audit=AuditTrail(AuditRecord),
     )
     app.dependency_overrides[get_uow_factory] = lambda: factory

@@ -13,6 +13,7 @@ import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.session import SESSION_OPTIONS
 from app.container import build_container
 from app.core.config import settings
 from app.core.deps import get_uow_factory
@@ -197,7 +198,7 @@ R = "/api/v1/config/notification-rules"
 
 @pytest_asyncio.fixture
 async def api(n, db_engine):
-    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
+    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, **SESSION_OPTIONS),
                                 permissions=matrix, audit=AuditTrail(AuditRecord))
     runtime = build_runtime(settings, factory)
     app.dependency_overrides[get_uow_factory] = lambda: factory

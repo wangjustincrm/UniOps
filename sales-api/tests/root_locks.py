@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.platform import parts
 
 HELD = "_rows_held"
+violations: list[str] = []  # also those a job swallowed: a test ends with none (conftest)
 
 
 def _key(obj: Any) -> Any:
@@ -28,7 +29,8 @@ def _on_execute(state: Any) -> Any:
 
 
 def _on_flush(session: Any, ctx: Any) -> None:  # noqa: ARG001
-    session.info.setdefault(HELD, set()).update(_key(o) for o in session.dirty if inspect(o).session is not None)
+    # A row set to the value it had is in `dirty` and gets no UPDATE: not held for that.
+    session.info.setdefault(HELD, set()).update(_key(o) for o in session.dirty if session.is_modified(o, include_collections=False))
 
 
 def _on_end(session: Any, transaction: Any) -> None:
@@ -42,6 +44,7 @@ class NotLocked(AssertionError):
 
 def check(session: Any, root: Any) -> None:
     if _key(root) not in session.info.get(HELD, set()):
+        violations.append(f"{type(root).__name__} {inspect(root).identity}")
         raise NotLocked(f"a part of {type(root).__name__} {inspect(root).identity} is written and the unit holds no lock on it: lock the root first")
 
 

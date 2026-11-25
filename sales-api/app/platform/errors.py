@@ -76,7 +76,12 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StaleDataError)
     async def _stale(request: Request, exc: StaleDataError):
         # Someone else changed the record (or, through its parts, its root) while this request worked: nothing of it is kept.
-        return await _business(request, BusinessError("entity.stale", "this record was changed by someone else; reload it"))
+        # The same exception comes from a fault of the code: what it says (the table, the rows) is kept in the log and the record.
+        told = BusinessError("entity.stale", "this record was changed by someone else; reload it")
+        note_error(told.code)
+        logger.warning("stale on %s %s: %s", request.method, request.url.path, exc, exc_info=exc)
+        await notify(ExceptionNotification(exc, told.status_code, told.code, f"{told.message} — {exc}"))
+        return JSONResponse(status_code=told.status_code, content=told.to_body())
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(request: Request, exc: RequestValidationError):  # noqa: ARG001

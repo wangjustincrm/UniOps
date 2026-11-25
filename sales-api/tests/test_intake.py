@@ -13,6 +13,7 @@ import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.session import SESSION_OPTIONS
 from app.domain.intake import classify
 from app.integrations import sftp as sftp_mod
 from app.integrations.epms_tasks import shared_tasks_table
@@ -82,7 +83,7 @@ async def env(db_engine):
             "TRUNCATE sales_log, sales_document_links, sales_documents, sales_runs, sales_connections, "
             "sales_audit, sales_settings, sales_outbox RESTART IDENTITY CASCADE"))
         await c.execute(sa.text("DELETE FROM tasks"))
-    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
+    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, **SESSION_OPTIONS),
                                 permissions=fake_matrix, audit=AuditTrail(AuditRecord))
     fake = Fake()
     tasks = task_service(lambda: False)

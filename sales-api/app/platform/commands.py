@@ -61,7 +61,11 @@ def touch(uow: Any, entity: Any) -> None:
 
 async def lock(session, model: type[T], id: int) -> T:
     """The row, locked, and read again under its lock: for a unit that has it already, read before it could be locked. (A plain
-    get(with_for_update=True) of a row in memory raises StaleDataError when it moved meanwhile.)"""
+    get(with_for_update=True) of a row in memory raises StaleDataError when it moved meanwhile.) Refused when the unit has changes
+    of that row that are not flushed: reading it again would drop them without a word, flushing them would write it before its lock."""
+    here = session.sync_session.identity_map.get(session.sync_session.identity_key(model, id))
+    if here is not None and (here in session.sync_session.deleted or session.sync_session.is_modified(here, include_collections=False)):
+        raise RuntimeError(f"{model.__name__} {id} has changes not yet written: lock it before changing it")
     return (await session.execute(select(model).where(model.id == id).with_for_update().execution_options(populate_existing=True))).scalar_one()
 
 

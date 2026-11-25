@@ -16,6 +16,7 @@ import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.session import SESSION_OPTIONS
 from app.domain.order_rules import OrderFacts, PartnerFacts, qualifies
 from app.domain.status import Fulfillment as F
 from app.integrations.epms_tasks import shared_tasks_table
@@ -50,7 +51,7 @@ async def env(db_engine):
             "sales_item_partner_codes, sales_dc_routing, sales_item_units, sales_items, sales_connections, "
             "sales_partners, sales_audit, sales_settings RESTART IDENTITY CASCADE"))
         await c.execute(sa.text("DELETE FROM tasks"))
-    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
+    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, **SESSION_OPTIONS),
                                 permissions=allow_all, audit=AuditTrail(AuditRecord))
     async with factory(SYSTEM_ACTOR) as u:
         s = u.session

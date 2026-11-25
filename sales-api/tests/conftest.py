@@ -23,7 +23,7 @@ from jose import jwt as _jwt  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
-from app.db.session import CONNECT_ARGS, get_session  # noqa: E402
+from app.db.session import CONNECT_ARGS, SESSION_OPTIONS, get_session  # noqa: E402
 from app.main import app  # noqa: E402
 
 from tests import root_locks  # noqa: E402
@@ -78,6 +78,14 @@ def run_alembic(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     )
 
 
+@pytest.fixture(autouse=True)
+def _parts_written_under_their_root_s_lock():
+    """Also where a job swallowed the refusal (isolated)."""
+    root_locks.violations.clear()
+    yield
+    assert root_locks.violations == []
+
+
 @pytest.fixture(scope="session")
 def migrated_db():
     _migrate()
@@ -99,8 +107,8 @@ async def db_engine(migrated_db):
 
 @pytest_asyncio.fixture
 async def db_session(db_engine):
-    Session = async_sessionmaker(db_engine, expire_on_commit=False)
-    async with Session() as session:
+    factory = async_sessionmaker(db_engine, **SESSION_OPTIONS)
+    async with factory() as session:
         yield session
 
 

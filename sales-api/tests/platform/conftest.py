@@ -14,6 +14,7 @@ from sqlalchemy import Numeric, String
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from app.db.session import SESSION_OPTIONS
 from app.platform.audit import AuditRecordMixin, AuditTrail
 from app.platform.entities import Audited, CreationAudited, Deactivatable, Entity, SoftDeletable, Versioned
 from app.platform.jobs import RunRecordMixin
@@ -159,7 +160,7 @@ async def clean(platform_tables, db_engine):
 
 @pytest.fixture
 def session_factory(db_engine, clean):
-    return async_sessionmaker(db_engine, expire_on_commit=False)
+    return async_sessionmaker(db_engine, **SESSION_OPTIONS)
 
 
 # The permission checker the services consult: grants per actor (the real one

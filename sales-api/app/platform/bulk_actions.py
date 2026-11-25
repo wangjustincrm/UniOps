@@ -24,6 +24,7 @@ single-record endpoints went with stage 3 l); one record that was left out or fa
 is kept on the request's audit log as one.
 """
 
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
@@ -40,6 +41,7 @@ from app.platform.query import QuerySpec, query_spec
 from app.platform.uow import Savepoint
 from app.platform.routes import Router, own_commit
 
+logger = logging.getLogger(__name__)
 MAX_RECORDS = 500
 # (uow, record) → None, or why it is skipped: the words, or the rule's own BusinessError (its words and its code)
 Check = Callable[..., Awaitable["str | BusinessError | None"]]
@@ -217,8 +219,10 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
                 await sp.undo()
             else:
                 await sp.keep()
-        except (Stale, StaleDataError):
+        except (Stale, StaleDataError) as e:
             await sp.undo()
+            if isinstance(e, StaleDataError):  # found by the database, not by its version: what it says is kept
+                logger.warning("stale in action %s on %s %s: %s", action_id, model.__name__, rid, e, exc_info=e)
             out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again", code="entity.stale"))
         except BusinessError as e:
             await sp.undo()

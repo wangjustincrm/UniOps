@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.session import SESSION_OPTIONS
 from app.core.config import settings
 from app.core.deps import get_uow_factory
 from app.integrations.epms_tasks import shared_tasks_table
@@ -50,7 +51,7 @@ async def api(db_engine, monkeypatch):
             "TRUNCATE sales_log, sales_document_links, sales_documents, sales_runs, sales_connections, "
             "sales_partners, sales_audit, sales_settings RESTART IDENTITY CASCADE"))
         await c.execute(sa.text("DELETE FROM tasks"))
-    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
+    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, **SESSION_OPTIONS),
                                 permissions=matrix, audit=AuditTrail(AuditRecord))
     fake = Fake()
     runtime = build_runtime(settings, factory, sftp=fake)

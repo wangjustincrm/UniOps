@@ -19,13 +19,10 @@ engine = create_async_engine(
     connect_args=CONNECT_ARGS,
 )
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
+# Every session's options, the live ones and the tests' (a guard holds it: tests/test_session_options.py).
+SESSION_OPTIONS = {"expire_on_commit": False, "autoflush": False, "autocommit": False}
+
+AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, **SESSION_OPTIONS)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

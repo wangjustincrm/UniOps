@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.session import SESSION_OPTIONS
 from app.core.deps import get_uow_factory
 from app.main import app
 from app.models.records import AuditRecord
@@ -40,7 +41,7 @@ STATE = {"version": VIEW_STATE_VERSION, "sort": [{"field": "order_number", "desc
 async def http(db_engine):
     async with db_engine.begin() as c:
         await c.execute(sa.text("TRUNCATE sales_user_views, sales_audit RESTART IDENTITY CASCADE"))
-    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
+    factory = UnitOfWorkFactory(async_sessionmaker(db_engine, **SESSION_OPTIONS),
                                 permissions=matrix, audit=AuditTrail(AuditRecord))
     app.dependency_overrides[get_uow_factory] = lambda: factory
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
