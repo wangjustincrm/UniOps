@@ -39,6 +39,28 @@ TOXIC_AUTHORITY = "O. Reg. 833 — occupational exposure limits"
 # entry, and the permit says so rather than leaving it to judgement.
 GAS_READING_VALID_MINUTES = 120
 
+# Kinds of permit whose atmospheric test is only a test when all four gases
+# were measured. A tank can read 20.9% oxygen and hold hydrogen sulphide; "not
+# measured" passed as "fine" for every gas but oxygen (UAT 16 check).
+ALL_GASES_REQUIRED_TYPES = frozenset({"CONFINED_SPACE"})
+
+
+def requires_all_gases(type_code: str | None) -> bool:
+    return type_code in ALL_GASES_REQUIRED_TYPES
+
+
+def unmeasured(
+    *, oxygen_pct: Decimal | None, lel_pct: Decimal | None,
+    h2s_ppm: Decimal | None, co_ppm: Decimal | None,
+) -> list[str]:
+    """Which of the four gases have no reading, oxygen excepted — that one
+    fails everywhere and `assess_gas` says so itself."""
+    return [f"{name} was not measured" for name, value in (
+        ("combustible gas (LEL)", lel_pct),
+        ("hydrogen sulphide", h2s_ppm),
+        ("carbon monoxide", co_ppm),
+    ) if value is None]
+
 
 @dataclass(frozen=True)
 class GasVerdict:
@@ -49,15 +71,16 @@ class GasVerdict:
 def assess_gas(
     *, oxygen_pct: Decimal | None, lel_pct: Decimal | None,
     h2s_ppm: Decimal | None, co_ppm: Decimal | None,
-    require_oxygen: bool = True,
+    require_oxygen: bool = True, require_all: bool = False,
 ) -> GasVerdict:
     """Whether this atmosphere may be entered, and what failed if not.
 
     A missing oxygen reading fails rather than passes. "We did not measure it"
     and "it was fine" must not produce the same verdict on a confined space —
     that substitution is the recurring feature of confined-space fatalities.
-    The other gases are optional because not every space warrants them, and a
-    hot-work permit outdoors legitimately has none.
+    The other gases are optional because not every job warrants them — a
+    hot-work permit outdoors legitimately has none — except where
+    `require_all` says the kind of permit needs every one.
     """
     failed: list[str] = []
 
@@ -76,6 +99,10 @@ def assess_gas(
     if co_ppm is not None and co_ppm > CO_MAX_PPM:
         failed.append(f"carbon monoxide {co_ppm} ppm is above {CO_MAX_PPM} ppm")
 
+    if require_all:
+        failed.extend(unmeasured(oxygen_pct=oxygen_pct, lel_pct=lel_pct,
+                                 h2s_ppm=h2s_ppm, co_ppm=co_ppm))
+
     return GasVerdict(acceptable=not failed, failed=failed)
 
 
@@ -86,7 +113,8 @@ def reading_is_fresh(taken_at: datetime, now: datetime | None = None) -> bool:
 
 
 def effective_status(
-    stored_status: str, valid_to: datetime | None, now: datetime | None = None
+    stored_status: str, valid_to: datetime | None, now: datetime | None = None,
+    valid_from: datetime | None = None,
 ) -> str:
     """What the permit actually is, as opposed to what the row last said.
 
@@ -95,12 +123,18 @@ def effective_status(
     "the board still says ACTIVE" is exactly how a crew re-enters a space on
     yesterday's authorisation. The sweep reconciles the stored value; it is not
     what anybody is shown.
+
+    The other end is the same rule: a permit issued for this afternoon does not
+    authorise anybody this morning. It reads `scheduled` until it starts.
     """
     if stored_status not in ("issued", "suspended"):
         return stored_status
-    if valid_to is None:
-        return stored_status
-    return "expired" if (now or datetime.now(timezone.utc)) > valid_to else stored_status
+    now = now or datetime.now(timezone.utc)
+    if valid_to is not None and now > valid_to:
+        return "expired"
+    if stored_status == "issued" and valid_from is not None and now < valid_from:
+        return "scheduled"
+    return stored_status
 
 
 def missing_precautions(required: list, confirmed: dict) -> list[str]:

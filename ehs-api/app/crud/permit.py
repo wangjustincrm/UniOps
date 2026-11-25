@@ -75,7 +75,7 @@ async def get_type(db: AsyncSession, type_id: uuid.UUID) -> PermitType:
 # ── Permits ──────────────────────────────────────────────────────────────────
 
 def effective(permit: Permit, now: datetime | None = None) -> str:
-    return rules.effective_status(permit.status, permit.valid_to, now)
+    return rules.effective_status(permit.status, permit.valid_to, now, permit.valid_from)
 
 
 async def list_permits(
@@ -196,6 +196,11 @@ async def record_reading(
     db: AsyncSession, permit: Permit, payload: dict, *, user_id: uuid.UUID,
 ) -> PermitGasReading:
     """Log a test. The verdict is computed here, never taken from the caller."""
+    if effective(permit) in ("closed", "cancelled"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{permit.permit_no} is {effective(permit)}: its gas tests are part of the record now")
+    permit_type = await get_type(db, permit.type_id) if permit.type_id else None
     def dec(value) -> Decimal | None:
         return Decimal(str(value)) if value is not None else None
 
@@ -204,6 +209,7 @@ async def record_reading(
         lel_pct=dec(payload.get("lel_pct")),
         h2s_ppm=dec(payload.get("h2s_ppm")),
         co_ppm=dec(payload.get("co_ppm")),
+        require_all=rules.requires_all_gases(permit_type.code if permit_type else None),
     )
     reading = PermitGasReading(
         id=uuid.uuid4(), permit_id=permit.id,
@@ -224,7 +230,7 @@ async def record_reading(
     # A failing test on a permit that is already live stops the work now. That
     # is the entire point of continuous monitoring, and leaving it to somebody
     # to notice and press a button is the failure mode.
-    if not verdict.acceptable and effective(permit) == "issued":
+    if not verdict.acceptable and effective(permit) in ("issued", "scheduled"):
         permit.status = "suspended"
         permit.suspended_reason = "; ".join(verdict.failed)[:300]
         await db.flush()
@@ -284,6 +290,11 @@ async def blockers(db: AsyncSession, permit: Permit) -> list[str]:
                 f"{permit_type.name} may not run longer than "
                 f"{permit_type.max_duration_hours} hours.")
 
+    if permit.valid_to is not None and permit.valid_to <= datetime.now(timezone.utc):
+        # Issued after its own end, it was expired the moment it was signed —
+        # and the record said somebody authorised work that had already run.
+        problems.append("The end time has passed — set a new one before issuing.")
+
     if permit_type:
         for label in rules.missing_precautions(
             permit_type.precautions, permit.precautions_confirmed or {}
@@ -302,6 +313,11 @@ async def blockers(db: AsyncSession, permit: Permit) -> list[str]:
             elif not reading.is_acceptable:
                 problems.append("The last gas test failed: "
                                 + "; ".join(reading.failed or ["not acceptable"]))
+            elif rules.requires_all_gases(permit_type.code) and (missing := rules.unmeasured(
+                    oxygen_pct=reading.oxygen_pct, lel_pct=reading.lel_pct,
+                    h2s_ppm=reading.h2s_ppm, co_ppm=reading.co_ppm)):
+                # A test recorded before all four were asked for.
+                problems.append("The last gas test is not complete: " + "; ".join(missing))
             elif not rules.reading_is_fresh(reading.taken_at):
                 problems.append(
                     f"The last gas test is more than "
@@ -311,7 +327,7 @@ async def blockers(db: AsyncSession, permit: Permit) -> list[str]:
 
 
 async def issue(db: AsyncSession, permit: Permit, *, user_id: uuid.UUID) -> Permit:
-    if effective(permit) == "issued":
+    if effective(permit) in ("issued", "scheduled"):
         return permit
     if effective(permit) not in ("draft", "suspended"):
         raise HTTPException(
@@ -363,9 +379,9 @@ async def issue(db: AsyncSession, permit: Permit, *, user_id: uuid.UUID) -> Perm
 
 
 async def suspend(db: AsyncSession, permit: Permit, *, reason: str) -> Permit:
-    if effective(permit) != "issued":
+    if effective(permit) not in ("issued", "scheduled"):
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Only a live permit can be suspended")
+            status.HTTP_409_CONFLICT, "Only an issued permit can be suspended")
     permit.status = "suspended"
     permit.suspended_reason = reason
     await db.flush()
@@ -384,6 +400,12 @@ async def close(
     """
     if permit.status in ("closed", "cancelled"):
         raise HTTPException(status.HTTP_409_CONFLICT, f"{permit.permit_no} is already closed")
+    if permit.status == "draft":
+        # Nothing was authorised, so there is nothing to hand back — and a
+        # closed permit nobody ever issued would read as work that was done.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{permit.permit_no} has not been issued, so there is nothing to close")
 
     if signature:
         await sign(db, permit, signature, phase="close")

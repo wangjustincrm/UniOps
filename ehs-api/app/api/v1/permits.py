@@ -42,6 +42,8 @@ class PermitTypeOut(BaseModel):
     requires_gas_test: bool
     required_signatures: list
     max_duration_hours: int
+    # All four gases, not oxygen alone (rules.ALL_GASES_REQUIRED_TYPES).
+    requires_all_gases: bool = False
 
 
 class PermitIn(BaseModel):
@@ -177,6 +179,12 @@ async def _out(db, permit, *, with_blockers: bool = False) -> PermitOut:
     return item
 
 
+def _type_out(permit_type) -> PermitTypeOut:
+    item = PermitTypeOut.model_validate(permit_type)
+    item.requires_all_gases = rules.requires_all_gases(permit_type.code)
+    return item
+
+
 class PrecautionIn(BaseModel):
     # Kept for an item that already exists, so what permits ticked stays tied
     # to it; left out for a new one, which is given a key.
@@ -228,12 +236,12 @@ async def set_precautions(
         items.append(item)
     permit_type.precautions = items
     await db.flush()
-    return permit_type
+    return _type_out(permit_type)
 
 
 @router.get("/permit-types", response_model=list[PermitTypeOut])
 async def list_types(db: SessionDep, user: CanRequestPermit):  # noqa: ARG001
-    return await crud.list_types(db)
+    return [_type_out(t) for t in await crud.list_types(db)]
 
 
 async def _may_browse(db, payload: dict) -> bool:
@@ -353,6 +361,10 @@ async def record_reading(
     """Log an atmospheric test. The verdict is computed from the standard's
     limits — a failing test on a live permit suspends it immediately."""
     permit = await crud.get_permit(db, permit_id)
+    # ★ Like the edit, this had no check of its own: anybody who may request
+    # permits could log a test on somebody else's — a failing one stops live
+    # work, a passing one clears it.
+    await _editable(db, user, permit)
     row = await crud.record_reading(
         db, permit, payload.model_dump(), user_id=_user_id(user))
     item = GasReadingOut.model_validate(row)
@@ -369,10 +381,16 @@ async def list_signatures(permit_id: uuid.UUID, db: SessionDep, user: CanRequest
 @router.post("/permits/{permit_id}/signatures", response_model=SignatureOut,
              status_code=status.HTTP_201_CREATED)
 async def add_signature(
-    permit_id: uuid.UUID, payload: SignatureIn, db: SessionDep, user: CanRequestPermit,  # noqa: ARG001
+    permit_id: uuid.UUID, payload: SignatureIn, db: SessionDep, user: CanRequestPermit,
 ):
-    """Sign in one of the capacities the permit type requires."""
+    """Sign in one of the capacities the permit type requires, on a permit
+    being prepared — the window the screen offers it in."""
     permit = await crud.get_permit(db, permit_id)
+    await _editable(db, user, permit)
+    if crud.effective(permit) not in ("draft", "suspended"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{permit.permit_no} is {crud.effective(permit)}: it can no longer be signed")
     return await crud.sign(db, permit, payload.model_dump(), phase="issue")
 
 

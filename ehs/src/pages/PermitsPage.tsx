@@ -51,6 +51,7 @@ interface PermitType {
   id: string; code: string; name: string; description: string | null
   precautions: Precaution[]; requires_gas_test: boolean
   required_signatures: string[]; max_duration_hours: number
+  requires_all_gases?: boolean
 }
 interface Permit {
   id: string; permit_no: string; type_id: string | null; type_label: string
@@ -90,6 +91,7 @@ const CAPACITY_LABELS: Record<string, string> = {
 
 const STATUS: Record<string, { label: string; tone: string }> = {
   draft: { label: 'Draft', tone: 'bg-neutral-100 text-neutral-600' },
+  scheduled: { label: 'Issued, not started', tone: 'bg-neutral-100 text-neutral-700' },
   issued: { label: 'Live', tone: 'bg-success-600 text-white' },
   suspended: { label: 'Suspended', tone: 'bg-warning-50 text-warning-700' },
   expired: { label: 'Expired', tone: 'bg-danger-600 text-white' },
@@ -167,7 +169,7 @@ function LinkedPermit({ id }: { id: string }) {
             {p.permit_no}<EquipmentName id={p.equipment_id} />
             {p.contractor_company && ` · ${p.contractor_company}`}
             {p.valid_to && <span className="mt-0.5 block">
-              {p.status === 'issued' ? 'Valid until ' : 'Ran to '}{formatDateTime(p.valid_to)}
+              {validityNote(p)}
             </span>}
             {p.suspended_reason && <span className="mt-1 block font-medium text-warning-700">
               Suspended: {p.suspended_reason}
@@ -206,7 +208,8 @@ function PermitList() {
 
   const rows = permits.data ?? []
   const live = rows.filter((p) => p.status === 'issued' || p.status === 'suspended')
-  const preparing = rows.filter((p) => p.status === 'draft')
+  // Issued for later is not open now: nobody may start on it yet.
+  const preparing = rows.filter((p) => p.status === 'draft' || p.status === 'scheduled')
   const history = rows.filter(
     (p) => p.status === 'closed' || p.status === 'expired' || p.status === 'cancelled')
   const expiredOpen = rows.filter((p) => p.status === 'expired' && !p.closed_at)
@@ -294,8 +297,7 @@ function PermitList() {
                     </span>
                     {p.valid_to && (
                       <span className="mt-0.5 block text-xs text-neutral-500">
-                        {p.status === 'issued' ? 'Valid until ' : 'Ran to '}
-                        {formatDateTime(p.valid_to)}
+                        {validityNote(p)}
                       </span>
                     )}
                     {p.suspended_reason && (
@@ -320,6 +322,14 @@ function PermitList() {
                   loaded={(permits.data ?? []).length} />
     </div>
   )
+}
+
+/** When it runs, in the words its status calls for. */
+function validityNote(p: Permit): string {
+  const until = formatDateTime(p.valid_to)
+  if (p.status === 'scheduled') return `Starts ${formatDateTime(p.valid_from)}, until ${until}`
+  if (p.status === 'draft') return `Until ${until}`
+  return `${p.status === 'issued' ? 'Valid until' : 'Ran to'} ${until}`
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -414,7 +424,10 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
       )}
 
       {type?.requires_gas_test && (
-        <GasPanel permit={permit} readings={readings.data ?? []} onSaved={invalidate} />
+        <GasPanel permit={permit} readings={readings.data ?? []} onSaved={invalidate}
+                  allGases={type.requires_all_gases ?? false}
+                  mayRecord={(permit.requested_by === me || mayIssue)
+                    && permit.status !== 'closed' && permit.status !== 'cancelled'} />
       )}
 
       {/* ★ A failed fetch used to fall through `?? []` and draw an empty
@@ -427,7 +440,7 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
       )}
 
       <SignaturePanel permit={permit} type={type} signatures={signatures.data ?? []}
-                      editable={editable} onSaved={invalidate} />
+                      editable={mayChange} onSaved={invalidate} />
 
       {permit.issued_at && (
         <p className="mt-3 text-xs text-neutral-500">
@@ -452,7 +465,7 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
               {issue.isPending ? 'Issuing…' : 'Issue the permit'}
             </button>
           )}
-          {permit.status === 'issued' && (
+          {(permit.status === 'issued' || permit.status === 'scheduled') && (
             <>
               <button type="button" className={secondaryButton}
                       disabled={suspend.isPending}
@@ -659,8 +672,13 @@ function PrecautionList(
 }
 
 function GasPanel(
-  { permit, readings, onSaved }:
-  { permit: Permit; readings: GasReading[]; onSaved: () => void },
+  { permit, readings, onSaved, allGases, mayRecord }: {
+    permit: Permit; readings: GasReading[]; onSaved: () => void
+    /** Every gas must be measured, not oxygen alone. */
+    allGases: boolean
+    /** Whoever raised it or issues permits, until it is finished — the server's rule. */
+    mayRecord: boolean
+  },
 ) {
   const [adding, setAdding] = useState(false)
   const [o2, setO2] = useState('')
@@ -733,7 +751,7 @@ function GasPanel(
         </ul>
       )}
 
-      {permit.status !== 'closed' && (
+      {mayRecord && (
         adding ? (
           <div className="mt-2 rounded-lg border border-neutral-200 p-2.5">
             <div className="grid gap-2 sm:grid-cols-4">
@@ -762,8 +780,10 @@ function GasPanel(
               </Field>
             </div>
             <p className="mt-2 text-xs text-neutral-500">
-              Leave a gas blank if it was not measured. A blank oxygen reading
-              fails — &ldquo;we did not measure it&rdquo; and &ldquo;it was fine&rdquo;
+              {allGases
+                ? 'All four gases must be measured here. A blank one fails the test — '
+                : 'Leave a gas blank if it was not measured. A blank oxygen reading fails — '}
+              &ldquo;we did not measure it&rdquo; and &ldquo;it was fine&rdquo;
               must not look the same.
             </p>
             <ErrorNote error={record.error} />
@@ -958,7 +978,7 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
   const [controlIds, setControlIds] = useState<string[]>([])
   const [photos, setPhotos] = useState<CompressedImage[]>([])
   const [madeId, setMadeId] = useState<string | null>(null)
-  const [from, setFrom] = useState(() => new Date().toISOString().slice(0, 16))
+  const [from, setFrom] = useState(() => toLocalInput(new Date().toISOString()))
   const [to, setTo] = useState('')
 
   const types = useQuery({
