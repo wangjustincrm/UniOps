@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Autocomplete, MasterDetailForm, SchemaForm, numberColumn, type EditableColumn, type FieldSpec } from '@/platform-ui'
+import { Autocomplete, MasterDetailForm, SchemaForm, numberColumn, problemDone, type EditableColumn, type FieldSpec } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import { amendTransfer, createTransfer, resolveTransfer, updateTransfer, type TransferDetail } from './transfersApi'
 import { errorMessages } from './transferRules'
@@ -72,9 +72,12 @@ export function AmendForm({ t, onSaved, onCancel }: { t: TransferDetail; onSaved
       onCancel={onCancel}
       version={t.version}
       onSubmit={async (v, lines, edit) => {
-        onSaved(await amendTransfer(t.id, edit.version ?? t.version, { notes: (v.notes as string) || null, reason: String(v.reason),
-          lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) }))
+        const out = await amendTransfer(t.id, edit.version ?? t.version, { notes: (v.notes as string) || null, reason: String(v.reason),
+          lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) })
+        onSaved(out)
+        return out
       }}
+      done={(r) => problemDone((r as TransferDetail | undefined)?.problem)}
     />
   )
 }

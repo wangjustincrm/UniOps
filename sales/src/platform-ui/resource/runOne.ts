@@ -14,10 +14,15 @@ export class ActionRefused extends Error {
 
 /** What the status row says of one record's action that was done: its problem as an error, else its note, else `text`. */
 export function actionDone(row: ActionResultRow, text: string, key?: string): { tone: 'error' | 'success'; text: string; key?: string } {
-  return row.problem
-    ? { tone: 'error', text: `${row.problem[0].toUpperCase()}${row.problem.slice(1)}`, ...(key ? { key } : {}) }
+  const problem = problemDone(row.problem)
+  return problem
+    ? { ...problem, ...(key ? { key } : {}) }
     : { tone: 'success', text: row.note ?? text, ...(key ? { key } : {}) }
 }
+
+/** For a form's answer that can say what went wrong though it was saved: as an error, or nothing. */
+export const problemDone = (problem: string | null | undefined): { tone: 'error'; text: string } | null =>
+  (problem ? { tone: 'error', text: `${problem[0].toUpperCase()}${problem.slice(1)}` } : null)
 
 /** A record action on ONE record, by the version the person saw (null: a record that has none): its result when it was
  *  done; left out or failed is thrown. A button and a confirmation use it as any other call. */

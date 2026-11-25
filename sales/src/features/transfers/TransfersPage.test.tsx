@@ -125,6 +125,11 @@ describe('Transfers', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: /Amend and send again/ }))
     expect(await within(dialog).findByRole('textbox', { name: /What was wrong/ })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Amend and send again' })).toBeInTheDocument()
+    // its new 943 failed its checks: saved, and said as an error
+    api.amend.mockResolvedValue({ ...waiting, status: 'Failed', problem: 'the 943 failed its checks and was not sent: CF0093 has no gross weight' })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /What was wrong/ }), { target: { value: 'wrong item' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Amend and send again' }))
+    await waitFor(() => expect(dialog).toHaveTextContent('The 943 failed its checks and was not sent: CF0093 has no gross weight'))
   })
 
   it('On Hold: Release asks why and goes back to where it was', async () => {

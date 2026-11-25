@@ -102,6 +102,7 @@ class TransferDetail(TransferRead):
     status_before_hold: str | None = None
     documents: list[RecordDocumentRead] = []   # received, sent and attached (record_files)
     timeline: list[TimelineEntry] = []
+    problem: str | None = None  # an amendment's answer: its new 943 failed its checks and was not sent
 
 
 class AmendIn(BaseModel):

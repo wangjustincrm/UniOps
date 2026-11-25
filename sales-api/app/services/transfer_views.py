@@ -16,6 +16,7 @@ from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog, print_docs
+from app.services.generated import came_to
 from app.services.record_files import RECORDS, TIMELINES, documents_of, timeline_of
 from app.schemas.transfers import ReceiptRead, ReceiptRowRead, TransferDetail, TransferLineRead, TransferRead
 
@@ -109,9 +110,11 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
 
     @requires(MANAGE)
     async def amend(self, transfers, id: int, body, version: int | None) -> TransferDetail:
-        await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
-                              reason=body.reason)
-        return await self._detail_after(id)
+        doc = await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
+                                    reason=body.reason)
+        out = await self._detail_after(id)
+        out.problem = came_to(doc)[1]
+        return out
 
     @requires(MANAGE)
     async def resolve(self, transfers, id: int, body, version: int | None) -> TransferDetail:

@@ -13,6 +13,7 @@ from app.services.transfer_views import TransferService
 from tests.domain.test_transfers_edi import real_944
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
+from tests.test_send_943 import no_weight
 from tests.test_transfers import p7, sent_transfer, status, store  # noqa: F401 — p7 is a fixture
 
 
@@ -42,6 +43,9 @@ async def test_a_sent_943_is_amended_and_sent_again_and_the_real_944_then_matche
         out = await TransferService(u).amend(p7.tr, x.id, AmendIn(lines=[{"item_code": "CF0092", "qty_ea": 8400},
                                              {"item_code": "CF0103", "qty_ea": 7200}], reason="CF0103 was packed, not CF0093"), ANY_VERSION)
         await u.commit()
+    assert out.problem is None
+    [said] = await p7.q("SELECT message FROM sales_log WHERE message LIKE '%amended%'")
+    assert "amended, a new 943 goes: " in said["message"]
     assert out.status == "943 Generated" and [(ln.item_code, ln.qty_ea) for ln in out.lines] == [("CF0092", 8400), ("CF0103", 7200)]
     docs = await p7.q("SELECT file_status, replaced_by_id FROM sales_documents WHERE kind = '943_EDI' ORDER BY id")
     assert docs[0]["file_status"] == "Replaced" and docs[0]["replaced_by_id"] is not None and len(docs) == 2
@@ -57,6 +61,21 @@ async def test_a_sent_943_is_amended_and_sent_again_and_the_real_944_then_matche
         with pytest.raises(BusinessError) as e:
             await TransferService(u).amend(p7.tr, x.id, AmendIn(lines=[{"item_code": "CF0092", "qty_ea": 1}], reason="again"), ANY_VERSION)
     assert e.value.code == "transfer.not_amendable"
+
+
+async def test_an_amendment_whose_new_943_fails_its_checks_says_so(p7):  # noqa: F811
+    x = await sent_transfer(p7)
+    await no_weight(p7)
+    sent = await p7.q("SELECT id FROM sales_outbox WHERE kind = 'send_943'")
+    async with p7.factory(OP) as u:
+        out = await TransferService(u).amend(p7.tr, x.id, AmendIn(lines=[{"item_code": "CF0093", "qty_ea": 12}], reason="only CF0093"), ANY_VERSION)
+        await u.commit()
+    assert out.status == "Failed" and out.problem.startswith("the 943 failed its checks and was not sent: ") and "CF0093" in out.problem
+    [said] = await p7.q("SELECT message FROM sales_log WHERE message LIKE '%amended%'")
+    assert "amended, the 943 failed its checks and was not sent: " in said["message"] and "a new 943 goes" not in said["message"]
+    assert await p7.q("SELECT id FROM sales_outbox WHERE kind = 'send_943'") == sent  # nothing queued
+    async with p7.factory(OP) as u:
+        assert (await TransferService(u).detail(x.id)).problem is None  # an answer's, not the record's
 
 
 async def test_a_difference_from_our_wrong_943_is_corrected_to_what_arrived(p7):  # noqa: F811

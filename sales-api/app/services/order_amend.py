@@ -18,6 +18,7 @@ from app.models.shipments import Shipment
 from app.platform.commands import ANY_VERSION, VersionArg, check_version, touch
 from app.platform.errors import BusinessError, NotFound
 from app.services import oplog
+from app.services.generated import came_to
 
 AMENDABLE = (F.PENDING, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940)
 SOURCES = ("EDI_850", "MANUAL")
@@ -92,7 +93,8 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
         sent = await outbound.send_now(uow, o.id, replace=True, version=ANY_VERSION, reason=reason)  # checked above
     elif status in (F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940):
         sent = await outbound.send_now(uow, o.id, version=ANY_VERSION)
-    await oplog.write(s, "INFO", "order", f"order {o.label} amended" + (", a new 940 goes" if sent else "") + f": {reason}",
+    problem = came_to(sent)[1] if sent else None
+    await oplog.write(s, "INFO", "order", f"order {o.label} amended" + (f", {problem}" if problem else ", a new 940 goes" if sent else "") + f": {reason}",
                       order_id=o.id, document_id=sent.id if sent else None, context={"before": before, "after": after})
     await s.flush()
-    return {"document_id": sent.id if sent else None, "sent": sent is not None}
+    return {"document_id": sent.id if sent else None, "sent": sent is not None and problem is None, "problem": problem}

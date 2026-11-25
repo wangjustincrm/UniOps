@@ -58,9 +58,9 @@ class InvalidInput(BusinessError):
 
 
 class NotFound(BusinessError):
+    """The one 404 (a guard holds it): one code whatever is missing, its kind and id in the details."""
     status_code = 404
 
-    """The one 404 (a guard holds it): one code whatever is missing, its kind and id in the details."""
     def __init__(self, entity: str, id: Any, message: str | None = None) -> None:
         super().__init__("entity.not_found", message or f"{entity} {id} not found", {"entity": entity, "id": str(id)})
 

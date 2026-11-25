@@ -770,6 +770,14 @@ describe('the order sheet: facts, actions and tabs', () => {
     fireEvent.change(within(sheet).getByRole('textbox', { name: /What was wrong/ }), { target: { value: '12 cases, not 10' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
     await waitFor(() => expect(api.amend).toHaveBeenCalledWith(5, detail.version, { reason: '12 cases, not 10', lines: [{ id: 1, item_code: 'CF0092', ordered_qty: '12' }] }))
+    await waitFor(() => expect(within(sheet).queryByRole('button', { name: 'Amend and send again' })).toBeNull())  // the form closes
+    expect(sheet).not.toHaveTextContent('failed its checks')
+    // a new 940 that failed its checks: saved, and said as an error
+    api.amend.mockResolvedValue({ order: sent, sent: false, document_id: 78, problem: 'the 940 failed its checks and was not sent: ship_to.zip is empty' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
+    fireEvent.change(await within(sheet).findByRole('textbox', { name: /What was wrong/ }), { target: { value: 'again' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
+    await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('The 940 failed its checks and was not sent: ship_to.zip is empty'))
   })
 
 })

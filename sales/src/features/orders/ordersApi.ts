@@ -57,7 +57,7 @@ export const setReturned = (id: number, version: number, body: ReturnedBody) => 
 /** An order sent wrong, corrected and sent again (user 2026-11-13): until the warehouse ships it. */
 export interface AmendBody { reason: string; carrier?: Carrier | null; lines: { id: number; item_code?: string; ordered_qty?: string; removed?: boolean }[] }
 export const amendOrder = (id: number, version: number, body: AmendBody) =>
-  api.post<{ order: OrderRead; sent: boolean; document_id: number | null }>(`/orders/${id}/amend?version=${version}`, body)
+  api.post<{ order: OrderRead; sent: boolean; document_id: number | null; problem?: string | null }>(`/orders/${id}/amend?version=${version}`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)
 

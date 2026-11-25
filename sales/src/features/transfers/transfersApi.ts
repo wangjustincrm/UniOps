@@ -36,6 +36,8 @@ export interface ReceiptRowRead { position: number; lx_number: string | null; it
 export interface ReceiptRead { id: number; document_id: number; receipt_date: string | null; total_ea: number | null; applied: boolean;
   shadow: boolean; outcome: string | null; discrepancies: string[] | null; created_at: string; document_name: string | null; rows: ReceiptRowRead[] }
 export interface TransferDetail extends TransferRead {
+  /** An amendment's answer: its new 943 failed its checks and was not sent. */
+  problem?: string | null
   lines: TransferLineRead[]
   receipts: ReceiptRead[]
   ack_status: string | null

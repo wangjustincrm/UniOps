@@ -70,6 +70,7 @@ from app.services.problems import (
     send_refused,
 )
 from app.services.doc_links import link
+from app.services.generated import came_to
 from app.services.queued import refuse_queued, unknown_outcome
 from app.services.returns_944 import apply_return_944, is_return
 from app.services.settings import (
@@ -232,7 +233,7 @@ class Transfers:
         return doc
 
     async def amend(self, uow, id: int, *, version: int | None, lines: list[dict[str, Any]], notes: str | None,
-                    reason: str) -> Transfer:
+                    reason: str) -> Document:
         """User 2026-11-13: a sent 943 that is wrong (an item, a quantity) is corrected and sent again, until a
         944 has answered it. The lines become the new ones; the live 943 is Replaced and a new one (a new
         control number) goes on the next pass, as a Failed transfer's resend does. Why is kept with it."""
@@ -265,10 +266,11 @@ class Transfers:
             live.replaced_by_id = doc.id
         for event in (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED):
             await self.tasks.resolve_problem(s, event, t.id, by=uow.actor.user_id)
-        await oplog.write(s, "INFO", STEP, f"transfer {t.transfer_number} amended, a new 943 goes: {reason}", document_id=doc.id,
+        problem = came_to(doc)[1]
+        await oplog.write(s, "INFO", STEP, f"transfer {t.transfer_number} amended, {problem or 'a new 943 goes'}: {reason}", document_id=doc.id,
                           transfer_id=t.id, context={"before": before, "after": [(x["item_code"], int(x["qty_ea"])) for x in lines]})
         await s.flush()
-        return t
+        return doc
 
     async def resolve(self, uow, id: int, *, version: int | None, how: str, reason: str) -> Transfer:
         """User 2026-11-13: a receipt that differs (Discrepancy, Partially Received) is settled by a person, with why:

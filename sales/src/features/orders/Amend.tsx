@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  Autocomplete, MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec, useLookup,
+  Autocomplete, MasterDetailForm, problemDone, readColumn, textColumn, type EditableColumn, type FieldSpec, useLookup,
 } from '@/platform-ui'
 import { itemOptions } from '@/features/configuration/lookups'
 import { MANUAL_SETTINGS_KEY, amendOrder, carriersFor, fetchManualOrderSettings, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
@@ -59,7 +59,7 @@ export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: (
       onSubmit={async (v, lines, edit) => {
         const kept = new Set(lines.map((l) => l.id))
         const carrier = isCarrier(v.carrier) ? v.carrier : null
-        await amendOrder(o.id, edit.version ?? o.version, {
+        const out = await amendOrder(o.id, edit.version ?? o.version, {
           reason: String(v.reason ?? '').trim(),
           ...(o.source_type === 'MANUAL' && carrier && carrier !== o.shipping_method ? { carrier } : {}),
           lines: [
@@ -68,7 +68,9 @@ export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: (
           ],
         })
         onSaved()
+        return out
       }}
+      done={(r) => problemDone((r as { problem?: string | null } | undefined)?.problem)}
     />
   )
 }

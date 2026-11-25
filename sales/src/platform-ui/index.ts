@@ -99,7 +99,7 @@ export { defineActions, type RecordAction, type ActionPlacement, type ActionInpu
 export { RecordActionButtons, RowActionMenu } from './patterns/RecordActions'
 export { RecordActionDialog, type ActionTarget } from './patterns/RecordActionDialog'
 export type { ActionOut, ActionResultRow, ActionRunBody } from './resource/ResourceClient'
-export { ActionRefused, actionDone, runOne } from './resource/runOne'
+export { ActionRefused, actionDone, problemDone, runOne } from './resource/runOne'
 export { ActionErrors } from './patterns/actionErrors'
 export { useGoTo, useOpenRecord, useOpenView } from './patterns/openRecord'
 export { SchemaForm } from './patterns/SchemaForm'
