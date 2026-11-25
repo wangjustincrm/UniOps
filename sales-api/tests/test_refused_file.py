@@ -317,7 +317,7 @@ def test_the_audit_list_can_be_filtered_by_every_act_that_is_kept():
     acts = set()
     for p in (Path(package.__path__[0]) / "services").rglob("*.py"):
         s = p.read_text()
-        acts |= set(re.findall(r'audit_act\(\w+(?:\.\w+)*, "(\w+)"', s)) | set(re.findall(r'"(\w+_refused)"', s))
+        acts |= set(re.findall(r'audit_act\(\w+(?:\.\w+)*, "(\w+)"', s)) | set(re.findall(r'\w*_attempt\((?:(?!_attempt\().)*?"(\w+_refused)"', s, re.S))
     assert {"send_again", "fulfil_in_shopify", "replace_refused", "amend_refused"} == acts
     assert acts <= set(EntityChangeRepository.enums["action"])
 
