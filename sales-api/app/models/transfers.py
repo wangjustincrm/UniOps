@@ -48,6 +48,7 @@ TRANSFER.bind(Transfer)
 class TransferLine(Base):
     __tablename__ = "sales_transfer_lines"
     __part_of__ = PartOf(Transfer, "transfer_id")
+    __audited_rows__ = frozenset({"create", "update", "delete"})  # as an order's lines
     __table_args__ = (
         UniqueConstraint("transfer_id", "line_no", name="uq_sales_transfer_lines_line"),
         one_of("line_status", LINE_STATUSES, "ck_sales_transfer_lines_status"),

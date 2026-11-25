@@ -30,8 +30,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.platform.audit import changed_columns
 from app.platform.clock import clock
+from app.platform.made import made_here, track
 
-_MADE = "_roots_made"
 OWN = "root_of_a_part"  # marks the lock this module takes itself: late, not the writer's
 
 
@@ -58,8 +58,7 @@ class RootVersions:
             return
         session.info["_parts_attached"] = True
         event.listen(session, "before_flush", _before_flush)
-        event.listen(session, "after_flush", _after_flush)
-        event.listen(session, "after_transaction_end", _after_transaction)
+        track(session)
 
 
 def _before_flush(session: Session, flush_context: Any, instances: Any) -> None:  # noqa: ARG001
@@ -69,12 +68,11 @@ def _before_flush(session: Session, flush_context: Any, instances: Any) -> None:
             if value is None:
                 raise RuntimeError(f"a {type(obj).__name__} without its {p.root.__name__} ({p.fk})")
             roots.setdefault((p.root, value), p)
-    made = session.info.get(_MADE, set())
     for (cls, value), p in roots.items():
         root = _root(session, p, value)
         if root is None:
             continue  # gone: the part's own key is refused by the database
-        if root in session.new or inspect(root).identity_key in made:
+        if made_here(session, root):
             continue
         if check_locked is not None:
             check_locked(session, root)
@@ -112,16 +110,6 @@ def _root(session: Session, p: PartOf, value: Any) -> Any:
         return here
     return session.execute(select(p.root).where(getattr(p.root, p.key) == value).with_for_update(of=p.root),
                            execution_options={OWN: True}).scalars().one_or_none()
-
-
-def _after_flush(session: Session, flush_context: Any) -> None:  # noqa: ARG001
-    made = session.info.setdefault(_MADE, set())
-    made.update(inspect(o).mapper.identity_key_from_instance(o) for o in session.new)
-
-
-def _after_transaction(session: Session, transaction: Any) -> None:
-    if transaction.parent is None:
-        session.info.pop(_MADE, None)
 
 
 __all__ = ["PartOf", "RootVersions", "part_of"]

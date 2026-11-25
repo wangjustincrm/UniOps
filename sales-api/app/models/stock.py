@@ -68,6 +68,7 @@ class StockCountLine(Base):
     """One item and lot of a count, as Radiant gave it (pallets of the same lot added up)."""
     __tablename__ = "sales_stock_count_lines"
     __part_of__ = PartOf(StockCount, "count_id")
+    __audited_rows__ = frozenset({"update", "delete"})  # as the report gave it: the file is kept; what changes after, here
     __table_args__ = (Index("ix_sales_stock_count_lines_count", "count_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

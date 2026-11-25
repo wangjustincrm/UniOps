@@ -61,6 +61,7 @@ class Shipment(Audited, Versioned, Base):
 class ShipmentRow(Base):
     __tablename__ = "sales_shipment_rows"
     __part_of__ = PartOf(Shipment, "shipment_id")
+    __audited_rows__ = frozenset({"update", "delete"})  # as the 945 gave it: the file is kept; what changes after, here
     __table_args__ = (UniqueConstraint("shipment_id", "lx_index", "w12_index", name="uq_sales_shipment_rows_position"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

@@ -8,6 +8,8 @@
 - writes one audit row per inserted / changed / deleted Audited entity with
   the changed fields before and after, the actor and the command's reason
   (`session.info["audit_reason"]`);
+- for a model without those columns that says so (`__audited_rows__`: which of create / update / delete, of any field), the same
+  rows — a part such as a transfer's line; without "create", only what changes after the transaction that made it;
 - for any other model, writes an update row when one of its
   `__audited_fields__` changes — the fields a state machine registered with
   `bind` — so every status transition is audited, documents and ACKs too
@@ -31,6 +33,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.platform.clock import clock
 from app.platform.entities import Audited, CreationAudited
+from app.platform.made import made_here, track
 
 
 class AuditRecordMixin:
@@ -111,6 +114,15 @@ def changed_columns(obj: Any) -> set[str]:
     return set(_changes(obj)[1])
 
 
+def _rows(obj: Any) -> frozenset[str]:
+    return getattr(type(obj), "__audited_rows__", frozenset())
+
+
+def _in_its_making(session: Session, obj: Any) -> bool:
+    """Made in this transaction and its making not recorded: what is set on it here is its making too."""
+    return "create" not in _rows(obj) and made_here(session, obj)
+
+
 class AuditTrail:
     def __init__(self, model: type) -> None:
         self.model = model
@@ -120,6 +132,7 @@ class AuditTrail:
         if session.info.get("_audit_attached"):
             return
         session.info["_audit_attached"] = True
+        track(session)
         event.listen(session, "before_flush", self._before_flush)
         event.listen(session, "after_flush", self._after_flush)
 
@@ -133,15 +146,16 @@ class AuditTrail:
                 _require_actor(actor, obj)
                 obj.created_by = actor.user_id
                 obj.created_by_name = actor.name
-            if isinstance(obj, Audited):
+            if isinstance(obj, Audited) or "create" in _rows(obj):
+                _require_actor(actor, obj)
                 pending.append(("create", obj, None))
 
         for obj in list(session.dirty):
             if not session.is_modified(obj, include_collections=False):
                 continue
             if not isinstance(obj, Audited):
-                fields = getattr(type(obj), "__audited_fields__", None)
-                if fields:
+                fields, rows = getattr(type(obj), "__audited_fields__", None), _rows(obj)
+                if fields or ("update" in rows and not _in_its_making(session, obj)):
                     before, after = _changes(obj, only=fields)
                     if after:
                         _require_actor(actor, obj)
@@ -157,7 +171,7 @@ class AuditTrail:
             pending.append(("update", obj, {"before": before, "after": after}))
 
         for obj in list(session.deleted):
-            if isinstance(obj, Audited):
+            if isinstance(obj, Audited) or ("delete" in _rows(obj) and not _in_its_making(session, obj)):
                 _require_actor(actor, obj)
                 pending.append(("delete", obj, {"before": _snapshot(obj), "after": None}))
 
