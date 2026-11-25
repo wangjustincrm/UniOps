@@ -285,7 +285,7 @@ async def test_recheck_applies_the_archive_rule(env):  # noqa: F811
     env.shop.orders = [shopify_order(1, 9301, lines=bad)]
     await env.pull()
     async with env.factory(SYSTEM_ACTOR) as u:
-        o = (await u.session.execute(sa.select(Order))).scalar_one()
+        o = (await u.session.execute(sa.select(Order).with_for_update())).scalar_one()
         assert o.fulfillment_status == F.REVIEW
         o.archived_in_shopify_at = T0 - timedelta(hours=1)  # archived while it waited in review
         (await u.session.execute(sa.select(OrderLine))).scalars().first().source = {"sku": "CF0092-SKU", "variant_title": "Case"}
@@ -305,6 +305,7 @@ async def test_recheck_of_an_order_not_archived_goes_to_pending(env):  # noqa: F
     env.shop.orders = [shopify_order(1, 9301, lines=bad)]
     await env.pull()
     async with env.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.select(Order).with_for_update())
         (await u.session.execute(sa.select(OrderLine))).scalars().first().source = {"sku": "CF0092-SKU", "variant_title": "Case"}
         await u.commit()
     async with env.factory(OP) as u:

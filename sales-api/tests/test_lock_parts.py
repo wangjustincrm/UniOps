@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 import sqlalchemy as sa
 
+from app.models.config import Item
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.stock import StockCount, StockCountLine
@@ -50,17 +51,23 @@ async def ids_of(q, table, **where):
     return [r["id"] for r in await q(f"SELECT id FROM {table} WHERE {k} = :v ORDER BY id", v=v)]
 
 
+async def version(q, table, id):
+    return (await q(f"SELECT version FROM {table} WHERE id = :i", i=id))[0]["version"]
+
+
 async def test_a_customer_s_return_944(p7):  # noqa: F811
     p7.edi.env.shop.orders = [shopify_order(1, 9301)]  # 12 EA
     await p7.edi.env.pull()
     o, _ = await p7.edi.env.order(1)
     await store(p7, "944_EDI", ra_944("RA CRM9301", qty=6), "944-ra.edi")
     parts = await ids_of(p7.q, "sales_order_lines", order_id=o.id)
+    seen = await version(p7.q, "sales_orders", o.id)
 
     async def person(s):
         (await s.get(OrderLine, parts[0])).returned_ea = 3
     await meets(p7.factory, Order, o.id, OrderLine, parts, p7.tr.process_944s, person)
     assert (await p7.q("SELECT returned_ea FROM sales_order_lines WHERE id = :i", i=parts[0])) == [{"returned_ea": 9}]  # 3 + 6, not 6
+    assert await version(p7.q, "sales_orders", o.id) == seen + 2  # the person's and the 944's
 
 
 @pytest.mark.parametrize("path", ["the refresh", "the boundary order of a page"])
@@ -126,6 +133,7 @@ async def test_the_shadow_rows_links(p5, which):  # noqa: F811
         await u.session.execute(sa.update(ShipmentRow).values(order_line_id=None))
         await u.commit()
     parts = await ids_of(p5.q, "sales_shipment_rows", shipment_id=sid)
+    seen = await version(p5.q, "sales_shipments", sid)
 
     async def run():
         async with p5.factory(SYSTEM_ACTOR) as u:
@@ -136,6 +144,7 @@ async def test_the_shadow_rows_links(p5, which):  # noqa: F811
         (await s.get(Shipment, sid)).carrier = "ZZZZ"
     out = await meets(p5.factory, Shipment, sid, ShipmentRow, parts, run, person)
     assert out["rows_linked" if which == "link" else "rows_moved"] == len(parts) >= 1
+    assert await version(p5.q, "sales_shipments", sid) == seen + 2
 
 
 async def test_the_picked_pallets_script(env, monkeypatch):  # noqa: F811
@@ -153,7 +162,7 @@ async def test_the_picked_pallets_script(env, monkeypatch):  # noqa: F811
     async def person(s):
         (await s.get(StockCount, c.id)).note = "looked at"
     out = await meets(env.factory, StockCount, c.id, StockCountLine, parts, lambda: backfill_count_picked.main(ScriptArgs(("--apply",))), person)
-    assert out["outcome"]["line set"] == len(parts)
+    assert out["outcome"]["line set"] == len(parts) and await version(env.q, "sales_stock_counts", c.id) == 3
 
 
 async def test_the_radiant_shipments_script(p5):  # noqa: F811
@@ -201,3 +210,19 @@ async def test_the_radiant_shipments_script_links_a_945(p5):  # noqa: F811
         (await s.get(Shipment, sid)).carrier = "ZZZZ"
     await meets(p5.factory, Shipment, sid, ShipmentRow, parts, link, person)
     assert await p5.q("SELECT 1 FROM sales_shipment_rows WHERE order_line_id IS NULL") == []
+
+
+async def test_an_item_s_units_and_its_lock(env):  # noqa: F811
+    from app.schemas.items import ItemUpdate
+    from app.services.items import ItemService
+    from app.models.config import ItemUnit
+    [item] = await ids_of(env.q, "sales_items", item_code="CF0092")
+    parts = await ids_of(env.q, "sales_item_units", item_code="CF0092")
+    seen = await version(env.q, "sales_items", item)
+
+    async def edit():
+        async with env.factory(OP) as u:
+            await ItemService(u).update(item, ItemUpdate(units=[{"unit": "EA", "factor_ea": "1"}, {"unit": "CASE", "factor_ea": "7"}]), seen)
+            await u.commit()
+    await meets(env.factory, Item, item, ItemUnit, parts, edit)
+    assert await version(env.q, "sales_items", item) == seen + 1

@@ -19,6 +19,7 @@ from app.platform.actors import Actor
 from app.platform.audit import AuditTrail
 from app.platform.authorization import PermissionChecker
 from app.platform.events import EventBuffer, HandlerRegistry
+from app.platform.parts import RootVersions
 
 
 class UnitOfWork(Protocol):
@@ -58,6 +59,7 @@ class SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
         self.session.info["actor"] = self.actor
         self.session.info["audit_reason"] = self.reason
+        RootVersions().attach(self.session.sync_session)  # before the audit: it sees a root its parts moved
         if self.audit is not None:
             self.audit.attach(self.session.sync_session)
         return self

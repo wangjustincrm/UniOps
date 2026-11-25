@@ -106,6 +106,11 @@ def _changes(obj: Any, only: frozenset[str] | None = None) -> tuple[dict[str, An
     return before, after
 
 
+def changed_columns(obj: Any) -> set[str]:
+    """The columns really changed since they were loaded (their history), the bookkeeping ones aside."""
+    return set(_changes(obj)[1])
+
+
 class AuditTrail:
     def __init__(self, model: type) -> None:
         self.model = model

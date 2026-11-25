@@ -331,8 +331,6 @@ class Invoicing:
             ln.amount = amount(ln.qty, ln.unit_price)
         if invoice_date is not None:
             inv.invoice_date = invoice_date
-        if any(s.is_modified(ln) for ln in mine.values()):
-            touch(uow, inv)  # another quantity and price with the same total change only the lines
         inv.subtotal = inv.total = sum((ln.amount for ln in mine.values()), Decimal(0))
         await s.flush()
         return inv

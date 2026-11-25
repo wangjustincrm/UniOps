@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.platform.clock import business_date_sql
 from app.platform.entities import Audited, Versioned
+from app.platform.parts import PartOf
 
 PLANT, TO_RADIANT, RADIANT, TO_CUSTOMER, CUSTOMER, RETURNING, ADJUSTED = (
     "PLANT", "TO_RADIANT", "RADIANT", "TO_CUSTOMER", "CUSTOMER", "RETURNING", "ADJUSTED")
@@ -66,6 +67,7 @@ class StockCount(Audited, Versioned, Base):
 class StockCountLine(Base):
     """One item and lot of a count, as Radiant gave it (pallets of the same lot added up)."""
     __tablename__ = "sales_stock_count_lines"
+    __part_of__ = PartOf(StockCount, "count_id")
     __table_args__ = (Index("ix_sales_stock_count_lines_count", "count_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

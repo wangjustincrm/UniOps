@@ -314,6 +314,7 @@ async def test_ac79_an_ea_only_item_titled_as_a_case_goes_to_review(env):
 
 async def test_ac79_shopify_titles_on_a_unit_name_it(env):
     async with env.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.select(Item).where(Item.item_code == "CF0092").with_for_update())
         unit = (await u.session.execute(sa.select(ItemUnit).where(
             ItemUnit.item_code == "CF0092", ItemUnit.unit == "2PACK"))).scalar_one()
         unit.shopify_titles = "2-Can, Twin pack"

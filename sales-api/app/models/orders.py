@@ -30,6 +30,7 @@ from app.domain.status import FULFILLMENT, INVOICE, Fulfillment, Invoice
 from app.models.config import Connection, Partner, one_of
 from app.platform.clock import business_time_sql
 from app.platform.entities import Audited, Versioned
+from app.platform.parts import PartOf
 
 ORDER_NUMBER_SEQ = Sequence("sales_order_number_seq", start=1)  # P9 sets it above Zoho's highest
 
@@ -255,6 +256,7 @@ Order.delivery_due_sql = order_fact(case(
 
 class OrderLine(Audited, Base):
     __tablename__ = "sales_order_lines"
+    __part_of__ = PartOf(Order, "order_id")
     __table_args__ = (
         UniqueConstraint("order_id", "line_no", name="uq_sales_order_lines_line"),
         one_of("line_status", LINE_STATUSES, "ck_sales_order_lines_status"),

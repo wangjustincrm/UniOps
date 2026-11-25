@@ -15,7 +15,7 @@ from app.domain.status import Fulfillment as F
 from app.models.config import Item, ItemUnit
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment
-from app.platform.commands import ANY_VERSION, VersionArg, check_version, touch
+from app.platform.commands import ANY_VERSION, VersionArg, check_version
 from app.platform.errors import BusinessError, NotFound
 from app.services import oplog
 from app.services.generated import came_to
@@ -69,7 +69,6 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
         ln.factor_ea = units.get(code, {}).get(ln.order_unit or "", Decimal(1) if ln.order_unit == "EA" else None)
         ln.problem = None
         after.append({"line": ln.line_no, "item": code, "qty": str(qty), "unit": ln.order_unit, "ea": ea})
-    changed = any(s.is_modified(ln) for ln in current.values())  # before a query flushes them
     if problems:
         raise BusinessError("order.amend_line", "; ".join(problems))
     if all(ln.removed for ln in current.values()):
@@ -83,8 +82,6 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
         before.append({"carrier": o.shipping_method})
         o.shipping_method = carrier
         after.append({"carrier": carrier})
-    if changed:
-        touch(uow, o)
     uow.set_reason(f"order amended: {reason}")
     await s.flush()
     status = F(o.fulfillment_status)

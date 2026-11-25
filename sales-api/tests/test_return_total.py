@@ -89,13 +89,16 @@ async def on_order(t, line):
 async def put(t, line, returned):
     """As an old row stands, past the rule."""
     async with t.factory(SYSTEM_ACTOR) as u:
-        (await u.session.get(OrderLine, line)).returned_ea = returned
+        ln = await u.session.get(OrderLine, line)
+        await u.session.get(Order, ln.order_id, with_for_update=True)
+        ln.returned_ea = returned
         await u.commit()
 
 
 async def add_line(t, oid, line, no=99):
     async with t.factory(SYSTEM_ACTOR) as u:
         src = await u.session.get(OrderLine, line)
+        await u.session.get(Order, oid, with_for_update=True)
         more = OrderLine(order_id=oid, line_no=no, item_code=src.item_code, source={}, ordered_qty=src.ordered_qty, order_unit=src.order_unit,
                          factor_ea=src.factor_ea, qty_ea=src.qty_ea, shipped_ea=SHIPPED, line_status=src.line_status, removed=False)
         u.session.add(more)
@@ -138,6 +141,7 @@ async def test_another_order_s_and_another_line_s_records_do_not_count(p6):  # n
     async with p6.factory(SYSTEM_ACTOR) as u:
         s = u.session
         src = await s.get(OrderLine, line)
+        await s.get(Order, o.id, with_for_update=True)
         more = OrderLine(order_id=o.id, line_no=99, item_code=src.item_code, source={}, ordered_qty=src.ordered_qty, order_unit=src.order_unit,
                          factor_ea=src.factor_ea, qty_ea=src.qty_ea, shipped_ea=SHIPPED, line_status=src.line_status, removed=False)
         s.add(more)

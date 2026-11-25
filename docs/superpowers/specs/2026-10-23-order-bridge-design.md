@@ -502,6 +502,7 @@ One unit of work per HTTP request (FastAPI dependency `get_uow`) and one per sch
 - Only the **outermost caller** commits: the HTTP write route (`platform/routes.py`, since 2026-11-25: once, when its endpoint returned and before the answer is built; a read never; an endpoint that decides for itself says why, `own_commit`) or a job's unit (`isolated`, §13.11).
 - Services, record actions (`run_action`) and the step functions a job runs **never commit**; they flush at most. A service that calls another passes its unit of work along, so the whole operation is one transaction: if the second service fails, nothing of the first is kept — no row, no audit row, no outbox row (tested, both orders).
 - The one exception is the outbox worker (§13.7), which commits its claim (IN_FLIGHT) and the outcome in two transactions of its own, for at-most-once.
+- **A record's parts move its version** (≈ ABP, `platform/parts.py`, 2026-11-25): `OrderLine`, `InvoiceLine`, `TransferLine`, `StockCountLine`, `ShipmentRow` and `ItemUnit` declare whose part they are (`__part_of__`); made, changed or deleted, they move the root's version with the same flush, so a save by someone who saw the record before is refused (`entity.stale`). The root is locked before its parts, everywhere. Every model that names a versioned one is on one list, part or not and why (`tests/test_parts.py`).
 - `tests/test_write_routes.py` holds every mounted write route to it: one of the platform's, and no endpoint commits unless it declares it.
 
 ### 13.5 Services (template method)

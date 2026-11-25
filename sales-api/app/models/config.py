@@ -27,6 +27,7 @@ from app.domain.config import (
     SENDING_MODES, SETTLEMENT_MODES, WAREHOUSE_ROLES,
 )
 from app.platform.entities import Audited, Deactivatable, Versioned
+from app.platform.parts import PartOf
 from app.platform.settings_registry import SettingRecordMixin
 
 
@@ -84,6 +85,7 @@ class ItemUnit(Audited, Versioned, Deactivatable, Base):
     """FR-OB-02: the EA factor is 1 by definition; every other unit needs its
     own row, never a default."""
     __tablename__ = "sales_item_units"
+    __part_of__ = PartOf(Item, "item_code", "item_code")
     __table_args__ = (
         UniqueConstraint("item_code", "unit", name="uq_sales_item_units_item_unit"),
         CheckConstraint("unit <> 'EA' OR factor_ea = 1", name="ck_sales_item_units_ea_is_one"),

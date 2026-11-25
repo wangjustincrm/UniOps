@@ -31,7 +31,7 @@ from app.integrations.email import FakeEmail
 from app.integrations.sftp import FakeSftp
 from app.models.config import Connection, Item, ItemUnit, Partner
 from app.models.orders import Order
-from app.models.shipments import ShipmentRow
+from app.models.shipments import Shipment, ShipmentRow
 from app.platform.commands import ANY_VERSION
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
@@ -996,6 +996,7 @@ async def test_relink_moves_old_rows_by_the_rule_and_a_dry_run_writes_nothing(t)
     ids = [r["id"] for r in await t.q("SELECT id FROM sales_order_lines WHERE order_id = :o ORDER BY line_no", o=o)]
     rows = [r["id"] for r in await t.q("SELECT id FROM sales_shipment_rows ORDER BY lx_index")]
     async with t.factory(SYSTEM_ACTOR) as u:  # as the old matching left them: the 6 on the 1 EA line
+        await u.session.execute(sa.select(Shipment).with_for_update())
         for row, line in zip(rows, ids):
             (await u.session.get(ShipmentRow, row)).order_line_id = line
         await u.commit()

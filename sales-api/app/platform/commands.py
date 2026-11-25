@@ -51,9 +51,10 @@ def require_reason(text: str | None, *, code: str = "reason.required", message: 
 
 
 def touch(uow: Any, entity: Any) -> None:
-    """The record changed through its parts (a line, a price) and not a column of its own: its version moves with the
-    unit of work's flush (the mapper's version_id_col), so whoever saw it before is refused, as for any change. Who and
-    when are kept on the record; no audit row (no audited field changed: the parts have theirs)."""
+    """A press that changes nothing of the record yet (a send queued once more, a return recorded beside it): its version moves
+    with the unit of work's flush (the mapper's version_id_col), so the same press from the same page is refused. Who and when
+    are kept on the record; no audit row (no audited field changed). For a record whose parts change this is not needed: its
+    parts move it (parts.py)."""
     entity.updated_at = clock().now()
     entity.updated_by, entity.updated_by_name = uow.actor.user_id, uow.actor.name
 

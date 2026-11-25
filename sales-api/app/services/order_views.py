@@ -60,7 +60,7 @@ from app.models.payments import (
 )
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
-from app.platform.commands import VersionArg, check_version, touch
+from app.platform.commands import VersionArg, check_version
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -413,7 +413,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             raise BusinessError("invoice.reason_required", "say why the invoice price differs from the PO (a few words)",
                                 {"field": "reason"}, status_code=422)
         if changed:
-            touch(self.uow, o)
             self.uow.set_reason(f"invoice price: {reason}" if reason else "invoice price back to the PO price")
             await oplog.write(s, "INFO", "invoice", f"order {o.label}: invoice price " + "; ".join(
                 f"line {ln.line_no} {ln.item_code or ''} {ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price}"
@@ -460,7 +459,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         if not changed:
             return await self.detail(id)
         await refuse_more_than_shipped(s, id, returned={ln.id: new for ln, _old, new in changed})  # with what is recorded after shipment
-        touch(self.uow, o)  # only the lines (and a draft invoice) change: the order's version moves all the same
         reason = body.reason.strip()
         cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
             ItemUnit.item_code.in_({ln.item_code for ln, _, _ in changed if ln.item_code}), ItemUnit.unit == CASE_UNIT,
@@ -486,7 +484,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                     status_code=422)
             il.qty, il.amount = whole, amount(whole, il.unit_price)
         if inv is not None:
-            touch(self.uow, inv)  # its lines change, whatever the total
             inv.subtotal = inv.total = sum((il.amount for il in ilines.values()), Decimal(0))
         self.uow.set_reason(f"returned: {reason}")
         await oplog.write(s, "INFO", "invoice", f"order {o.label}: returned " + "; ".join(

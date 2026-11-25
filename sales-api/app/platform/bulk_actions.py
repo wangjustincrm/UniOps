@@ -30,6 +30,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.datastructures import QueryParams
 
 from app.platform.authorization import authorize
@@ -216,9 +217,9 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
                 await sp.undo()
             else:
                 await sp.keep()
-        except Stale as e:
+        except (Stale, StaleDataError):
             await sp.undo()
-            out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again", code=e.code))
+            out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again", code="entity.stale"))
         except BusinessError as e:
             await sp.undo()
             out.append(ActionResult(id=rid, status="failed", reason=e.message, code=e.code))

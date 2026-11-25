@@ -26,6 +26,10 @@ from app.core.config import settings  # noqa: E402
 from app.db.session import CONNECT_ARGS, get_session  # noqa: E402
 from app.main import app  # noqa: E402
 
+from tests import root_locks  # noqa: E402
+
+root_locks.install()
+
 TEST_DB = os.getenv("TEST_SALES_DB", "sales_test")
 TEST_HOST = os.getenv("TEST_PG_HOST", "localhost")
 TEST_USER = os.getenv("TEST_PG_USER", "epms")

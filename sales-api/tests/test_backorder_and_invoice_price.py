@@ -66,6 +66,7 @@ async def test_a_shadow_945_shows_its_figure_applied_nowhere_and_a_removed_line_
     assert (d.lines[0].shipped_shadow_ea, d.lines[0].backordered_shadow_ea) == (30, 30)
     o2 = await shipped_850(p6, number="PO-R", qty=10, shipped=30)
     async with p6.factory(SYSTEM_ACTOR) as u:
+        await u.session.get(Order, o2.id, with_for_update=True)
         (await u.session.execute(sa.select(OrderLine).where(OrderLine.order_id == o2.id))).scalar_one().removed = True
         await u.commit()
     d2 = await detail(p6, o2.id)

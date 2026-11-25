@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.exceptions import ExceptionNotification, notify
 from app.platform.request_log import current_request_id, note_error
@@ -71,6 +72,11 @@ def install_error_handlers(app: FastAPI) -> None:
         note_error(exc.code)
         await notify(ExceptionNotification(exc, exc.status_code, exc.code, exc.message))
         return JSONResponse(status_code=exc.status_code, content=exc.to_body())
+
+    @app.exception_handler(StaleDataError)
+    async def _stale(request: Request, exc: StaleDataError):
+        # Someone else changed the record (or, through its parts, its root) while this request worked: nothing of it is kept.
+        return await _business(request, BusinessError("entity.stale", "this record was changed by someone else; reload it"))
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(request: Request, exc: RequestValidationError):  # noqa: ARG001

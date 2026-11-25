@@ -27,6 +27,7 @@ from app.models.payments import OrderPayment
 from app.models.orders import Order, order_fact
 from app.platform.clock import business_date_sql
 from app.platform.entities import Audited, CreationAudited, Versioned
+from app.platform.parts import PartOf
 
 RETURN_KINDS = ("Cancelled after shipment", "Returned")
 
@@ -87,6 +88,7 @@ Invoice.partner_name_sql = column_property(
 
 class InvoiceLine(Base):
     __tablename__ = "sales_invoice_lines"
+    __part_of__ = PartOf(Invoice, "invoice_id")
     __audited_fields__ = frozenset({"qty", "unit_price", "amount"})  # what a person changes: an update is in the audit (2026-11-24)
     __table_args__ = (UniqueConstraint("invoice_id", "line_no", name="uq_sales_invoice_lines_line"),)
 
