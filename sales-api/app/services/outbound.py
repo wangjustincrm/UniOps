@@ -485,7 +485,14 @@ class Outbound940:
                 f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / {set_ref} matches "
                 f"{len(candidates)} outbound 940s (FR-OB-22a). Review it."))
             return 0
-        return await self._apply_ack_940(uow, ack_doc, g, st, candidates[0])
+        order_id = await order_id_of(s, candidates[0])
+        if order_id is None:  # some old files have no order link: a person looks, the pass goes on
+            await self.tasks.raise_problem(s, EDI_997_UNMATCHED, ack_doc.id, problem(
+                EDI_997_UNMATCHED, "997 matches a 940 of no order",
+                f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / {set_ref} matches an outbound 940 that is linked to no "
+                "order (FR-OB-22a). Review it."))
+            return 0
+        return await self._apply_ack_940(uow, ack_doc, g, st, candidates[0], order_id)
 
     async def _apply_ack_943(self, uow, ack_doc: Document, g, st) -> int:
         s = uow.session
@@ -497,10 +504,10 @@ class Outbound940:
                 "matches no outbound 943 (FR-OB-22a). Review it."))
         return matched
 
-    async def _apply_ack_940(self, uow, ack_doc: Document, g, st, doc_id: int) -> int:
+    async def _apply_ack_940(self, uow, ack_doc: Document, g, st, doc_id: int, order_id: int) -> int:
         """The 940's 997: per set (AK5) when there is an AK2, else the group's AK9."""
         s = uow.session
-        order = await s.get(Order, await order_id_of(s, doc_id), with_for_update=True)
+        order = await s.get(Order, order_id, with_for_update=True)
         doc = await s.get(Document, doc_id, with_for_update=True)
         await link(s, ack_doc.id, "order", order.id)
         accepted = st.accepted if st is not None and st.code else g.accepted
@@ -560,7 +567,10 @@ class Outbound940:
 
     async def _timeout(self, uow, did: int, due: datetime, minutes: int) -> bool:
         s = uow.session
-        order = await s.get(Order, await order_id_of(s, did), with_for_update=True)  # the order, then its 940
+        order_id = await order_id_of(s, did)
+        if order_id is None:
+            raise BusinessError("edi.no_order", f"the 940 document {did} is linked to no order")
+        order = await s.get(Order, order_id, with_for_update=True)  # the order, then its 940
         doc = (await s.execute(select(Document).where(Document.id == did, *self._overdue(due))
                                .with_for_update(skip_locked=True))).scalar_one_or_none()
         if doc is None:  # answered, or another run has it
@@ -580,10 +590,10 @@ class Outbound940:
         return await changed_after_940(uow, self.tasks, order, new_lines, new_ship_to)
 
 
-async def order_id_of(session, document_id: int) -> int:
-    """The order a 940 belongs to (its link, which never changes): read without a lock."""
+async def order_id_of(session, document_id: int) -> int | None:
+    """The order a 940 belongs to (its link, which never changes): read without a lock. None: linked to none."""
     return (await session.execute(select(DocumentLink.entity_id).where(
-        DocumentLink.document_id == document_id, DocumentLink.entity_type == "order"))).scalar_one()
+        DocumentLink.document_id == document_id, DocumentLink.entity_type == "order"))).scalar_one_or_none()
 
 
 async def latest_940(session, order_id: int, *, for_update: bool = False) -> Document | None:

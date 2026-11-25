@@ -8,7 +8,7 @@ import pytest
 import sqlalchemy as sa
 
 from app.domain.status import Fulfillment as F
-from app.models.documents import Document
+from app.models.documents import Document, DocumentLink
 from app.models.orders import Order
 from app.models.transfers import Transfer
 from app.platform.actors import SYSTEM_ACTOR
@@ -129,6 +129,38 @@ async def test_a_997_that_matches_none_or_several_is_said_as_before(t):
     titles = [r["title"] for r in await t.q("SELECT title FROM tasks WHERE type = 'sales_997_unmatched' ORDER BY created_at")]
     assert "matches no 940s" in titles[0] and "matches several 940s" in titles[1]
     assert await status(t.edi, o.id) == F.SENT_940 == await status(t.edi, other.id)
+
+
+async def unlinked(t, d):
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.delete(DocumentLink).where(DocumentLink.document_id == d["id"]))
+        await u.commit()
+
+
+async def test_a_997_for_a_940_of_no_order_is_a_task_and_the_others_go_on(t):
+    """Some old files have no order link (18 on dev2): a late 997 for one is looked at by a person, not an error of the pass."""
+    o, d = await sent_order(t.edi)
+    other, d2 = await sent_order(t.edi, number=9302)
+    await unlinked(t, d)
+    await store_997(t.edi, ack997(d["st02"]), "997-lost.edi")
+    await store_997(t.edi, ack997(d2["st02"], "A", "A", "1"), "997-ok.edi")
+    r = await t.edi.out.process_997s()
+    assert (r.unmatched_997, r.acks, r.failed) == (1, 1, 0)
+    [task] = await t.q("SELECT title, description FROM tasks WHERE type = 'sales_997_unmatched'")
+    assert task["title"] == "997 matches a 940 of no order" and "997-lost.edi" in task["description"]
+    assert await status(t.edi, other.id) == F.ACCEPTED_940
+    assert [x["ack_status"] for x in await docs(t.edi)] == ["Waiting", "Accepted"]  # the lost one is left as it is
+
+
+async def test_an_overdue_940_of_no_order_does_not_stop_the_others(t):
+    o, d = await sent_order(t.edi)
+    other, d2 = await sent_order(t.edi, number=9302)
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.update(Document).where(Document.id.in_([d["id"], d2["id"]])).values(sent_at=AFTER_DELAY - timedelta(hours=5)))
+        await u.commit()
+    await unlinked(t, d)
+    r = await t.edi.out.timeouts()
+    assert (r.timeouts, r.failed) == (1, 1) and await status(t.edi, other.id) == F.TIMEOUT_940
 
 
 # ── a transfer and its 943 ───────────────────────────────────────────────────
