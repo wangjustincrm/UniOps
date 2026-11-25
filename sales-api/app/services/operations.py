@@ -28,8 +28,8 @@ from app.models.shipments import (
 )
 from app.models.transfers import Receipt, Transfer
 from app.platform.authorization import requires
-from app.platform.commands import ANY_VERSION, require_reason
-from app.platform.errors import BusinessError, NotFound
+from app.platform.commands import ANY_VERSION
+from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.resource import Resource
@@ -228,12 +228,6 @@ class DocumentActions(Service):
     def __init__(self, uow) -> None:
         super().__init__(uow)
 
-    async def _doc(self, id: int) -> Document:
-        doc = await self.s.get(Document, id, with_for_update=True)
-        if doc is None:
-            raise NotFound("Document", id)
-        return doc
-
     async def _resolve(self, tasks, doc: Document) -> None:
         for event in (UNREADABLE_FILE, ORDER_FILE_UNREADABLE):
             await tasks.resolve_problem(self.s, event, doc.id, by=self.uow.actor.user_id)
@@ -243,14 +237,6 @@ class DocumentActions(Service):
         """Failed, or kept as a file nobody could read (an unknown kind still waiting)."""
         return doc.direction == "IN" and (doc.processing_status == InboundFile.FAILED.value
                                           or (doc.processing_status == InboundFile.PENDING.value and doc.kind == "OTHER"))
-
-    @requires(FILE_RETRY)
-    async def read_again(self, id: int, tasks) -> Document:
-        """The file is classified again from its bytes and waits for the next pass."""
-        doc = await self._doc(id)
-        if not self._stuck(doc):
-            raise BusinessError("document.not_failed", f"only a received file that failed can be read again (it is {doc.processing_status})")
-        return await self._run_read_again(doc, tasks)
 
     async def _run_read_again(self, doc: Document, tasks) -> Document:
         content = (await self.s.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
@@ -265,13 +251,6 @@ class DocumentActions(Service):
         await self._resolve(tasks, doc)
         await self.s.flush()
         return doc
-
-    @requires(FILE_RETRY)
-    async def ignore(self, id: int, reason: str, tasks) -> Document:
-        doc = await self._doc(id)
-        if not self._stuck(doc):
-            raise BusinessError("document.not_failed", f"only a received file that failed can be ignored (it is {doc.processing_status})")
-        return await self._run_ignore(doc, require_reason(reason, code="document.reason", message="say why it is ignored"), tasks)
 
     async def _run_ignore(self, doc: Document, reason: str, tasks) -> Document:
         self.uow.set_reason(f"ignored: {reason}")
@@ -303,19 +282,6 @@ class DocumentActions(Service):
         if row is None:
             raise BusinessError("document.not_resendable", f"a {doc.kind} is not sent again from here")
         return Owner("invoice", row.id, "sales.invoice.manage", again=row.invoice_status == Inv.SENT.value)
-
-    @requires(FILE_RETRY)
-    async def send_again(self, id: int, rt, reason: str | None = None) -> str:
-        """A sent file again, as its owner would send it: the 940 of its order, the 943 of its transfer,
-        the invoice (one already sent says why). Each keeps its own rules (a live 940 is replaced only from the order).
-        The document is only read: its owner is what is locked and changed."""
-        doc = await self.s.get(Document, id)
-        if doc is None:
-            raise NotFound("Document", id)
-        owner = await self._owner(doc)
-        await self._authorize(owner.permission)
-        note, problem = await self._run_send_again(owner, rt, reason)
-        return problem or note
 
     async def _run_send_again(self, owner: Owner, rt, reason: str | None) -> tuple[str | None, str | None]:
         """(what to say, what went wrong: a file that failed its checks is kept as Failed and queues nothing)."""

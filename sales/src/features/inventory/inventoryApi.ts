@@ -162,7 +162,6 @@ export function uploadCount(file: File, countedAt: string, note: string | null) 
   if (note) form.append('note', note)
   return api.upload<StockCountRead>('/inventory/counts', form)
 }
-export const fetchCount = (id: number) => api.get<StockCountRead>(`/inventory/counts/${id}`)
 export const fetchCountLines = (id: number) => api.get<StockCountLineRead[]>(`/inventory/counts/${id}/lines`)
 export const fetchCountCompare = (id: number) => api.get<CountCompareRow[]>(`/inventory/counts/${id}/compare`)
 export const updateCount = (id: number, version: number, countedAt: string | null, note: string | null) =>

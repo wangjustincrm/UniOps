@@ -17,10 +17,10 @@ from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.services.document_actions import DOCUMENT_ACTIONS
 from app.services.invoice_views import InvoiceService
 from app.services.invoicing import SEND_INVOICE
-from app.services.operations import DocumentActions
 from app.services.outbound import SEND_940
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.transfers import SEND_943
+from tests import acting
 from tests import test_send_940 as s940
 from tests import test_send_943 as s943
 from tests import test_send_invoice as sinv
@@ -43,7 +43,7 @@ def runtime(t):
 def press(t, did, reason=None):
     async def go():
         async with t.factory(OP) as u:
-            await DocumentActions(u).send_again(did, runtime(t), reason)
+            await acting.send_again(u, did, runtime(t), reason)
             await u.commit()
     return go
 
@@ -142,7 +142,7 @@ async def test_one_that_is_queued_says_its_number(t):
 
 async def test_two_presses_on_a_940_s_file_make_one(t):
     _, did = await refused_940(t)
-    e = await twice(t, OP, lambda u: DocumentActions(u).send_again(did, runtime(t)))
+    e = await twice(t, OP, lambda u: acting.send_again(u, did, runtime(t)))
     assert said(e) == ("send.queued", "pending")
     await t.worker.run_once()
     assert len(s940.puts(t)) == 1
@@ -151,7 +151,7 @@ async def test_two_presses_on_a_940_s_file_make_one(t):
 async def test_two_presses_on_a_943_s_file_make_one(p7):  # noqa: F811
     await s943.failed(p7)
     did = await its_file(p7, "943_EDI")
-    e = await twice(p7, OP, lambda u: DocumentActions(u).send_again(did, runtime(p7)))
+    e = await twice(p7, OP, lambda u: acting.send_again(u, did, runtime(p7)))
     assert said(e) == ("send.queued", "pending")
     await p7.worker.run_once()
     assert len(s943.puts(p7)) == 1
@@ -160,8 +160,8 @@ async def test_two_presses_on_a_943_s_file_make_one(p7):  # noqa: F811
 async def test_an_invoice_from_its_file_and_from_its_page_at_once_go_once(p6):  # noqa: F811
     _, inv = await sinv.sent(p6)
     did, v, before = await its_file(p6, "810_JSON"), await sinv.version(p6, inv.id), len(sinv.puts(p6))
-    calls = iter([lambda u: DocumentActions(u).send_again(did, runtime(p6), WHY),
-                  lambda u: InvoiceService(u).send(p6.inv, inv.id, v, again=True, reason=WHY)])
+    calls = iter([lambda u: acting.send_again(u, did, runtime(p6), WHY),
+                  lambda u: acting.send_invoice(u, p6.inv, inv.id, v, again=True, reason=WHY)])
     e = await twice(p6, OP, lambda u: next(calls)(u))
     assert said(e) == ("send.queued", "pending")
     await p6.worker.run_once()

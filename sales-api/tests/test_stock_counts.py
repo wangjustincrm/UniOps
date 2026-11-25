@@ -13,6 +13,7 @@ from app.platform.errors import BusinessError
 from app.platform.query import QuerySpec
 from app.services.stock import StockItemService, StockLotService, StockMoveService, sync
 from app.services.stock_counts import StockCountService
+from tests import acting
 from tests.domain.test_transfers_edi import real_944
 from app.domain.status import Fulfillment as F
 from app.models.orders import Order
@@ -136,7 +137,7 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
     assert before[("CF0092", "26C253125110231")] == 8400 and ("CHEP", None) not in before  # reading changes nothing
 
     async with p7.factory(OP) as u:
-        c = await StockCountService(u).apply(c.id, version=c.version)
+        c = await acting.count(u, "apply", c.id, c.version)
         await u.commit()
     lots = await _lots(p7)
     assert lots[("CF0092", "26C253125110231")] == 8000 and lots[("CF0103", "26E248121010211")] == 7200
@@ -177,7 +178,7 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
     async with p7.factory(OP) as u:
         with pytest.raises(BusinessError):
             await StockCountService(u).update(c.id, version=c.version, counted_at=when - timedelta(days=1), note=None)
-        c = await StockCountService(u).undo(c.id, version=c.version, reason="wrong moment")
+        c = await acting.count(u, "undo", c.id, c.version, "wrong moment")
         await u.commit()
     assert c.applied_at is None
     lots = await _lots(p7)
@@ -232,7 +233,7 @@ async def test_a_lot_s_picked_pallets_are_in_process_until_the_945(p6):  # noqa:
               f"CF0092,LOT-1,940,A,Storage\nCF0092,LOT-1,60,A,CRM|{o.order_number:09d}\n")
     async with p6.factory(OP) as u:
         c = await StockCountService(u).create(name="r.csv", data=report.encode(), counted_at=datetime(2026, 11, 2, 20, tzinfo=timezone.utc), note=None)
-        await StockCountService(u).apply(c.id, version=c.version)
+        await acting.count(u, "apply", c.id, c.version)
         await u.commit()
 
     async def lot():

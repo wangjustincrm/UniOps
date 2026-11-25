@@ -82,7 +82,6 @@ from app.schemas.orders import (
     RefundAdjustmentRead,
     RefundLineRead,
     RefundRead,
-    ReviewResult,
     ShipmentRead,
     ShipmentRowRead,
     TimelineEntry,
@@ -97,7 +96,7 @@ from app.services.order_status_sql import (
     ORDER_STATUS_SQL,
     TO_CONFIRM_SQL,
 )
-from app.services.orders import BarcodeLookup, OrderSync, order_ref
+from app.services.orders import BarcodeLookup, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE, automatic_runs_on
 
 READ = "sales.read"
@@ -495,31 +494,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         await s.refresh(o, ["returned_ea_sql"])  # the order's total, read in this unit before the change
         return await self.detail(id)
 
-    @requires(OPERATE)
-    async def resolve_review(self, id: int, tasks, shopify=None) -> ReviewResult:
-        barcodes = await self._barcodes(await self.repo.get(id), shopify)
-        await self._read_barcodes(id, barcodes)  # Shopify first: a slow store never holds the row lock
-        o = await self.repo.get(id, for_update=True)
-        if o.fulfillment_status != F.REVIEW:
-            raise BusinessError("order.not_in_review", "the order is not in review",
-                                {"status": o.fulfillment_status})
-        self.uow.set_reason("re-check review")
-        remaining = await OrderSync(self.uow, tasks).recheck(o, barcodes)
-        await self._load_runs_on()  # the next step needs it (else none is shown)
-        return ReviewResult(order=self.to_read(await self.repo.get(id)), remaining=remaining)  # read again: facts expire on flush
-
-
-    @requires(OPERATE)
-    async def send_940_now(self, id: int, outbound, *, replace: bool = False, version: VersionArg = None, reason: str | None = None) -> dict:
-        """FR-OB-03c: generate and queue the 940 now (any delay, a manual-mode
-        partner, a resend after a rejection / failure / timeout, or a confirmed
-        replacement, which says why). Audited through the order's transitions."""
-        doc = await self._run_send_940(id, outbound, replace=replace, version=version, reason=reason)
-        order = await self.repo.get(id)
-        await self._load_runs_on()  # the next step needs it (else none is shown)
-        return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
-                "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
-
     async def _run_send_940(self, id: int, outbound, *, replace: bool, version: VersionArg, reason: str | None):
         self.uow.set_reason(f"940 replaced: {(reason or '').strip()}" if replace else "Send 940 now")
         return await outbound.send_now(self.uow, id, replace=replace, version=version, reason=reason)
@@ -687,14 +661,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         sh = await shipments.retry_shopify(self.uow, shipment_id)
         return {"shipment_id": sh.id, "shopify_status": sh.shopify_status}
 
-    @requires(OPERATE)
-    async def fulfil_at_997(self, order_id: int, shipments, version: VersionArg = None) -> dict:
-        """Fulfil in Shopify now (user 2026-11-16): the 997 step for an order whose 940 Radiant accepted —
-        fulfil in full without tracking, then archive; reads the order's fulfillments first."""
-        self.uow.set_reason("Shopify: fulfil at the 997")
-        o = await shipments.fulfil_at_997(self.uow, order_id, version=version)
-        return {"order_id": o.id, "queued": True}
-
     @requires(READ)
     async def eligibility_preview(self, outbound) -> list[dict]:
         """AC-OB-21: the orders the next cycle would send a 940 for (writes nothing)."""
@@ -834,10 +800,6 @@ class ManualOrderService(Service):
         await self.s.flush()
         return o
 
-    @requires(OPERATE)
-    async def submit(self, id: int, version: int | None) -> Order:
-        return await self._run_submit(await self._draft(id, version))
-
     async def _run_submit(self, o: Order) -> Order:
         """The work of a submit, on a draft already locked and checked."""
         bad = list((await self.s.execute(select(OrderLine.line_no, OrderLine.problem).where(
@@ -905,10 +867,6 @@ class ManualOrderService(Service):
             raise InvalidInput("order.reorder_partner", "a reorder needs exactly one active MANUAL partner (Configuration → "
                                f"Partners); there are {len(manual)}", {"field": "partner_code"})
         return await self._partner(manual[0].code)
-
-    @requires(OPERATE)
-    async def cancel(self, id: int, version: int | None) -> Order:
-        return await self._run_cancel(await self._draft(id, version))
 
     async def _run_cancel(self, o: Order) -> Order:
         self.uow.set_reason("manual order: cancel draft")

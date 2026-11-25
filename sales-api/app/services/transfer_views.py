@@ -10,7 +10,6 @@ from app.models.config import Warehouse
 from app.models.documents import Document
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.authorization import requires
-from app.platform.commands import ANY_VERSION, VersionArg, load_for_command
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
 from app.platform.resource import Resource
@@ -108,21 +107,6 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         return await self._detail_after(id)
 
     @requires(MANAGE)
-    async def ready(self, transfers, id: int, version: int | None) -> TransferDetail:
-        await transfers.ready(self.uow, id, version)
-        return await self._detail_after(id)
-
-    @requires(MANAGE)
-    async def cancel(self, transfers, id: int, version: int | None, reason: str) -> TransferDetail:
-        await transfers.cancel(self.uow, id, version, reason)
-        return await self._detail_after(id)
-
-    @requires(MANAGE)
-    async def resend(self, transfers, id: int, version: int | None) -> TransferDetail:
-        await transfers.resend(self.uow, id, version)
-        return await self._detail_after(id)
-
-    @requires(MANAGE)
     async def amend(self, transfers, id: int, body, version: int | None) -> TransferDetail:
         await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
                               reason=body.reason)
@@ -131,16 +115,6 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     @requires(MANAGE)
     async def resolve(self, transfers, id: int, body, version: int | None) -> TransferDetail:
         await transfers.resolve(self.uow, id, version=version, how=body.how, reason=body.reason)
-        return await self._detail_after(id)
-
-    @requires(MANAGE)
-    async def release(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> TransferDetail:
-        """On Hold (a second, different 944: compared by a person) back to where it was, with why (as an order's hold).
-        The first 944 stays applied; the second stays kept, not applied."""
-        t = await load_for_command(self.uow.session, Transfer, id, version=version)
-        if why := not_on_hold(t):
-            raise why
-        await self._run_release(t, reason)
         return await self._detail_after(id)
 
     async def _run_release(self, t: Transfer, reason: str) -> None:

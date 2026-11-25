@@ -44,6 +44,7 @@ from app.services.order_holds import OrderActions
 from app.services.order_views import ManualOrderService, OrderRepository, OrderService
 from app.services.settings import EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 from app.services.shadow import mark_open_orders
+from tests import acting
 from tests.test_orders import OP, env, shopify_order  # noqa: F401 — env is a fixture
 from tests.test_invoicing import order_version
 
@@ -196,7 +197,7 @@ async def ship(t, oid, rows, **k):
 
 async def send_now(t, oid):
     async with t.factory(OP) as u:
-        out = await OrderService(u).send_940_now(oid, t.rt.outbound, version=ANY_VERSION)
+        out = await acting.send_940(u, t.rt.outbound, oid, ANY_VERSION)
         await u.commit()
         return out
 
@@ -210,7 +211,7 @@ async def confirm(t, oid, lines=None):
 
 async def send_invoice(t, invoice_id):
     async with t.factory(OP) as u:
-        await InvoiceService(u).send(t.rt.invoicing, invoice_id, ANY_VERSION)
+        await acting.send_invoice(u, t.rt.invoicing, invoice_id, ANY_VERSION)
         await u.commit()
 
 
@@ -358,7 +359,7 @@ async def manual(t, partner):
 
 async def submit(t, o):
     async with t.factory(OP) as u:
-        await ManualOrderService(u).submit(o.id, o.version)
+        await acting.submit(u, o.id, o.version)
         await u.commit()
     after(t, minutes=1)  # submitting stamps real time; the test's clock runs ahead of it
 
@@ -412,7 +413,7 @@ async def test_f_needs_review_and_recheck(t):
         u.session.add(ItemUnit(item_code="NEW1", unit="CASE", factor_ea=6, version=1))
         await u.commit()
     async with t.factory(OP) as u:
-        await OrderService(u).resolve_review(o, t.rt.tasks, t.shop)
+        await acting.recheck(u, t.rt.tasks, o, t.shop)
         await u.commit()
     await see(t, o, "F2 Re-check clears it", "Pending", "Not Required", "To Fulfill", detail="Sends")
     assert await tasks(t, "order_review") == [True]
@@ -638,13 +639,13 @@ async def test_f_payment_hold_cancelled_at_source_is_silent(t):
 
 async def cancel(t, o, reason="agreed with the customer"):
     async with t.factory(OP) as u:
-        await OrderActions(u, t.rt.tasks).cancel(o, reason)
+        await acting.cancel_order(u, t.rt.tasks, o, reason)
         await u.commit()
 
 
 async def release(t, o, to, reason="agreed with the warehouse"):
     async with t.factory(OP) as u:
-        await OrderActions(u, t.rt.tasks).release_hold(o, to, reason)
+        await acting.release_hold(u, t.rt.tasks, o, to, reason)
         await u.commit()
 
 

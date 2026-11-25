@@ -100,14 +100,6 @@ class OrderActions(Service):
         await self._resolve(o)
         await oplog.write(self.s, "INFO", STEP, f"order {o.label} cancelled: {reason}", order_id=o.id)
 
-    @requires(OPERATE)
-    async def cancel(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> Order:
-        o = await self._order(id, version)
-        if why := cancel_refusal(o):
-            raise why
-        await self._run_cancel(o, reason)
-        return o
-
     async def _run_cancel(self, o: Order, reason: str) -> None:
         self.uow.set_reason(f"order cancelled: {reason}")
         await self._cancel(o, reason)
@@ -116,12 +108,6 @@ class OrderActions(Service):
     async def _applied(self, order_id: int) -> list[Shipment]:
         return list((await self.s.execute(select(Shipment).where(Shipment.order_id == order_id, Shipment.applied.is_(True))
                                           .order_by(Shipment.id).with_for_update())).scalars())
-
-    @requires(OPERATE)
-    async def release_hold(self, id: int, to: str, reason: str, version: VersionArg = ANY_VERSION) -> Order:
-        o = await self._order(id, version)
-        await self._run_release(o, to, reason)
-        return o
 
     async def _run_release(self, o: Order, to: str, reason: str) -> None:
         applied = await self._applied(o.id)

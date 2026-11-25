@@ -11,8 +11,8 @@ from app.platform.bulk_actions import ActionIn, run_action
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.services.transfer_actions import TRANSFER_ACTIONS
-from app.services.transfer_views import TransferService
 from app.services.transfers import SEND_943
+from tests import acting
 from tests.sending import crash, rows, says, way_out
 from tests.test_lock_order import meets, queued_943, state
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
@@ -23,7 +23,7 @@ from tests.test_transfers import create, p7, sent_transfer  # noqa: F401 — p7 
 def cancel(p7, x):  # noqa: F811
     async def go():
         async with p7.factory(OP) as u:
-            await TransferService(u).cancel(p7.tr, x.id, ANY_VERSION, "wrong lines")
+            await acting.transfer(u, p7.tr, "cancel", x.id, ANY_VERSION, "wrong lines")
             await u.commit()
     return go
 
@@ -77,7 +77,7 @@ async def test_a_cancellation_waits_for_a_claim_not_yet_committed_then_is_refuse
 async def test_a_cancellation_and_a_claim_waiting_for_it_cancel_first(p7):  # noqa: F811
     """The claim holds its row and waits for the transfer; the cancellation must not wait for that row."""
     x, d = await queued_943(p7)
-    out = await meets(p7, Transfer, x.id, d, p7.worker._claim, lambda u: TransferService(u).cancel(p7.tr, x.id, ANY_VERSION, "wrong lines"))
+    out = await meets(p7, Transfer, x.id, d, p7.worker._claim, lambda u: acting.transfer(u, p7.tr, "cancel", x.id, ANY_VERSION, "wrong lines"))
     assert out == ("cancelled", None)  # it read the transfer again: cancelled
     s = await state(p7, x)
     assert (s[0], s[2], s[3]) == ("Cancelled", "Cancelled", ["CANCELLED"]) and p7.store.files == {}
@@ -102,10 +102,10 @@ async def test_the_cancellation_s_other_rules_stand(p7):  # noqa: F811
 
     async def stale():
         async with p7.factory(OP) as u:
-            await TransferService(u).cancel(p7.tr, draft.id, 99, "wrong lines")
+            await acting.transfer(u, p7.tr, "cancel", draft.id, 99, "wrong lines")
     assert (await says(stale)).code == "entity.stale"
 
     async def gone():
         async with p7.factory(OP) as u:
-            await TransferService(u).cancel(p7.tr, 99_999, ANY_VERSION, "wrong lines")
+            await acting.transfer(u, p7.tr, "cancel", 99_999, ANY_VERSION, "wrong lines")
     assert isinstance(await says(gone), BusinessError)

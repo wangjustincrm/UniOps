@@ -13,11 +13,9 @@ from app.models.orders import Order
 from app.models.transfers import Transfer
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.commands import ANY_VERSION
-from app.services.order_holds import OrderActions
-from app.services.order_views import OrderService
 from app.services.outbound import SEND_940
-from app.services.transfer_views import TransferService
 from app.services.transfers import SEND_943
+from tests import acting
 from tests.sending import rows, says
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import AFTER_DELAY, a_paid_order, ack997, docs, edi, sent_order, status, store_997  # noqa: F401 — edi is a fixture
@@ -54,7 +52,7 @@ async def test_the_997_and_a_replacement(t):
     o, d = await sent_order(t.edi)
     await store_997(t.edi, ack997(d["st02"]))
     await meets(t, Order, o.id, d["id"], t.edi.out.process_997s,
-                lambda u: OrderService(u).send_940_now(o.id, t.edi.out, replace=True, version=ANY_VERSION, reason="wrong quantity"))
+                lambda u: acting.send_940(u, t.edi.out, o.id, ANY_VERSION, replace=True, reason="wrong quantity"))
     assert await status(t.edi, o.id) == F.GENERATED_940  # the replacement stands; the old file keeps its answer
     assert [(x["file_status"], x["ack_status"]) for x in await docs(t.edi)] == [("Replaced", "Accepted"), ("Ready To Send", "Waiting")]
     assert (await t.q("SELECT processing_status FROM sales_documents WHERE kind = '997_EDI'"))[0]["processing_status"] == "Processed"
@@ -68,7 +66,7 @@ async def test_the_997_first_then_a_replacement_looks_again(t):
 
     async def press():
         async with t.factory(OP) as u:
-            await OrderService(u).send_940_now(o.id, t.edi.out, replace=True, version=seen, reason="wrong quantity")
+            await acting.send_940(u, t.edi.out, o.id, seen, replace=True, reason="wrong quantity")
     assert (await says(press)).code == "entity.stale"
 
 
@@ -78,7 +76,7 @@ async def test_the_timeout_and_a_replacement(t):
         await u.session.execute(sa.update(Document).where(Document.id == d["id"]).values(sent_at=AFTER_DELAY - timedelta(hours=5)))
         await u.commit()
     r = await meets(t, Order, o.id, d["id"], t.edi.out.timeouts,
-                    lambda u: OrderService(u).send_940_now(o.id, t.edi.out, replace=True, version=ANY_VERSION, reason="wrong quantity"))
+                    lambda u: acting.send_940(u, t.edi.out, o.id, ANY_VERSION, replace=True, reason="wrong quantity"))
     assert (r.timeouts, r.failed) == (0, 0) and await status(t.edi, o.id) == F.GENERATED_940  # replaced: nothing is overdue
 
 
@@ -95,7 +93,7 @@ async def test_the_outbox_s_claim_and_a_cancellation(t):
     await t.edi.out.queue_due()
     [d] = await docs(t.edi)
     out = await meets(t, Order, o.id, d["id"], t.worker._claim,
-                      lambda u: OrderActions(u, t.edi.env.tasks).cancel(o.id, "the customer called", ANY_VERSION))
+                      lambda u: acting.cancel_order(u, t.edi.env.tasks, o.id, "the customer called"))
     assert out == ("cancelled", None) and await status(t.edi, o.id) == F.CANCELLED
     assert [r["status"] for r in await rows(t, SEND_940)] == ["CANCELLED"] and t.store.files == {}
 
@@ -168,7 +166,7 @@ async def test_an_overdue_940_of_no_order_does_not_stop_the_others(t):
 async def queued_943(p7):  # noqa: F811
     x = await create(p7)
     async with p7.factory(OP) as u:
-        await TransferService(u).ready(p7.tr, x.id, ANY_VERSION)
+        await acting.transfer(u, p7.tr, "ready", x.id, ANY_VERSION)
         await u.commit()
     await p7.tr.queue_ready()
     d = (await p7.q("SELECT max(id) i FROM sales_documents WHERE kind = '943_EDI'"))[0]["i"]

@@ -16,8 +16,8 @@ from app.platform.errors import InvalidInput
 from app.platform.outbox import AcceptedThenFailed
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.transfer_actions import TRANSFER_ACTIONS
-from app.services.transfer_views import TransferService
 from app.services.transfers import SEND_943
+from tests import acting
 from tests.sending import STATE_IDS, STATES, crash, put_row, rows, said, says, twice, way_out
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -45,7 +45,7 @@ async def failed(t):
 def press(t, x, v):
     async def go():
         async with t.factory(OP) as u:
-            await TransferService(u).resend(t.tr, x.id, v)
+            await acting.transfer(u, t.tr, "resend", x.id, v)
             await u.commit()
     return go
 
@@ -82,7 +82,7 @@ async def test_another_transfer_s_943_does_not_block(p7):  # noqa: F811
 async def test_a_943_lost_in_a_crash_says_how_it_ends_then_can_be_resent(p7):  # noqa: F811
     x = await create(p7)
     async with p7.factory(OP) as u:
-        await TransferService(u).ready(p7.tr, x.id, (await tr(p7, x))["version"])
+        await acting.transfer(u, p7.tr, "ready", x.id, (await tr(p7, x))["version"])
         await u.commit()
     await p7.tr.queue_ready()
     [r] = await rows(p7, SEND_943)
@@ -98,7 +98,7 @@ async def test_a_943_lost_in_a_crash_says_how_it_ends_then_can_be_resent(p7):  #
 async def test_two_presses_at_once_make_one_943(p7):  # noqa: F811
     x = await failed(p7)
     v = (await tr(p7, x))["version"]
-    e = await twice(p7, OP, lambda u: TransferService(u).resend(p7.tr, x.id, v))
+    e = await twice(p7, OP, lambda u: acting.transfer(u, p7.tr, "resend", x.id, v))
     assert said(e) == ("send.queued", "pending")
     ctls = await n_943(p7)
     assert len(ctls) == 2 == len(set(ctls)) and [r["status"] for r in await rows(p7, SEND_943)] == ["FAILED", "PENDING"]

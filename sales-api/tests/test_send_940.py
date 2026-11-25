@@ -18,6 +18,7 @@ from app.services.order_actions import ORDER_ACTIONS
 from app.services.order_views import OrderService
 from app.services.outbound import SEND_940
 from app.services.settings import SETTINGS, SHADOW_MODE
+from tests import acting
 from tests.sending import STATE_IDS, STATES, crash, put_row, rows, said, says, twice, way_out
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import a_paid_order, ack997, docs, edi, sent_order, status, store_997  # noqa: F401 — edi is a fixture
@@ -41,7 +42,7 @@ async def version(t, oid):
 def press(t, oid, v, replace=False, reason=WHY):
     async def go():
         async with t.factory(OP) as u:
-            await OrderService(u).send_940_now(oid, t.edi.out, replace=replace, version=v, reason=reason if replace else None)
+            await acting.send_940(u, t.edi.out, oid, v, replace=replace, reason=reason if replace else None)
             await u.commit()
     return go
 
@@ -104,7 +105,7 @@ async def test_two_presses_at_once_make_one_940(t, replace):
     o = (await sent_order(t.edi))[0] if replace else await a_paid_order(t.edi)
     v = await version(t, o.id)
     before = len(puts(t))
-    e = await twice(t, OP, lambda u: OrderService(u).send_940_now(o.id, t.edi.out, replace=replace, version=v, reason=WHY))
+    e = await twice(t, OP, lambda u: acting.send_940(u, t.edi.out, o.id, v, replace=replace, reason=WHY if replace else None))
     assert said(e) == ("send.queued", "pending")
     ctls = [d["st02"] for d in await docs(t.edi)]
     assert len(ctls) == len(set(ctls)) == (2 if replace else 1)
@@ -256,5 +257,5 @@ async def test_the_worker_s_claim_and_a_press_do_not_wait_for_each_other(t):
         await worker.session.get(Document, d["id"], with_for_update=True)
         await u.session.get(Order, o.id, with_for_update=True)
         with pytest.raises(BusinessError) as e:
-            await asyncio.wait_for(OrderService(u).send_940_now(o.id, t.edi.out, version=await version(t, o.id)), 3)
+            await asyncio.wait_for(acting.send_940(u, t.edi.out, o.id, await version(t, o.id)), 3)
         assert said(e.value) == ("send.queued", "pending")

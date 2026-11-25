@@ -166,16 +166,6 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
         await self.uow.session.flush()
         return await self.get(c.id)
 
-    async def apply(self, count_id: int, *, version: int) -> StockCountRead:
-        await authorize(self.uow, ADJUST)
-        c = await self._count(count_id, lock=True)
-        if c.version != version:
-            raise BusinessError("entity.stale", "someone changed this count: reload it", status_code=409)
-        if c.applied_at is not None:
-            raise BusinessError("stock_count.applied", "this count is already the start")
-        await self._run_apply(c)
-        return await self.get(c.id)
-
     async def _run_apply(self, c: StockCount) -> None:
         s = self.uow.session
         c.applied_at, c.applied_by_name = clock().now(), self.uow.actor.name
@@ -184,16 +174,6 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
         n = await count_moves(s)
         await oplog.write(s, "INFO", "stock", f"Radiant count of {c.counted_at:%Y-%m-%d %H:%M} UTC applied by {self.uow.actor.name}: "
                           f"{n} lots set to Radiant's figure", document_id=c.document_id)
-
-    async def undo(self, count_id: int, *, version: int, reason: str) -> StockCountRead:
-        await authorize(self.uow, ADJUST)
-        c = await self._count(count_id, lock=True)
-        if c.version != version:
-            raise BusinessError("entity.stale", "someone changed this count: reload it", status_code=409)
-        if c.applied_at is None:
-            raise BusinessError("stock_count.not_applied", "this count is not applied")
-        await self._run_undo(c, reason)
-        return await self.get(c.id)
 
     async def _run_undo(self, c: StockCount, reason: str) -> None:
         s = self.uow.session

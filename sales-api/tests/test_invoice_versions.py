@@ -20,6 +20,7 @@ from app.schemas.orders import ReturnedIn
 from app.services.invoice_views import InvoiceService
 from app.services.order_actions import ORDER_ACTIONS
 from app.services.order_views import OrderService
+from tests import acting
 from tests.test_invoicing import OP, confirm, inv_status, order_version, p6, shipped_850  # noqa: F401 — p6 is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -143,7 +144,7 @@ async def _edit(t, u, inv, ids):  # noqa: ARG001
 
 
 async def _send(t, u, inv, ids):  # noqa: ARG001
-    await InvoiceService(u).send(t.inv, inv.id, ANY_VERSION)
+    await t.inv.send(u, inv.id, version=ANY_VERSION)  # as the action does, its version checked
 
 
 async def _pre_check(t, u, inv, ids):  # noqa: ARG001
@@ -190,7 +191,7 @@ async def test_an_invoice_that_is_gone_is_said_as_before(p6):  # noqa: F811
             await InvoiceService(u).edit(p6.inv, 99_999, InvoiceEdit(reason="x y z"), 1)
         assert (e.value.code, e.value.status_code) == ("entity.not_found", 404)
         with pytest.raises(BusinessError) as e:
-            await InvoiceService(u).send(p6.inv, 99_999, ANY_VERSION)
-        assert e.value.code == "invoice.not_found"
+            await acting.send_invoice(u, p6.inv, 99_999, ANY_VERSION)
+        assert e.value.code == "entity.not_found"
     async with p6.factory(SYSTEM_ACTOR) as u:
         assert await p6.inv._pre_check({"invoice_id": 99_999}, u) == "the invoice or its order is gone"

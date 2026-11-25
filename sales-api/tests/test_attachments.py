@@ -1,10 +1,10 @@
 """A person's files on an order or a transfer, and the transfer's order-like features (user 2026-11-13)."""
 import pytest
 
-from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.services.record_files import Attachments
 from app.services.transfer_views import TransferService
+from tests import acting
 from tests.domain.test_transfers_edi import real_944
 from tests.test_invoicing import p6, shipped_850  # noqa: F401 — p6 is a fixture
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
@@ -80,13 +80,13 @@ async def test_a_transfer_on_hold_is_released_with_a_reason_and_shows_its_activi
         d = await TransferService(u).detail(x.id)
     assert d.status == "On Hold" and d.status_before_hold == "Discrepancy"
     async with p7.factory(OP) as u:
-        out = await TransferService(u).release(x.id, "compared: the first 944 is right", ANY_VERSION)
+        out = await acting.transfer(u, p7.tr, "release", x.id, reason="compared: the first 944 is right")
         await u.commit()
     assert out.status == "Discrepancy"
     assert any(e.reason and "first 944 is right" in e.reason for e in out.timeline)
     async with p7.factory(OP) as u:
         with pytest.raises(BusinessError):
-            await TransferService(u).release(x.id, "again", ANY_VERSION)
+            await acting.transfer(u, p7.tr, "release", x.id, reason="again")
 
 
 async def test_the_list_says_who_may_attach_what_and_an_order_s_activity_names_its_files(p6, monkeypatch):  # noqa: F811

@@ -2,9 +2,6 @@ import { createResourceClient, runOne, type FileSource, type RecordRef } from '@
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/operations.py (hand-written, see partnersApi.ts).
-export const DOCUMENT_KINDS = ['850_JSON', '940_EDI', '943_EDI', '944_EDI', '945_EDI', '997_EDI', '810_JSON',
-  'INVOICE_EMAIL', 'SHOPIFY_ORDER_JSON', 'OTHER'] as const
-export const INBOUND_STATUSES = ['Pending', 'Processing', 'Processed', 'Failed', 'Skipped', 'Duplicate'] as const
 
 export interface DocumentRead {
   id: number

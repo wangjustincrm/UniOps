@@ -524,11 +524,6 @@ class LinePreview(BaseModel):
     weight_lb: Decimal | None = None
 
 
-class ReviewResult(BaseModel):
-    order: OrderRead
-    remaining: list[str]
-
-
 # ── Payment: Settled by hand (sales.settle; app/services/order_payment.py) ─────────────────────────
 Reference = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 

@@ -9,10 +9,11 @@ import pytest
 
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import segments
-from app.platform.errors import InvalidInput
+from app.platform.errors import BusinessError
 from app.platform.query import QuerySpec, parse_filter
 from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
 from app.services.order_views import ManualOrderService, OrderRepository, OrderService
+from tests import acting
 from tests.test_orders import OP, env, shopify_order  # noqa: F401 — env is a fixture
 from tests.test_outbound import edi  # noqa: F401 — a fixture
 
@@ -47,14 +48,14 @@ async def test_reorder_copies_the_customer_as_a_draft_with_no_lines_and_a_reason
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), draft.version)
         await u.commit()
     async with env_.factory(OP) as u:
-        with pytest.raises(InvalidInput) as e:
-            await ManualOrderService(u).submit(o2.id, o2.version)
+        with pytest.raises(BusinessError) as e:
+            await acting.submit(u, o2.id, o2.version)
     assert e.value.code == "order.reason"
     async with env_.factory(OP) as u:
         o2 = await ManualOrderService(u).update(draft.id, ManualOrderIn(
             reason="Gift", partner_code="MAN", customer_reference=source["source_reference"], ship_to=ship, carrier="Purolator",
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), o2.version)
-        o2 = await ManualOrderService(u).submit(o2.id, o2.version)
+        o2 = await acting.submit(u, o2.id, o2.version)
         await u.commit()
     assert o2.fulfillment_status == F.PENDING and o2.manual_reason == "Gift"
 
@@ -98,8 +99,8 @@ async def test_a_reorder_of_a_manual_order_keeps_its_partner_and_a_draft_with_no
         await u.commit()
         version = again.version
     async with env_.factory(OP) as u:
-        with pytest.raises(InvalidInput) as e:
-            await ManualOrderService(u).submit(again.id, version)
+        with pytest.raises(BusinessError) as e:
+            await acting.submit(u, again.id, version)
     assert e.value.code == "order.no_lines"
 
 
@@ -118,8 +119,8 @@ async def test_the_reasons_are_a_setting_and_submit_takes_only_one_of_them(edi):
                                                              lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()
     async with env_.factory(OP) as u:
-        with pytest.raises(InvalidInput) as e:
-            await ManualOrderService(u).submit(o.id, o.version)
+        with pytest.raises(BusinessError) as e:
+            await acting.submit(u, o.id, o.version)
     assert e.value.code == "order.reason" and "Promotion, Gift" in str(e.value)
 
 
@@ -149,6 +150,6 @@ async def test_a_reorder_of_a_shopify_order_saves_and_submits_with_the_address_i
         d = await ManualOrderService(u).update(draft.id, ManualOrderIn(
             reason="Gift", partner_code="MAN", ship_to=AddressIn(**draft.ship_to), carrier="Purolator",
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), draft.version)
-        d = await ManualOrderService(u).submit(d.id, d.version)
+        d = await acting.submit(u, d.id, d.version)
         await u.commit()
     assert d.fulfillment_status == F.PENDING

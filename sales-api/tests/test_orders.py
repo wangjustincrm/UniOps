@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from tests import acting
 
 import httpx
 import pytest
@@ -371,9 +372,9 @@ async def test_a_barcode_read_that_fails_goes_to_review_and_a_re_check_reads_it_
     del env.shop.fail["variant"]
     env.shop.variants = {"701": {"barcode": "062639300029"}}
     async with env.factory(OP) as u:
-        r = await OrderService(u).resolve_review(o.id, env.tasks, env.shop)
+        r = await acting.recheck(u, env.tasks, o.id, env.shop)
         await u.commit()
-    assert r.remaining == [] and r.order.fulfillment_status == F.PENDING
+    assert r == [] and (await env.order(1))[0].fulfillment_status == F.PENDING
     _, [ln] = await env.order(1)
     assert (ln.item_code, ln.source.get("barcode"), "barcode_error" in ln.source) == ("CF0010", "062639300029", False)
 
@@ -424,9 +425,9 @@ async def test_pending_to_review_and_a_resolved_review_waits_for_payment(env):
                            ItemUnit(item_code="UNKNOWN", unit="CASE", factor_ea=6, version=1)])
         await u.commit()
     async with env.factory(OP) as u:  # …and a person re-checks
-        r = await OrderService(u).resolve_review(o.id, env.tasks)
+        r = await acting.recheck(u, env.tasks, o.id)
         await u.commit()
-    assert r.remaining == [] and r.order.fulfillment_status == F.PAYMENT_HOLD  # refunded: not paid (FR-OB-12)
+    assert r == [] and (await env.q("SELECT fulfillment_status s FROM sales_orders WHERE id = :i", i=o.id))[0]["s"] == F.PAYMENT_HOLD  # refunded: not paid (FR-OB-12)
     assert (await env.q("SELECT is_completed FROM tasks"))[0]["is_completed"] is True
 
 
@@ -545,7 +546,7 @@ async def test_ac19_a_manual_draft_is_never_queued_and_after_submit_it_is(env):
     assert o.fulfillment_status == F.DRAFT
     assert not qualifies(*facts(o, delay=0), now=T0 + timedelta(days=9))[0]
     async with env.factory(OP) as u:
-        o = await ManualOrderService(u).submit(o.id, o.version)
+        o = await acting.submit(u, o.id, o.version)
         await u.commit()
     assert o.fulfillment_status == F.PENDING and o.paid_at is not None
     assert qualifies(*facts(o, delay=0), now=o.paid_at)[0]
@@ -554,7 +555,7 @@ async def test_ac19_a_manual_draft_is_never_queued_and_after_submit_it_is(env):
 
 
 async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
-    from app.platform.errors import InvalidInput
+    from app.platform.errors import BusinessError, InvalidInput
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     async with env.factory(OP) as u:
         preview = await ManualOrderService(u).preview([ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")])
@@ -563,8 +564,8 @@ async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
         await u.commit()
     assert preview[0].problem == "no conversion for unit PALLET"
     async with env.factory(OP) as u:
-        with pytest.raises(InvalidInput, match="fix every line"):
-            await ManualOrderService(u).submit(o.id, o.version)
+        with pytest.raises(BusinessError, match="fix every line"):
+            await acting.submit(u, o.id, o.version)
     async with env.factory(OP) as u:
         with pytest.raises(InvalidInput, match="MANUAL-channel"):
             await ManualOrderService(u).create(ManualOrderIn(reason="Sample", partner_code="SHOP", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[

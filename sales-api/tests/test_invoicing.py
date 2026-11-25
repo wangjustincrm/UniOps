@@ -26,6 +26,7 @@ from app.services.invoice_views import InvoiceService
 from app.services.invoicing import SEND_INVOICE, Invoicing
 from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 from app.schemas.invoices import ConfirmIn, DeliveredLine, InvoiceEdit, ReleaseIn, ReturnIn
+from tests import acting
 from tests.test_orders import OP, env, po, run_850  # noqa: F401 — env is a fixture (p4_edi needs it)
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
 from tests.test_shipments import store_945, x945
@@ -97,7 +98,7 @@ async def send(t, invoice_id):
     async with t.factory(OP) as u:
         d = await InvoiceService(u).detail(invoice_id)
         again = d.status == "Sent"
-        out = await InvoiceService(u).send(t.inv, invoice_id, d.version, again=again, reason="lost in the mail" if again else None)
+        out = await acting.send_invoice(u, t.inv, invoice_id, d.version, again=again, reason="lost in the mail" if again else None)
         await u.commit()
         return out
 

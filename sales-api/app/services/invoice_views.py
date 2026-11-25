@@ -15,7 +15,7 @@ from app.models.orders import Order, OrderLine
 from app.services import print_docs
 from app.services.record_files import TIMELINES, timeline_of
 from app.platform.authorization import authorize, requires
-from app.platform.commands import ANY_VERSION, VersionArg
+from app.platform.commands import ANY_VERSION
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.resource import Resource
@@ -131,11 +131,6 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         extra = {"delivery_number": body.delivery_number} if "delivery_number" in body.model_fields_set else {}
         await invoicing.edit(self.uow, id, version=version, invoice_date=body.invoice_date, reason=body.reason,
                              lines=[x.model_dump(exclude_none=True) for x in body.lines], **extra)
-        return await self._detail_after(id)
-
-    @requires(MANAGE)
-    async def send(self, invoicing, id: int, version: VersionArg = None, *, again: bool = False, reason: str | None = None) -> InvoiceDetail:
-        await invoicing.send(self.uow, id, version=version, again=again, reason=reason)
         return await self._detail_after(id)
 
     @requires(MANAGE)

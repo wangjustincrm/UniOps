@@ -17,6 +17,7 @@ from app.services.order_views import OrderService
 from app.services.outbound import FULFILL_AT_997
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.shipments import CLOSE, CLOSE_AT_997, FULFILL
+from tests import acting
 from tests.sending import STATE_IDS, STATES, crash, put_row, rows, said, says, set_row, twice, way_out
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import ack997, sent_order, store_997
@@ -44,7 +45,7 @@ async def version(t, oid) -> int:
 def press(t, oid, v):
     async def go():
         async with t.factory(OP) as u:
-            await OrderService(u).fulfil_at_997(oid, t.ships, v)
+            await acting.fulfil(u, t.ships, oid, v)
             await u.commit()
     return go
 
@@ -97,7 +98,7 @@ async def test_an_outcome_never_recorded_is_closed_by_the_next_pass_and_then_doe
 async def test_two_presses_at_once_write_once(p5):  # noqa: F811
     o = await accepted(p5)
     v = await version(p5, o.id)
-    e = await twice(p5, OP, lambda u: OrderService(u).fulfil_at_997(o.id, p5.ships, v))
+    e = await twice(p5, OP, lambda u: acting.fulfil(u, p5.ships, o.id, v))
     assert said(e) == ("send.queued", "pending") and len(await queued(p5)) == 1
     await p5.worker.run_once()
     assert writes(p5) == ["create_fulfillment", "close_order"]

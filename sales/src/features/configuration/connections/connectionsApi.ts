@@ -40,7 +40,6 @@ export const AFTER_READ = ['LEAVE', 'MOVE', 'DELETE'] as const
 // writing has one folder (user 2026-11-12: no Test / Live mode, no test folders; a Read and a Write tick).
 export const READ_FOLDERS = ['inbound_folder', 'processed_folder', 'error_folder'] as const
 export const WRITE_FOLDERS = ['outbound_folder'] as const
-export const FOLDERS = [...READ_FOLDERS, ...WRITE_FOLDERS] as const
 
 export interface ConnectionRead {
   id: number

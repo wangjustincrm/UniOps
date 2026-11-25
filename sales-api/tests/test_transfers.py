@@ -23,6 +23,7 @@ from app.schemas.transfers import TransferIn
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.transfer_views import TransferService
 from app.services.transfers import SEND_943, Transfers
+from tests import acting
 from tests.domain.test_transfers_edi import ZOHO_943, real_944
 from tests.test_orders import OP, env  # noqa: F401 — env is a fixture (p4_edi needs it)
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -65,8 +66,12 @@ async def create(t, lines=(("CF0092", 8400), ("CF0093", 7200))):
 
 
 async def act(t, name, id, *args):
+    """ready / cancel / resend through the record action (version, reason); amend, update, resolve: their forms."""
     async with t.factory(OP) as u:
-        out = await getattr(TransferService(u), name)(t.tr, id, *args)
+        if name in ("ready", "cancel", "resend"):
+            out = await acting.transfer(u, t.tr, name, id, *args)
+        else:
+            out = await getattr(TransferService(u), name)(t.tr, id, *args)
         await u.commit()
         return out
 

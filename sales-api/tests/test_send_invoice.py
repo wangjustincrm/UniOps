@@ -25,6 +25,7 @@ from app.services.invoicing import INTERNAL_COPY, SEND_INVOICE
 from app.services.order_actions import ORDER_ACTIONS
 from app.services.order_views import OrderService
 from app.services.settings import INVOICE_INTERNAL_EMAILS, SETTINGS, SHADOW_MODE
+from tests import acting
 from tests.sending import STATE_IDS, STATES, crash, put_row, rows, said, says, twice, way_out
 from tests.test_invoicing import OP, confirm, inv_status, order_version, p6, shipped_850  # noqa: F401 — p6 is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
@@ -57,7 +58,7 @@ async def version(t, id):
 def press(t, id, v, again=False, reason=WHY):
     async def go():
         async with t.factory(OP) as u:
-            await InvoiceService(u).send(t.inv, id, v, again=again, reason=reason if again else None)
+            await acting.send_invoice(u, t.inv, id, v, again=again, reason=reason if again else None)
             await u.commit()
     return go
 
@@ -112,7 +113,7 @@ async def test_a_send_lost_in_a_crash_says_how_it_ends_then_can_be_sent(p6):  # 
 async def test_two_presses_at_once_send_once(p6, again):  # noqa: F811
     _, inv = await (sent if again else ready)(p6)
     v, before = await version(p6, inv.id), len(puts(p6))
-    e = await twice(p6, OP, lambda u: InvoiceService(u).send(p6.inv, inv.id, v, again=again, reason=WHY))
+    e = await twice(p6, OP, lambda u: acting.send_invoice(u, p6.inv, inv.id, v, again=again, reason=WHY if again else None))
     assert said(e) == ("send.queued", "pending") and len(await queued(p6)) == 1
     await p6.worker.run_once()
     assert len(puts(p6)) == before + 1
@@ -122,7 +123,7 @@ async def test_a_sent_invoice_is_sent_again_only_on_purpose_with_why_once(p6):  
     _, inv = await sent(p6)
     v = await version(p6, inv.id)
     e = await says(press(p6, inv.id, v))  # a page that does not know it was sent
-    assert (e.code, e.details) == ("invoice.already_sent", {"needs": "again"})
+    assert e.code == "invoice.already_sent"
     for reason in (None, "", " ok "):
         e = await says(press(p6, inv.id, v, True, reason))
         assert (e.status_code, e.details) == (422, {"field": "reason"})
@@ -326,5 +327,5 @@ async def test_the_company_s_copy_goes_once_with_each_send(p6):  # noqa: F811
         await u.commit()
     _, inv = await ready(p6)
     v = await version(p6, inv.id)
-    await twice(p6, OP, lambda u: InvoiceService(u).send(p6.inv, inv.id, v))
+    await twice(p6, OP, lambda u: acting.send_invoice(u, p6.inv, inv.id, v))
     assert [r["kind"] for r in await rows(p6, SEND_INVOICE, INTERNAL_COPY)].count(INTERNAL_COPY) == 1

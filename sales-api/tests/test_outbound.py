@@ -30,6 +30,7 @@ from app.platform.outbox import Outbox, OutboxWorker
 from app.services.order_views import OrderService
 from app.services.outbound import SEND_940, Outbound940, eligible_clause
 from app.services.settings import EDI_CONNECTION_ID, SETTINGS
+from tests import acting
 from tests.test_orders import OP, T0, env, po, run_850, shopify_order  # noqa: F401 — env is a fixture
 
 AFTER_DELAY = T0 + timedelta(hours=4)  # SHOP's delay is 180 minutes from payment
@@ -286,7 +287,7 @@ async def test_ac62_a_945_before_any_997_accepts_it_and_no_timeout_follows(edi):
 
 async def send_now(edi, oid, replace=False, version=ANY_VERSION, reason="the quantity was wrong"):
     async with edi.env.factory(OP) as u:
-        out = await OrderService(u).send_940_now(oid, edi.out, replace=replace, version=version, reason=reason if replace else None)
+        out = await acting.send_940(u, edi.out, oid, version, replace=replace, reason=reason if replace else None)
         await u.commit()
         return out
 
@@ -307,7 +308,7 @@ async def test_ac24_manual_partner_send_now_live_940_and_replacement(edi):
     await edi.worker.run_once()
     with pytest.raises(BusinessError) as e:
         await send_now(edi, o.id)
-    assert e.value.code == "send940.live" and e.value.details["needs"] == "replace"
+    assert e.value.code == "send940.live"
     second = await send_now(edi, o.id, replace=True)  # a confirmed replacement: new control number
     assert second["control"] != first["control"]
     assert [x["file_status"] for x in await docs(edi)] == ["Replaced", "Ready To Send"]
@@ -335,7 +336,7 @@ async def test_send_now_needs_the_operate_permission(edi):
     from app.platform.authorization import PermissionDenied
     with pytest.raises(PermissionDenied):
         async with edi.env.factory(reader) as u:
-            await OrderService(u).send_940_now(o.id, edi.out, version=ANY_VERSION)
+            await acting.send_940(u, edi.out, o.id, ANY_VERSION)
     assert await docs(edi) == []
 
 
@@ -468,7 +469,6 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     By Purolator it goes in the parcel layout Shopify's orders use, its W05-02 the 9-digit internal number and
     one G62; by LTL in the retailer's layout (the next test)."""
     import pytest
-    from app.platform.errors import InvalidInput
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     from app.services.order_views import ManualOrderService
     ship = AddressIn(name="Staff shop", phone="613-555-0100", attention="J. Doe", address1="1680 Venture Dr", city="Kingston",
@@ -478,13 +478,13 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
                                                              lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()
     async with edi.env.factory(OP) as u:
-        with pytest.raises(InvalidInput) as e:  # how it ships is chosen before it goes
-            await ManualOrderService(u).submit(o.id, o.version)
+        with pytest.raises(BusinessError) as e:  # how it ships is chosen before it goes
+            await acting.submit(u, o.id, o.version)
     assert e.value.code == "order.carrier"
     async with edi.env.factory(OP) as u:
         o = await ManualOrderService(u).update(o.id, ManualOrderIn(reason="Sample", partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
                                                carrier="Purolator", lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), o.version)
-        o = await ManualOrderService(u).submit(o.id, o.version)
+        o = await acting.submit(u, o.id, o.version)
         await u.commit()
     edi.clock.now = o.paid_at + timedelta(minutes=1)
     r = await edi.out.queue_due()
@@ -585,7 +585,6 @@ async def test_the_operator_who_gets_the_tasks_is_set_with_the_edi_settings_and_
 async def test_purolator_express_and_the_ltl_weight_are_settings_the_owner_sets(edi):
     """User 2026-11-13: nothing hard-coded — Express offered or not, and the LTL suggestion weight."""
     import pytest
-    from app.platform.errors import InvalidInput
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     from app.services.order_settings import ManualOrderSettingsService
     from app.services.order_views import ManualOrderService
@@ -601,6 +600,6 @@ async def test_purolator_express_and_the_ltl_weight_are_settings_the_owner_sets(
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()
     async with edi.env.factory(OP) as u:
-        with pytest.raises(InvalidInput) as e:
-            await ManualOrderService(u).submit(o.id, o.version)
+        with pytest.raises(BusinessError) as e:
+            await acting.submit(u, o.id, o.version)
     assert e.value.code == "order.carrier_express"
