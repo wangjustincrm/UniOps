@@ -8,6 +8,7 @@ partial update, the audit reason and the answer are the same for every group.
         fields = {"connection_id": EDI_CONNECTION_ID, "ack_timeout_minutes": ACK_TIMEOUT_MINUTES}
         read_permission, write_permission = READ, CONFIG
         reason = "EDI settings"
+        path, tags = "/config/edi-settings", ("connections",)   # its routes: settings_router(EdiSettingsService, uow=…)
 
 An update writes only the fields sent (`exclude_unset`), and of those only the
 ones whose value changes (no audit row for a save that changes nothing). The
@@ -31,6 +32,9 @@ class SettingsGroup:
     read_permission: ClassVar[str]
     write_permission: ClassVar[str]
     reason: ClassVar[str] = "settings"
+    path: ClassVar[str | None] = None                    # its GET and PUT (platform/settings_router.py); None: no routes
+    tags: ClassVar[tuple[str, ...]] = ()                 # OpenAPI; default: the path
+    update_schema: ClassVar[type[BaseModel] | None] = None  # what a save sends; None: the read schema
 
     body: Any = None
 

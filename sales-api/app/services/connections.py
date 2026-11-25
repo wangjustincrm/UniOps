@@ -28,7 +28,8 @@ from app.platform.settings_group import SettingsGroup
 from app.platform.views import Preset
 from app.schemas.connections import (
     ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
-    SchedulerSettings, ShadowSetting,
+    SchedulerSettings,
+    SchedulerUpdate, ShadowSetting,
 )
 from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
@@ -276,6 +277,7 @@ class EdiSettingsService(SettingsGroup):
               "operator_user_id": OPERATOR_USER_ID}
     read_permission, write_permission = READ, CONFIG
     reason = "EDI settings"
+    path, tags = "/config/edi-settings", ("connections",)
 
     async def check(self, changes: dict[str, Any]) -> None:
         for field_ in ("connection_id", "invoice_connection_id"):
@@ -324,6 +326,8 @@ class SchedulerSettingsService(SettingsGroup):
     read_schema = SchedulerSettings
     fields = {"paused": SCHEDULER_PAUSED, "system_minutes": SYSTEM_MINUTES}
     read_permission, write_permission = READ, CONFIG
+    path, tags = "/config/scheduler", ("settings",)
+    update_schema = SchedulerUpdate  # only what is sent changes, and why (automatic runs on)
 
     async def extra(self, values: dict[str, Any]) -> dict[str, Any]:
         return {"enabled": bool(app_settings.SALES_SCHEDULER_ENABLED)}

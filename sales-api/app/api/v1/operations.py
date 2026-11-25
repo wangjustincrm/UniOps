@@ -10,15 +10,16 @@ from app.core.config import settings
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
 from app.platform.files import FileResult
+from app.platform.settings_router import settings_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.connections import (
-    ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate,
+    ConnectionRead, ConnectionTestRead, CursorReset,
 )
 from app.schemas.operations import RunStarted
-from app.schemas.orders import ManualOrderSettings
 from app.services.connections import (
     ConnectionService, EdiSettingsService, SchedulerSettingsService,
 )
+from app.services.order_settings import ManualOrderSettingsService
 from app.services.operations import DocumentService, LogService, RunService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -78,51 +79,10 @@ async def run_system_now(u: UoW, rt: Rt):
 
 log = resource_router(LogService, uow=get_uow)
 
-scheduler_setting = APIRouter(prefix="/config/scheduler", tags=["settings"])
-
-
-@scheduler_setting.get("", response_model=SchedulerSettings)
-async def scheduler_get(u: UoW):
-    return await SchedulerSettingsService(u).get()
-
-
-@scheduler_setting.put("", response_model=SchedulerSettings)
-async def scheduler_put(u: UoW, body: SchedulerUpdate):
-    out = await SchedulerSettingsService(u).update(body)
-    await u.commit()
-    return out
-
-
-edi_settings = APIRouter(prefix="/config/edi-settings", tags=["connections"])
-
-
-@edi_settings.get("", response_model=EdiSettings)
-async def get_edi_settings(u: UoW):
-    return await EdiSettingsService(u).get()
-
-
-@edi_settings.put("", response_model=EdiSettings)
-async def put_edi_settings(u: UoW, body: EdiSettings):
-    out = await EdiSettingsService(u).update(body)
-    await u.commit()
-    return out
-
-
-manual_order_settings = APIRouter(prefix="/config/manual-order-settings", tags=["orders"])
-
-
-@manual_order_settings.get("", response_model=ManualOrderSettings)
-async def get_manual_order_settings(u: UoW):
-    from app.services.order_settings import ManualOrderSettingsService
-    return await ManualOrderSettingsService(u).get()
-
-
-@manual_order_settings.put("", response_model=ManualOrderSettings)
-async def put_manual_order_settings(u: UoW, body: ManualOrderSettings):
-    from app.services.order_settings import ManualOrderSettingsService
-    out = await ManualOrderSettingsService(u).update(body)
-    await u.commit()
-    return out
+# Settings forms: their routes from what each group declares (platform/settings_router.py).
+scheduler_setting = settings_router(SchedulerSettingsService, uow=get_uow)
+edi_settings = settings_router(EdiSettingsService, uow=get_uow)
+manual_order_settings = settings_router(ManualOrderSettingsService, uow=get_uow)
 
 
 # Health → Log levels (user 2026-11-23): raise a logger for a while; it goes back by itself.

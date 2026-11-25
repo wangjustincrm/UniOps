@@ -16,3 +16,4 @@ class ManualOrderSettingsService(SettingsGroup):
     fields = {"express_offered": MANUAL_EXPRESS_OFFERED, "ltl_from_lb": MANUAL_LTL_FROM_LB, "reasons": MANUAL_REASONS}
     read_permission, write_permission = READ, CONFIG
     reason = "manual order settings"
+    path, tags = "/config/manual-order-settings", ("orders",)
