@@ -18,6 +18,8 @@ opening balance; the result is compared with Radiant's own figures).
   the order's delivery is final                                 → TO_CUSTOMER → CUSTOMER (shipped − returned)
      (delivery confirmed and invoiced, an order with no invoice,      and TO_CUSTOMER → RETURNING (returned),
       or an old order)                                                 lot by lot in shipping order
+     a row that comes after its line's delivery (a later 945)      → TO_CUSTOMER → CUSTOMER, all of it: only what is
+                                                                       left to deliver, and the line's returns once
   a person's adjustment (reason)                                → RADIANT ↔ ADJUSTED
   an applied Radiant count (stock_counts.py)                    → RADIANT ↔ ADJUSTED, at its moment, to Radiant's figure
 
@@ -224,11 +226,14 @@ async def sync(uow) -> dict:
                 back = int(returned.get(line_id) or 0) if line_id else 0
                 total = sum(r.qty_shipped_ea or 0 for r, _ in rs)
                 keep = max(total - back, 0)  # delivered, lot by lot in shipping order; the rest came back
-                if any(("delivery", str(r.id)) in known for r, _ in rs):
-                    continue  # its delivery is in the ledger: a return found later comes as its RA 944 (return_order)
+                done = {r.id for r, _ in rs if ("delivery", str(r.id)) in known or ("returned", str(r.id)) in known}
                 for r, sh in sorted(rs, key=lambda x: (x[1].ship_date or date.min, x[0].id)):
+                    if r.id in done:
+                        continue  # in the ledger, as it was then
                     q = r.qty_shipped_ea or 0
-                    d = min(q, keep)
+                    # A line whose delivery is in the ledger has its returns there too (or a return found later comes as
+                    # its RA 944, return_order): a row that came after it, a later 945's, is delivered whole.
+                    d = q if done else min(q, keep)
                     keep -= d
                     at = _at(confirmed.get(oid) or sh.ship_date, sh.created_at)
                     kw = dict(at=at, item_code=r.item_code, lot=r.lot, expiry=r.expiry or expiry_of.get(r.lot), order_id=oid,

@@ -78,6 +78,61 @@ async def test_a_945_takes_stock_out_and_a_final_delivery_splits_shipped_and_ret
     assert sum(m.qty_ea for m in moves if m.to_place == "CUSTOMER") == shipped - case
 
 
+async def test_a_row_that_comes_after_its_lines_delivery_is_delivered_whole_and_nothing_twice(p6):  # noqa: F811
+    """A later 945 of the line (user 2026-11-25): its own row only, all of it; what came back is counted once."""
+    o = await shipped_850(p6, "PO-L", qty=10)
+    [line] = await p6.q("SELECT id, factor_ea, item_code FROM sales_order_lines WHERE order_id = :o", o=o.id)
+    case, code = int(line["factor_ea"]), line["item_code"]
+    async with p6.factory(OP) as u:
+        from app.schemas.orders import ReturnedIn
+        from app.services.order_views import OrderService
+        await OrderService(u).set_returned(o.id, ReturnedIn(reason="one case refused", lines=[{"id": line["id"], "returned_ea": case}]), ANY_VERSION)
+        await u.commit()
+    await p6.inv.advance()
+    await send(p6, (await confirm(p6, o.id, when=date(2026, 11, 5))).id)
+    first = await _sync(p6)
+    assert first["delivery"] and first["returned"] == 1
+    items = await _items(p6)
+    shipped = items[code].shipped_ea
+    before = await p6.q("SELECT id, source_type, source_key, qty_ea FROM sales_stock_moves ORDER BY id")
+    async with p6.factory(SYSTEM_ACTOR) as u:  # two later rows of the same line: one of another 945, one of the same item again
+        for n, qty in ((1, 7), (2, 3)):
+            await u.session.execute(sa.text(
+                "INSERT INTO sales_shipments (document_id, set_index, order_id, ship_date, applied, shadow, shopify_status, version, created_by_name) "
+                "SELECT document_id, set_index + :n, order_id, ship_date, true, false, 'Not needed', 1, 'Sales' FROM sales_shipments WHERE order_id = :o ORDER BY id LIMIT 1"),
+                {"n": n, "o": o.id})
+            await u.session.execute(sa.text(
+                "INSERT INTO sales_shipment_rows (shipment_id, lx_index, w12_index, item_code, lot, qty_shipped_ea, order_line_id) "
+                "SELECT max(id), 1, 1, :i, 'LATER', :q, :l FROM sales_shipments"), {"i": code, "q": qty, "l": line["id"]})
+        # More came back than had shipped when the line was first delivered: it comes as its RA 944, never out of the new rows.
+        await u.session.execute(sa.text("UPDATE sales_order_lines SET returned_ea = :b, shipped_ea = shipped_ea + 10 WHERE id = :l"), {"b": shipped + 4, "l": line["id"]})
+        await u.commit()
+    assert await _sync(p6) == {"shipment_row": 2, "delivery": 2}  # no second "returned"
+    items = await _items(p6)
+    assert (items[code].shipped_ea, items[code].to_customer_ea, items[code].returning_ea) == (shipped + 10, 0, case)
+    assert (await p6.q("SELECT id, source_type, source_key, qty_ea FROM sales_stock_moves ORDER BY id"))[:len(before)] == before
+    assert await _sync(p6) == {}
+
+
+async def test_two_945s_of_a_line_before_its_first_delivery_count_its_returns_once(p6):  # noqa: F811
+    o = await shipped_850(p6, "PO-M", qty=1)  # one case: all of it came back, and then some of the next
+    [line] = await p6.q("SELECT id, factor_ea, item_code FROM sales_order_lines WHERE order_id = :o", o=o.id)
+    case, code = int(line["factor_ea"]), line["item_code"]
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.text(
+            "INSERT INTO sales_shipments (document_id, set_index, order_id, ship_date, applied, shadow, shopify_status, version, created_by_name) "
+            "SELECT document_id, set_index + 1, order_id, ship_date, true, false, 'Not needed', 1, 'Sales' FROM sales_shipments WHERE order_id = :o"), {"o": o.id})
+        await u.session.execute(sa.text("INSERT INTO sales_shipment_rows (shipment_id, lx_index, w12_index, item_code, lot, qty_shipped_ea, order_line_id) "
+                                        "SELECT max(id), 1, 1, :i, 'LATER', 5, :l FROM sales_shipments"), {"i": code, "l": line["id"]})
+        await u.session.execute(sa.text("UPDATE sales_order_lines SET returned_ea = :b, shipped_ea = shipped_ea + 5 WHERE id = :l"), {"b": 5, "l": line["id"]})
+        await u.session.execute(sa.text("UPDATE sales_orders SET invoice_status = 'Not Required' WHERE id = :o"), {"o": o.id})
+        await u.commit()
+    out = await _sync(p6)
+    items = await _items(p6)
+    assert (items[code].shipped_ea, items[code].to_customer_ea, items[code].returning_ea) == (case + 5, 0, 5), out
+    assert await _sync(p6) == {}
+
+
 async def test_an_adjustment_needs_a_reason_and_a_quantity_and_is_a_move(p7):  # noqa: F811
     async with p7.factory(OP) as u:
         with pytest.raises(BusinessError):
