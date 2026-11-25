@@ -25,7 +25,7 @@ from app.domain.status import Fulfillment as F
 from app.models.orders import Order
 from app.platform.bulk_actions import Action, ActionRegistry
 from app.platform.clock import clock
-from app.platform.errors import InvalidInput
+from app.platform.errors import BusinessError, InvalidInput
 from app.schemas.orders import SettleIn, UnsettleIn
 from app.services import oplog
 
@@ -40,30 +40,30 @@ async def _payment(uow, o: Order) -> tuple[str | None, str | None]:
     return row[0], row[1]
 
 
-async def settle_check(uow, o: Order) -> str | None:
+async def settle_check(uow, o: Order) -> BusinessError | None:
     """Why this order is not settled; None: it can be."""
     if o.shadow:
-        return TEST_RUN_REFUSAL
+        return BusinessError("order.shadow", TEST_RUN_REFUSAL)
     if o.fulfillment_status == F.DRAFT.value:
-        return "a draft is not an order yet: submit it first"
+        return BusinessError("order.not_settleable", "a draft is not an order yet: submit it first")
     if o.settled_on is not None:
-        return f"already settled on {o.settled_on:%Y-%m-%d} ({o.settled_reference})"
+        return BusinessError("order.settled", f"already settled on {o.settled_on:%Y-%m-%d} ({o.settled_reference})")
     status, auto = await _payment(uow, o)
     if auto:
-        return f"already settled by {auto}"
+        return BusinessError("order.settled", f"already settled by {auto}")
     if status == NOT_NEEDED:
-        return "no payment is expected (Not needed: cancelled with nothing invoiced, nothing left to receive, or historical)"
+        return BusinessError("order.not_settleable", "no payment is expected (Not needed: cancelled with nothing invoiced, nothing left to receive, or historical)")
     return None
 
 
-async def unsettle_check(uow, o: Order) -> str | None:
+async def unsettle_check(uow, o: Order) -> BusinessError | None:
     """Only a manual mark is undone (it then falls back to what the gateway says)."""
     if o.shadow:
-        return TEST_RUN_REFUSAL
+        return BusinessError("order.shadow", TEST_RUN_REFUSAL)
     if o.settled_on is not None:
         return None
     _, auto = await _payment(uow, o)
-    return f"settled by {auto}, not by hand: nothing to undo" if auto else "not settled"
+    return BusinessError("order.not_settled", f"settled by {auto}, not by hand: nothing to undo" if auto else "not settled")
 
 
 def settle_validate(body: SettleIn) -> None:

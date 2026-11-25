@@ -136,7 +136,7 @@ async def test_a_finance_user_marks_settled_with_a_date_and_a_reference_and_undo
     # a second mark is left out, whatever the version: already settled
     for v in (before["version"], s["version"]):
         x = await one(api, "settle", s, version=v, input=body)
-        assert x["status"] == "skipped" and x["reason"] == "already settled on 2026-11-20 (EFT 55012)"
+        assert (x["status"], x["code"], x["reason"]) == ("skipped", "order.settled", "already settled on 2026-11-20 (EFT 55012)")
     # Activity has the mark; undo needs a reason and is in Activity too
     assert (await act(api, "unsettle", s, input={"reason": ""})).status_code == 422
     assert (await one(api, "unsettle", s, version=before["version"], input={"reason": "from an old page"}))["code"] == "entity.stale"
@@ -147,7 +147,7 @@ async def test_a_finance_user_marks_settled_with_a_date_and_a_reference_and_undo
     assert "settled on 2026-11-20, EFT 55012, 112.50: Remittance 11-20" in reasons
     assert "settlement undone (was 2026-11-20, EFT 55012): wrong order, the EFT was for 9612" in reasons
     x = await one(api, "unsettle", u, input={"reason": "again"})
-    assert x["status"] == "skipped" and x["reason"] == "not settled"
+    assert (x["status"], x["code"], x["reason"]) == ("skipped", "order.not_settled", "not settled")
     r = await act(api, "settle", u, version=None, input=body)  # the version check, as on other edits
     assert r.status_code == 422 and r.json()["error"]["code"] == "entity.version_required"
     assert (await one(api, "settle", u, version=u["version"] + 5, input=body))["code"] == "entity.stale"
@@ -237,7 +237,7 @@ async def test_historical_and_cancelled_orders_need_no_payment_and_are_not_settl
     assert NOT_NEEDED not in view["state"]["filters"][0]["value"]  # so To settle leaves them out
     r = (await api.post(ACT + "settle", json={"ids": {str(o[n]["id"]): o[n]["version"] for n in ("9661", "9662")},
                                               "input": SETTLE_INPUT}, headers=FINANCE)).json()
-    assert [x["status"] for x in r["results"]] == ["skipped", "skipped"] and "Not needed" in r["results"][0]["reason"]
+    assert [(x["status"], x["code"]) for x in r["results"]] == [("skipped", "order.not_settleable")] * 2 and "Not needed" in r["results"][0]["reason"]
     assert payment_status(draft=False, cancelled=False, settled=False, invoice_sent=False, invoice_date=None, terms=None,
                           today=TODAY, historical=True) == NOT_NEEDED
 
