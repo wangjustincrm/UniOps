@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.29
-**Date**: 2026-11-17
+**Version**: 0.30
+**Date**: 2026-11-25
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.28 → 0.29)**
+**What changed in this version (0.29 → 0.30)**
+- §1.6 "UAT 16, permits and feedback quizzes": a permit past its end time is not issued, and one issued early is not live until it starts; a confined space test needs all four gases; gas tests and signatures are added by whoever raised the permit or issues permits, not after it is closed; a draft is not closed; a feedback-only quiz shows no score. SF-17: HSE's confined space permit request.
+
+**What changed in version 0.29 (0.28 → 0.29)**
 - §1.6 "Review of UAT 15": a signed investigation stays signed through a save that changes nothing it says; the monthly list and the audit pack count a toolbox talk held again in the month held; a quiz of feedback only passes; course feedback from any attempt; legal deadline tasks topped up for coordinators; a corrective action added on the causes keeps the HSE review.
 
 **What changed in version 0.28 (0.27 → 0.28)**
@@ -443,6 +446,15 @@ UAT 14 (built; no migration)
 - The HSE dashboard: on the four injury boxes and on Injuries by month, Near misses, Corrective actions raised and Hazard assessments, a small count for this month (December, when looking back at a past year) with an arrow — up dark green, down dark red, a dash for the same — against the month before, each counted as its own figure is. The words are on hover and for screen readers.
 - The Food Safety dashboard (beside the HSE dashboard's title): food-safety near misses this year; this month's with last month's and the change in per cent; the risk ratings by each near miss's latest Food Safety Risk Assessment, each opening the Food Safety Risk register at that band; the investigations open (reported or being investigated), pending (waiting to be closed) and closed; the corrective actions raised on food-safety near misses — created, completed, outstanding, each opening the near misses they were raised on; the near misses by month; and the average days to resolve, worked out as for all incidents (report sent to last close, over the closed ones). A food-safety near miss is the Near Miss — Food Safety type or any near miss in the Food Safety category; drafts are not counted. The incident register takes the same rule as a filter, so every figure opens exactly what it counted.
 
+UAT 16, permits and feedback quizzes (built; no migration)
+
+- Found while checking HSE's confined space permit request (SF-17). A permit whose end time has passed is not issued until it is given a new one. A permit issued before its start reads Issued, not started — not open, not edited or signed, but it can be stopped or closed — and becomes live at its start.
+- A confined space test needs oxygen, LEL, H2S and CO; one not measured fails the test. A test recorded before this with a gas missing does not issue a permit. Other kinds of work still need oxygen only.
+- A gas test or a signature is added by whoever raised the permit or may issue permits (it was anybody who may request one), as the edit already was. Signatures while it is a draft or suspended; gas tests until it is closed, an expired permit included.
+- A draft is not closed: nothing was authorised, so there is nothing to hand back.
+- Raise a permit starts From at the plant's current time (it was UTC, four or five hours ahead).
+- A quiz of course feedback only (TC-09): whoever hands it in sees Thank you, not 100% and 0 of 0 points; the quiz list, the quiz's page, the course and the session say feedback or Submitted, not a pass mark or a score.
+
 Review of UAT 15 (built; no migration)
 
 - A signed investigation is un-signed only when what it says changes. The investigation page saves everything on every save, so a save that changed only the batch code used to un-sign it and withdraw HSE's review; now both stay. The investigator's name is the one they had when named.
@@ -680,6 +692,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.27 | 2026-11-16 | UAT 14, hazards: owner and review date at the top, staff who helped, equipment under Where, no immediate causes, the risk assessment on the form; hazard corrective actions closed on the dashboard (§1.6). |
 | 0.28 | 2026-11-17 | UAT 15: area that completed the work, hazard PPE and review date, risk assessments under their button, month figures and colours, food safety investigation states, toolbox month, coordinators' deadline tasks, batch code and HSE review, course feedback questions (§1.6). |
 | 0.29 | 2026-11-17 | Review of UAT 15: signatures kept through unchanged saves, toolbox talks held again on the monthly list and audit pack, feedback-only quizzes, course feedback by person, coordinators' tasks topped up, corrective actions and the HSE review (§1.6). |
+| 0.30 | 2026-11-25 | UAT 16: permits past their end or before their start, four gases for a confined space, who adds gas tests and signatures, drafts not closed, feedback-only quizzes (§1.6); SF-17. |
 
 ---
 
@@ -710,6 +723,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | SF-09 | UAT round 7 free-text requirements. **Built**: return-to-work and legal clocks hold the close, statutory/return-to-work sections on medical incidents, reclassification, default lead investigator, injury questions after a name, editable permit checks; the permit end-time defect is fixed. **For HSE in round 8**: "investigation completed" as a status (3); removing a stopped clock from My Actions and the calendar (4 — completed clocks already leave both; the request may mean a clock that no longer applies, now covered by "not required"); notification content with injury detail (9 — health information would go to the whole notification list, PHIPA); and the risk-assessment redesign. Round 8 answers: no new status (3), "not required" was meant (4), email content unchanged (9); the risk assessment is built as confirmed. | Done (§1.6) |
 | SF-15 | Waiting, from rounds 9 and 10. **Lost time and cost**: three fields on the return-to-work form for a lost-time injury, seen only by HSE (hours per shift, hours missed on the first day, full shifts missed), four rates under Rules, and HSE's formula, which needs confirming (it multiplies lost hours by the investigator's rate where the employee's wage seems meant). Until then the dashboard's cost is what has been entered, and says how many incidents carry one. **Phone install** to be checked on a real phone over https, sign-in included. (The dashboard and phone install were built in round 10's fourth batch; the lists as trees in the third; the rest of round 10 in the second, §1.6.) | Open |
 | SF-16 | A list entry can be moved under another entry, but not back to the top, and Settings → Lists offers no move: entries are added where they belong. If HSE need to reorganise a list, a move tool is a separate piece of work. | Open — by design for now |
+| SF-17 | Confined space permit, UAT 16 ("Anything else"): an electronic permit under O. Reg. 632/05 — hazard assessment, isolation, spreadsheet-like gas tests, rescue plan, team and equipment, signatures by role, entrants in and out, training verified before entry, closing and retention, and use without Wi-Fi. Waiting on HSE's answers (round 17 questions). Signing in somebody else's name is settled with it. | Open — waiting on HSE |
 | SF-13 | Label body text size. HSE chose 10 pt on the small label only (round 8); of 10 approved labels on dev, the standard size prints 9 again and "fit automatically" picks standard for 7. | Done (§1.6) |
 | SF-14 | After merging with main, the Task Inbox email sender may also email corrective-action tasks, depending on its per-type setting; Safety already emails the owner of an action raised on an incident. Check the setting for the corrective-action task type at release, or owners receive two emails. | Open — release check |
 | SF-10 | Before go-live: HSE must configure area owners (Settings → Area responsibility) and load the reference lists; the label and certificate PDF fonts need CJK-capable embedding checked in the production image. | Open |
