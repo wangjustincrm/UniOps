@@ -229,6 +229,7 @@ class Invoicing:
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id, OrderLine.removed.is_(False))
                                       .order_by(OrderLine.line_no).with_for_update())).scalars())
         delivered = delivered or {}
+        wants: dict[int, int] = {}
         for ln in lines:
             if ln.shipped_ea is None:
                 continue
@@ -238,8 +239,14 @@ class Invoicing:
             if want < 0 or want > ln.shipped_ea:
                 raise BusinessError("delivery.quantity", f"line {ln.line_no}: delivered {want} EA must be 0 … {ln.shipped_ea} "
                                     "(the shipped quantity)", {"line_id": ln.id})
-            ln.delivered_qty = want
-            ln.returned_ea = ln.shipped_ea - want
+            wants[ln.id] = want
+        shipped = [ln for ln in lines if ln.id in wants]
+        # A number typed here is the returned one too: with what is recorded it is at most what shipped (user 2026-11-25).
+        await refuse_more_than_shipped(s, order.id, returned={ln.id: ln.shipped_ea - wants[ln.id] for ln in shipped
+                                                              if ln.shipped_ea - wants[ln.id] != ln.returned_ea})
+        for ln in shipped:
+            ln.delivered_qty = wants[ln.id]
+            ln.returned_ea = ln.shipped_ea - wants[ln.id]
         uow.set_reason("delivery confirmed")
         s.add(DeliveryConfirmation(order_id=order.id, confirmed_date=confirmed_date, note=note, version=1))
         inv, problems = await self._build(s, order, lines, confirmed_date)

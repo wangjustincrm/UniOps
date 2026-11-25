@@ -14,6 +14,8 @@ from app.services.invoice_views import InvoiceService
 from app.schemas.invoices import ReturnIn
 from app.schemas.orders import ReturnedIn, ReturnedLineIn
 from app.services.order_views import OrderService
+from app.platform.bulk_actions import ActionIn, run_action
+from app.services.order_actions import ORDER_ACTIONS
 from tests.sending import says, twice
 from tests.test_invoicing import OP, inv_status, order_version, p6, shipped_850, tasks  # noqa: F401 — p6 is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
@@ -56,7 +58,7 @@ async def state(t, oid):
 
 def refused(e, line, already, asked, on_order=0):
     assert (e.code, e.status_code, e.details) == ("return.more_than_shipped", 422, {"line_id": line, "field": "qty_ea"})
-    assert e.message == (f"line 1: {on_order} EA returned on the order + {already} EA already recorded + {asked} EA asked is more than "
+    assert e.message == (f"line 1 CF0092: {on_order} EA returned on the order + {already} EA already recorded + {asked} EA asked is more than "
                          f"the {SHIPPED} EA shipped")
 
 
@@ -77,7 +79,7 @@ async def set_to(t, oid, *lines):
 
 def edit_refused(e, line, new, recorded):
     assert (e.code, e.status_code, e.details) == ("return.more_than_shipped", 422, {"line_id": line, "field": "returned_ea"})
-    assert e.message == f"line 1: {new} EA returned on the order + {recorded} EA already recorded is more than the {SHIPPED} EA shipped"
+    assert e.message == f"line 1 CF0092: {new} EA returned on the order + {recorded} EA already recorded is more than the {SHIPPED} EA shipped"
 
 
 async def on_order(t, line):
@@ -147,7 +149,7 @@ async def test_another_order_s_and_another_line_s_records_do_not_count(p6):  # n
     assert await ask(p6, o.id, (line, 60)) is None
     e = await ask(p6, o.id, (second, 1), (line, 1))
     assert (e.code, e.details["line_id"]) == ("return.more_than_shipped", second)  # line 99 is over, its own figures
-    assert "line 99: 0 EA returned on the order + 60 EA already recorded + 1 EA asked" in e.message
+    assert "line 99 CF0092: 0 EA returned on the order + 60 EA already recorded + 1 EA asked" in e.message
 
 
 async def test_returned_on_the_order_first_then_a_record(p6):  # noqa: F811
@@ -201,7 +203,7 @@ async def test_another_line_s_figures_do_not_count_and_one_over_refuses_them_all
     assert await set_to(p6, o.id, (line, 60)) is None  # the other's record is not this line's
     assert await set_to(p6, o.id, (line, 0)) is None
     e = await set_to(p6, o.id, (line, 5), (other, 1))
-    assert (e.code, e.details["line_id"]) == ("return.more_than_shipped", other) and "line 99: 1 EA returned on the order + 60 EA already recorded" in e.message
+    assert (e.code, e.details["line_id"]) == ("return.more_than_shipped", other) and "line 99 CF0092: 1 EA returned on the order + 60 EA already recorded" in e.message
     assert await on_order(p6, line) == 0  # and the good line is not changed either
 
 
@@ -216,6 +218,98 @@ async def test_two_people_at_once_one_each_way_cannot_pass_it_together(p6, first
     else:
         edit_refused(e, line, 40, 40)
     assert (len(await kept(p6, o.id)), await on_order(p6, line)) == ((0, 40) if first == "the order" else (1, 0))
+
+
+async def waiting(t, po="PO-RT1"):
+    o, line = await shipped(t, po)
+    await t.inv.advance()
+    assert await inv_status(t, o.id) == "Waiting for Delivery Confirmation"
+    return o, line
+
+
+async def release(t, oid):
+    async with t.factory(OP) as u:
+        await t.inv.release(u, oid, "looked at", version=ANY_VERSION)
+        await u.commit()
+
+
+async def confirm_with(t, oid, delivered=None):
+    async def go():
+        async with t.factory(OP) as u:
+            await t.inv.confirm(u, oid, confirmed_date=None, delivered=delivered, version=ANY_VERSION)
+            await u.commit()
+    return await says(go)
+
+
+async def whole(t, oid):
+    """Everything a confirmation writes."""
+    return (await state(t, oid), await t.q("SELECT id, returned_ea, delivered_qty FROM sales_order_lines WHERE order_id = :o ORDER BY id", o=oid),
+            await t.q("SELECT id FROM sales_invoices WHERE order_id = :o", o=oid), await t.q("SELECT id FROM sales_delivery_confirmations WHERE order_id = :o", o=oid),
+            await t.q("SELECT id FROM sales_outbox ORDER BY id"))
+
+
+async def test_a_confirmation_is_a_way_in_too_and_a_refused_one_keeps_everything(p6):  # noqa: F811
+    o, line = await waiting(p6)
+    assert await ask(p6, o.id, (line, 40)) is None
+    await release(p6, o.id)
+    before = await whole(p6, o.id)
+    edit_refused(await confirm_with(p6, o.id, {line: 39}), line, 21, 40)  # returned 21 + 40: one over
+    assert await whole(p6, o.id) == before and before[2] == before[3] == []
+    assert before[0].status == "Waiting for Delivery Confirmation"
+    assert await confirm_with(p6, o.id, {line: 40}) is None  # returned 20 + 40: exactly equal
+    assert await on_order(p6, line) == 20 and len((await whole(p6, o.id))[2]) == 1
+
+
+async def test_no_number_typed_leaves_a_line_that_is_over_and_passes(p6):  # noqa: F811
+    o, line = await waiting(p6)
+    assert await ask(p6, o.id, (line, 40)) is None
+    await release(p6, o.id)
+    await put(p6, line, 30)  # 30 + 40 of 60, from before the rule
+    assert await confirm_with(p6, o.id) is None
+    assert await on_order(p6, line) == 30 and (await whole(p6, o.id))[1][0]["delivered_qty"] == 30
+
+
+async def test_the_number_as_it_stands_or_lowered_passes_on_a_line_that_is_over(p6):  # noqa: F811
+    for n, (delivered, left) in enumerate(((30, 30), (45, 15))):
+        o, line = await waiting(p6, f"PO-RC{n}")
+        assert await ask(p6, o.id, (line, 40)) is None
+        await release(p6, o.id)
+        await put(p6, line, 30)
+        assert await confirm_with(p6, o.id, {line: delivered}) is None
+        assert await on_order(p6, line) == left
+
+
+async def test_a_confirmation_and_a_record_at_once_cannot_pass_it_together(p6):  # noqa: F811
+    o, line = await waiting(p6)
+
+    async def confirm(u):
+        await p6.inv.confirm(u, o.id, confirmed_date=None, delivered={line: 20}, version=ANY_VERSION)
+    refused(await twice(p6, OP, confirm, record(p6, o.id, (line, 40))), line, 0, 40, on_order=40)
+    assert await kept(p6, o.id) == []
+
+
+async def test_a_record_and_then_a_confirmation_at_once_the_confirmation_looks_under_the_lock(p6):  # noqa: F811
+    o, line = await waiting(p6)
+
+    async def confirm(u):
+        await p6.inv.confirm(u, o.id, confirmed_date=None, delivered={line: 20}, version=ANY_VERSION)
+    e = await twice(p6, OP, record(p6, o.id, (line, 40)), confirm)
+    assert e.code == "delivery.not_waiting"  # the record held the invoice: read after its commit, not before
+    assert (await whole(p6, o.id))[2:4] == ([], []) and await on_order(p6, line) == 0
+
+
+async def test_many_confirmed_at_once_give_no_number_and_are_as_before(p6):  # noqa: F811
+    o, line = await waiting(p6)
+    over, line2 = await waiting(p6, "PO-RB2")
+    assert await ask(p6, over.id, (line2, 40)) is None
+    await release(p6, over.id)
+    await put(p6, line2, 30)
+    seen = {x.id: (await p6.q("SELECT version FROM sales_orders WHERE id = :i", i=x.id))[0]["version"] for x in (o, over)}
+    async with p6.factory(OP) as u:
+        out = await run_action(u, ORDER_ACTIONS, "confirm_delivery", ActionIn(ids=seen, dry_run=False, input={}), SimpleNamespace(invoicing=p6.inv))
+        await u.commit()
+    assert out.counts["done"] == 2, out.results
+    assert (await on_order(p6, line), await on_order(p6, line2)) == (0, 30)
 
 
 async def test_two_people_at_once_both_on_the_order_the_last_figure_stands(p6):  # noqa: F811

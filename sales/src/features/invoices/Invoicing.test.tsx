@@ -100,6 +100,27 @@ describe('Delivery confirmation', () => {
       lines: [{ order_line_id: 70, delivered_qty: 54 }] }))
   })
 
+  it('a returned quantity refused says which line and why; nothing typed is lost and another number goes', async () => {
+    const said = 'line 1 CF0092: 25 EA returned on the order + 40 EA already recorded is more than the 60 EA shipped'
+    api.confirm.mockRejectedValueOnce(Object.assign(new Error('422'), { body: { error: { code: 'return.more_than_shipped', message: said, details: { line_id: 70, field: 'returned_ea' } } } }))
+    api.confirm.mockResolvedValueOnce(invDetail)
+    renderAs(['sales.read', 'sales.order.operate'], <DeliveryPage />)
+    fireEvent.click(await screen.findByText('PO-1'))
+    const form = await screen.findByRole('dialog')
+    await within(form).findByRole('table', { name: 'Returned and delivered' })
+    fireEvent.change(within(form).getByLabelText('Returned CF0092'), { target: { value: '25' } })
+    fireEvent.change(within(form).getByLabelText(/Delivered on \(the invoice date\)/), { target: { value: '2026-11-04' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
+    expect(await within(form).findByText(said)).toBeInTheDocument()
+    expect(within(form).getByLabelText('Returned CF0092')).toHaveValue(25)
+    expect(within(form).getByLabelText(/Delivered on \(the invoice date\)/)).toHaveValue('2026-11-04')
+    fireEvent.change(within(form).getByLabelText('Returned CF0092'), { target: { value: '20' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
+    await waitFor(() => expect(api.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ version: detail.version, confirmed_date: '2026-11-04',
+      lines: [{ order_line_id: 70, delivered_qty: 40 }] })))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())  // it closed
+  })
+
   it('with no date each order takes its due date, and Confirm and send needs invoice.manage too', async () => {
     api.bulk.mockResolvedValue([{ order_id: 7, ok: true, invoice_id: 3, status: 'Queued', sent: true, error: null }])
     renderAs(['sales.read', 'sales.order.operate', 'sales.invoice.manage'], <DeliveryPage />)
