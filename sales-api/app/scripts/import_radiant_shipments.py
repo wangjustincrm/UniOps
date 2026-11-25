@@ -51,6 +51,7 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.stock import CUSTOMER, RADIANT, TO_CUSTOMER, StockMove
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import lock
 from app.scripts.base import ScriptArgs, script_main
 from app.scripts.import_zoho_history import refuse_unless_quiet
 from app.services import oplog
@@ -239,6 +240,7 @@ class Import:
     async def link_945(self, sh: Shipment, order: Order, lines: dict[str, OrderLine]) -> None:
         """The 945 that came with no order: its rows, its stock moves (they left for no order) and its task."""
         s = self.s
+        await lock(s, Shipment, sh.id)  # before its rows
         sh.order_id, sh.applied = order.id, True
         ids = []
         for r in (await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == sh.id))).scalars():
@@ -254,6 +256,7 @@ class Import:
 
     async def ship_old(self, o: dict, order_id: int) -> None:
         s = self.s
+        await lock(s, Order, order_id)  # before its lines
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order_id, OrderLine.removed.is_(False))
                                       .order_by(OrderLine.line_no))).scalars())
         items = {r["item"] for r in o["rows"]}

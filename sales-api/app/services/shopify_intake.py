@@ -36,6 +36,7 @@ from app.integrations.shopify import ShopifyAuthFailed, page_bytes, readable
 from app.models.config import Connection, Partner
 from app.models.documents import Document
 from app.models.orders import Order
+from app.platform.commands import lock
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import utc_now
 from app.platform.pipeline import isolated
@@ -185,8 +186,17 @@ class ShopifyIntake:
     async def _finance(self, uow, conn, o: dict, key, transactions: list | None) -> None:
         if transactions is None:  # changed between the read-ahead and this unit: rare, and read here
             transactions = await self.shopify.transactions(conn, str(o["id"]))
-        order = (await uow.session.execute(select(Order).where(*key))).scalar_one()
+        await self._store(uow, (await uow.session.execute(select(Order.id).where(*key))).scalar_one(), o, transactions)
+
+    async def _store(self, uow, id: int, o: dict, transactions: list) -> bool:
+        """The order's finance, under its lock (before its lines, as the order sync takes it). Read again there: a newer
+        state that came meanwhile is kept, and the next pass reads it."""
+        order = await lock(uow.session, Order, id)
+        read = datetime.fromisoformat(o["updated_at"]) if o.get("updated_at") else None
+        if read is not None and order.source_updated_at is not None and order.source_updated_at > read:
+            return False
         await store_finance(uow, order, o, transactions)
+        return True
 
     async def _refresh_finance(self, conn: ConnectionSnapshot, report: ShopifyReport, run_id, abbrev=None,
                                barcodes: BarcodeLookup | None = None, limit: int = REFRESH_PER_PASS) -> None:
@@ -205,8 +215,7 @@ class ShopifyIntake:
             if changed is not None and order.source_updated_at is not None and changed != order.source_updated_at:
                 await self._one(uow, conn, o, abbrev, None, barcodes, transactions)  # its latest state, then its finance
                 return True
-            await store_finance(uow, order, o, transactions)
-            return True
+            return await self._store(uow, order_id, o, transactions)
 
         for order_id, source_id in todo:
             outcome = await isolated(f"{conn.name}:finance {source_id}", lambda uow, i=order_id, sid=source_id: one(uow, i, sid),

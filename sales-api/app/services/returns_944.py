@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.domain.status import INBOUND_FILE, InboundFile
 from app.models.documents import Document, DocumentLink
 from app.models.orders import Order, OrderLine
+from app.platform.commands import lock
 from app.services import oplog
 from app.services.doc_links import link
 from app.services.problems import EDI_944_NO_TRANSFER, problem
@@ -53,6 +54,7 @@ async def apply_return_944(uow, doc: Document, r, *, tasks=None) -> str:
     doc.error = f"{RA_ERROR}: returned to Radiant for order {o.ref}"
     if already:
         return "return_known"
+    o = await lock(s, Order, o.id)  # the order before its lines, everywhere; read again under its lock
     await link(s, doc.id, "order", o.id)
     lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == o.id, OrderLine.removed.is_(False))
                                   .order_by(OrderLine.line_no).with_for_update())).scalars())

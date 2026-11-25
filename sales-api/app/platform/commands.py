@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Final, TypeVar
 
+from sqlalchemy import select
+
 from app.platform.clock import clock
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 
@@ -54,6 +56,12 @@ def touch(uow: Any, entity: Any) -> None:
     when are kept on the record; no audit row (no audited field changed: the parts have theirs)."""
     entity.updated_at = clock().now()
     entity.updated_by, entity.updated_by_name = uow.actor.user_id, uow.actor.name
+
+
+async def lock(session, model: type[T], id: int) -> T:
+    """The row, locked, and read again under its lock: for a unit that has it already, read before it could be locked. (A plain
+    get(with_for_update=True) of a row in memory raises StaleDataError when it moved meanwhile.)"""
+    return (await session.execute(select(model).where(model.id == id).with_for_update().execution_options(populate_existing=True))).scalar_one()
 
 
 async def load_for_command(session, model: type[T], id: int, *, version: VersionArg, what: str | None = None,

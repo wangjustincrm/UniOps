@@ -15,6 +15,7 @@ from app.domain.radiant_stock import StockFileError, parse_stock_file
 from app.models.documents import Document
 from app.models.stock import StockCount, StockCountLine
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import lock
 from app.scripts.base import ScriptArgs, script_main
 from app.services import oplog
 
@@ -33,6 +34,7 @@ async def main(args: ScriptArgs) -> dict:
             except StockFileError:
                 n["count file not read"] += 1
                 continue
+            await lock(s, StockCount, c.id)  # before its lines
             for ln in (await s.execute(select(StockCountLine).where(StockCountLine.count_id == c.id).with_for_update())).scalars():
                 value = picked.get((ln.item_code, ln.lot)) or {}
                 if value == (ln.picked or {}):

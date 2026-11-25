@@ -57,7 +57,7 @@ from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.audit import audit_act
 from app.platform.clock import clock, utc_now
-from app.platform.commands import VersionArg, check_version, touch
+from app.platform.commands import VersionArg, check_version, lock, touch
 from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -195,6 +195,7 @@ class Shipments:
                 shipment = await self._store(s, doc, i, sh, p, applied=False, shadow=True)
                 order = await s.get(Order, p.order_id) if p.order_id else None
                 if order is not None and order.source_type == FROM_945:  # a later part of its warehouse order
+                    order = await lock(s, Order, order.id)  # before its lines, as apply() takes it
                     await attach(s, order, shipment)
             if self.shadow is not None:
                 await self.shadow.match_945(uow, doc, sets, plans)
@@ -524,6 +525,7 @@ class Shipments:
             if shp.order_id is None:
                 counts["no_order"] += 1
                 continue
+            await lock(s, Shipment, shp.id)  # before its rows
             rows = list((await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == shp.id))).scalars())
             if all(r.order_line_id is not None for r in rows):
                 counts["skipped_linked"] += 1
@@ -571,6 +573,8 @@ class Shipments:
             out["shipments"] += 1
             out["checks"] += sum(1 for c in p.checks if c["check"] == "row fits no line")
             by_pos = {(r.lx_index, r.w12_index): r.order_line_id for r in p.rows}
+            if not dry_run:
+                await lock(s, Shipment, shp.id)  # before its rows
             moved = 0
             for r in (await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == shp.id))).scalars():
                 new = by_pos.get((r.lx_index, r.w12_index))
