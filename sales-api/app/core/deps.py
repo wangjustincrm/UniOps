@@ -54,9 +54,9 @@ CurrentUserPayload = Annotated[dict, Depends(get_current_user_payload)]
 
 
 # ── unit of work per request (design §13.4) ──────────────────────────────────
-# Unlike get_session above (which commits when the request ends), a unit of
-# work commits only when the endpoint calls `uow.commit()` — exactly once, at
-# the end of a write endpoint; leaving without it rolls back. Every flush of
+# Unlike get_session above (which commits when the request ends), this never
+# commits: a write route does, once, when its endpoint returned and before the
+# answer is built (platform/routes.py); leaving without it rolls back. Every flush of
 # an Audited row writes sales_audit (FR-OB-53).
 #
 # Permissions are checked by the services (app/platform/authorization.py)

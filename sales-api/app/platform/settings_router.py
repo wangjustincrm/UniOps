@@ -3,7 +3,7 @@
 
     edi_settings = settings_router(EdiSettingsService, uow=get_uow)
 
-The router enforces no permission of its own: the group checks the keys it declares. The write commits once, at the end."""
+The router enforces no permission of its own: the group checks the keys it declares. The write commits by itself (platform/routes.py)."""
 # No `from __future__ import annotations`: FastAPI must see the closures' real types.
 from collections.abc import Callable
 from typing import Annotated, Any
@@ -11,12 +11,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from app.platform.settings_group import SettingsGroup
+from app.platform.routes import Router
 
 
 def settings_router(group: type[SettingsGroup], *, uow: Callable[..., Any]) -> APIRouter:
     if not group.path:
         raise TypeError(f"{group.__name__} declares no path")
-    r = APIRouter(prefix=group.path, tags=list(group.tags) or [group.path.strip("/")])
+    r = Router(prefix=group.path, tags=list(group.tags) or [group.path.strip("/")])
     Read, Update = group.read_schema, group.update_schema or group.read_schema
     UoW = Annotated[Any, Depends(uow)]
 
@@ -26,8 +27,6 @@ def settings_router(group: type[SettingsGroup], *, uow: Callable[..., Any]) -> A
 
     @r.put("", response_model=Read)
     async def update_(u: UoW, body: Update):  # type: ignore[valid-type]
-        out = await group(u).update(body)
-        await u.commit()
-        return out
+        return await group(u).update(body)
 
     return r

@@ -361,7 +361,7 @@ Approved 2026-10-23: an ABP-inspired foundation in the back end and a UI library
 
 | Folder | Holds | May import |
 | --- | --- | --- |
-| `app/api` | thin HTTP endpoints; a write endpoint commits exactly once, at the end | everything below |
+| `app/api` | thin HTTP endpoints; a write request commits by itself, once, when its endpoint returned (`platform/routes.py`) | everything below |
 | `app/services` | application services (use cases); each declares and checks its permission (§13.5) | schemas, domain, models, integrations, platform |
 | `app/schemas` | DTOs (pydantic): shape only — types, lengths, required fields; no business rule | platform |
 | `app/domain` | business rules, the 9.1 status machines | platform |
@@ -499,10 +499,10 @@ One unit of work per HTTP request (FastAPI dependency `get_uow`) and one per sch
 
 **Transaction contract — one transaction per operation (STEP 1, 2026-10-29).**
 
-- Only the **outermost caller** commits: the HTTP endpoint — "an endpoint that writes calls `uow.commit()` exactly once, at the end" — or a job's unit (`isolated`, §13.11).
+- Only the **outermost caller** commits: the HTTP write route (`platform/routes.py`, since 2026-11-25: once, when its endpoint returned and before the answer is built; a read never; an endpoint that decides for itself says why, `own_commit`) or a job's unit (`isolated`, §13.11).
 - Services, record actions (`run_action`) and the step functions a job runs **never commit**; they flush at most. A service that calls another passes its unit of work along, so the whole operation is one transaction: if the second service fails, nothing of the first is kept — no row, no audit row, no outbox row (tested, both orders).
 - The one exception is the outbox worker (§13.7), which commits its claim (IN_FLIGHT) and the outcome in two transactions of its own, for at-most-once.
-- A static test walks every `post/put/patch/delete` endpoint (`app/api/**`, `crud_router`) and fails unless it contains exactly one `.commit()`.
+- `tests/test_write_routes.py` holds every mounted write route to it: one of the platform's, and no endpoint commits unless it declares it.
 
 ### 13.5 Services (template method)
 

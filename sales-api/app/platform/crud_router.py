@@ -8,7 +8,7 @@ import.csv (`?dry_run=`). Deactivate is mounted only for a Deactivatable model, 
 that declares its CSV columns and key: a route that can only fail is never offered. The router enforces no permission
 of its own: the service checks the keys it declares (app/platform/authorization.py), so the same rule holds for any
 other caller. `uow` is the business code's request-scoped unit of work (it authenticates the caller). Each write
-endpoint is the outermost caller and commits exactly once, at the end.
+commits by itself, once, when its endpoint returned (platform/routes.py).
 """
 # No `from __future__ import annotations`: FastAPI must see the real types of
 # the closures' parameters (the service's schemas and the dependencies).
@@ -25,6 +25,7 @@ from app.platform.files import FileResult, read_upload
 from app.platform.query import Page, QuerySpec, export_columns, query_spec
 from app.platform.resource import RecordFile
 from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
+from app.platform.routes import Router, own_commit
 
 
 def page_body(page: Page) -> dict:
@@ -52,7 +53,7 @@ def resource_router(
     res = service_cls.resolved()
     if not res.path:
         raise TypeError(f"{service_cls.__name__} declares no resource path")
-    r = APIRouter(prefix=res.path, tags=list(res.tags) or [res.path.strip("/")])
+    r = Router(prefix=res.path, tags=list(res.tags) or [res.path.strip("/")])
     Read = service_cls.read_schema
     UoW = Annotated[Any, Depends(uow)]
     Spec = Annotated[QuerySpec, Depends(query_spec)]
@@ -108,22 +109,16 @@ def _write_routes(r: APIRouter, service_cls: type[CrudService], UoW: Any) -> Non
 
     @r.post("", response_model=Read, status_code=201)
     async def create(u: UoW, data: Create):  # type: ignore[valid-type]
-        out = await service_cls(u).create(data)
-        await u.commit()
-        return out
+        return await service_cls(u).create(data)
 
     @r.put("/{id}", response_model=Read)
     async def update_(u: UoW, id: int, data: Update, version: Annotated[int | None, Query()] = None):  # type: ignore[valid-type]
-        out = await service_cls(u).update(id, data, version)
-        await u.commit()
-        return out
+        return await service_cls(u).update(id, data, version)
 
     if issubclass(service_cls.repo_cls.model, Deactivatable):
         @r.post("/{id}/deactivate", response_model=Read)
         async def deactivate(u: UoW, id: int):
-            out = await service_cls(u).deactivate(id)
-            await u.commit()
-            return out
+            return await service_cls(u).deactivate(id)
 
 
 def _export_route(r: APIRouter, service_cls: type[ReadOnlyService], UoW: Any, Spec: Any) -> None:
@@ -149,6 +144,7 @@ def _file_route(r: APIRouter, service_cls: type[ReadOnlyService], f: RecordFile,
 
 def _import_route(r: APIRouter, service_cls: type[CrudService], UoW: Any) -> None:
     @r.post("/import.csv")
+    @own_commit("a dry run and a refused file keep nothing")
     async def import_(u: UoW, file: Annotated[UploadFile, File()], dry_run: bool = True) -> dict:
         # Read one byte past the limit: the service refuses an oversized file
         # without the whole upload ever being held in memory.

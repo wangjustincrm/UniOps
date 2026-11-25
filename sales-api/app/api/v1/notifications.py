@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 
 from app.core.config import settings
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.routes import Router
 from app.runtime import Runtime, get_runtime
 from app.schemas.health import DashboardRead, HealthRead, InboxTarget
 from app.schemas.notifications import EventTypeRead, GateEventRead, RuleTestResult, UserOption
@@ -24,12 +25,10 @@ rules = resource_router(NotificationRuleService, uow=get_uow)
 
 @rules.post("/{id}/test", response_model=RuleTestResult)
 async def rule_test(u: UoW, rt: Rt, id: int):
-    out = await NotificationRuleService(u).send_test(id, rt.tasks)
-    await u.commit()
-    return out
+    return await NotificationRuleService(u).send_test(id, rt.tasks)
 
 
-ops = APIRouter(tags=["operations"])
+ops = Router(tags=["operations"])
 
 
 @ops.get("/config/notification-events", response_model=list[EventTypeRead])

@@ -5,7 +5,7 @@ The base classes this service is built on (design `docs/superpowers/specs/2026-1
 ## Layers of this service
 
 ```
-app/api           HTTP endpoints — thin; a write endpoint commits exactly once, at the end
+app/api           HTTP endpoints — thin; a write request commits by itself, once, when its endpoint returned (`routes`)
 app/services      application services (use cases); declare and check their permissions
 app/schemas       DTOs (pydantic): shape only — types, lengths, required fields
 app/domain        business rules and the status machines
@@ -19,10 +19,10 @@ One-way: `platform` imports nothing else of `app`; `integrations` may import `pl
 
 ## Transaction contract (one transaction per operation)
 
-- Only the **outermost caller** commits: the HTTP endpoint (exactly once, at the end; `get_uow` never commits by itself) or a job's unit (`pipeline.isolated` — one unit per connection, document or order, FR-OB-50).
+- Only the **outermost caller** commits: the HTTP write route (`routes.Router`: once, when its endpoint returned and before the answer is built — not in `get_uow`, which never commits; an endpoint itself never does, unless it says why: `own_commit`) or a job's unit (`pipeline.isolated` — one unit per connection, document or order, FR-OB-50).
 - Services, record actions (`run_action`) and the step functions a job runs **never commit**; they flush at most. A service that calls another passes its unit of work along.
 - The single exception is the outbox worker: it commits the claim (IN_FLIGHT) and the outcome in two transactions of its own, for at-most-once.
-- `tests/platform/test_transactions_and_authorization.py` proves that an operation failing in its second service leaves no row, audit row or outbox row, that a command alone commits nothing, and (statically) that every write endpoint commits exactly once.
+- `tests/platform/test_transactions_and_authorization.py` proves that an operation failing in its second service leaves no row, audit row or outbox row, that a command alone commits nothing, and that nothing is kept twice; `tests/test_write_routes.py` holds every mounted write route to it, and `tests/platform/test_write_routes.py` proves the route.
 
 ## Authorization at the service
 
@@ -50,8 +50,9 @@ Each service declares its keys — `read_permission` / `write_permission` on CRU
 | `audit` | `AuditTrail(model).attach(session)`: fills created/updated by from the actor; writes one row per change of an `Audited` entity (`AuditRecordMixin` columns) |
 | `state` | `StateMachine(table, name, field=, initial=, holds=)`: `can`, `pairs`, `transition` (raises `state.invalid_transition`, emits `StatusChanged`); hold states remember `<field>_before_hold` |
 | `services` | `ReadOnlyService`, `CrudService` (create / update with `exclude_unset` and version / deactivate; hooks `validate_create`, `before_update`, `after_delete`; `export_csv`; `import_csv` validates every row and is then all-or-nothing, with a `dry_run` plan; the key column is never an update field, a jsonb cell exports as JSON; a CRUD write's audit rows carry the operation — `create`, `update`, `deactivate`, `import.csv` — as their reason unless the caller set one). All check their declared keys first |
+| `routes` | `Router` (an `APIRouter` whose writes commit by themselves: after the endpoint returned, before the answer is built; nothing on an error; a read never), `own_commit(reason)`: a route that decides for itself and says why |
 | `resource` | `Resource(path=, get=, detail=, suggest=, export=, history=, attachments=, files=, actions=, computed=, …)`: what a list offers, declared once on its service; three levels, field by field: `ResourceOptions` → a base class → the service. `/meta` says it (`capabilities`) |
-| `crud_router` | `resource_router(ServiceClass, uow=, custom=)` — every route the service's `resource` declares: list, meta, suggest, export.csv, import.csv, record actions, history, files; then `custom` (the list's hand-written routes); then GET /{id} (or its detail) and, for a `CrudService`, create, update, deactivate. No permission check of its own; each write endpoint commits once |
+| `crud_router` | `resource_router(ServiceClass, uow=, custom=)` — every route the service's `resource` declares: list, meta, suggest, export.csv, import.csv, record actions, history, files; then `custom` (the list's hand-written routes); then GET /{id} (or its detail) and, for a `CrudService`, create, update, deactivate. No permission check of its own; each write commits by itself |
 | `clock` | `clock()` (`now`, `today`, `to_business`, `at`, `normalize`), `FixedClock`, `business_date_sql` / `business_time_sql`: one now and one business day (`ClockOptions`) |
 | `settings_group`, `settings_router` | `SettingsGroup` (a settings form: its fields, permissions, checks, path) and `settings_router(Group, uow=)`: its GET and PUT |
 | `files` | `read_upload(file, limit)`: what a person sends, read bounded; `FileResult`, `content_disposition(name)`: a file's name may hold any character (RFC 5987) |

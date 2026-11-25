@@ -1,8 +1,8 @@
 """Connections, the document register, runs and the log (P2). Permissions are
-checked by the services; each write endpoint commits once."""
+checked by the services; each write commits by itself (platform/routes.py)."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 
 from pydantic import ConfigDict, BaseModel, Field
 
@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
 from app.platform.settings_router import settings_router
+from app.platform.routes import Router, own_commit
 from app.runtime import Runtime, get_runtime
 from app.schemas.connections import (
     ConnectionRead, ConnectionTestRead, CursorReset,
@@ -28,12 +29,14 @@ connections = resource_router(ConnectionService, uow=get_uow)
 
 
 @connections.post("/{id}/test", response_model=ConnectionTestRead)
+@own_commit("reads only: lists folders, never writes (FR-OB-74)")
 async def connection_test(u: UoW, rt: Rt, id: int):
     return await ConnectionService(u).test(id, rt.container.sftp, rt.container.shopify, rt.container.authorize_net,
                                                rt.container.paypal)  # reads only
 
 
 @connections.post("/{id}/run-now", response_model=RunStarted, status_code=202)
+@own_commit("the connection's run is claimed in a unit of its own (ScheduledJob.claim)")
 async def connection_run_now(u: UoW, rt: Rt, id: int):
     # Claims its own run record (single flight per connection); runs in the background.
     return RunStarted(run_id=await ConnectionService(u).run_now(id, rt.scheduler, rt.background))
@@ -41,16 +44,12 @@ async def connection_run_now(u: UoW, rt: Rt, id: int):
 
 @connections.post("/{id}/reset-cursor", response_model=ConnectionRead)
 async def connection_reset_cursor(u: UoW, id: int, body: CursorReset):
-    out = await ConnectionService(u).reset_cursor(id, body.cursor_updated_at)
-    await u.commit()
-    return out
+    return await ConnectionService(u).reset_cursor(id, body.cursor_updated_at)
 
 
 @connections.post("/{id}/clear-auth-latch", response_model=ConnectionRead)
 async def connection_clear_latch(u: UoW, rt: Rt, id: int):
-    out = await ConnectionService(u).clear_latch(id, rt.intake.tasks)
-    await u.commit()
-    return out
+    return await ConnectionService(u).clear_latch(id, rt.intake.tasks)
 
 
 documents = resource_router(DocumentService, uow=get_uow, runtime=get_runtime)
@@ -60,12 +59,14 @@ runs = resource_router(RunService, uow=get_uow)
 
 
 @runs.post("/run-now", response_model=RunStarted, status_code=202)
+@own_commit("the run is claimed in a unit of its own (ScheduledJob.claim)")
 async def run_now(u: UoW, rt: Rt):
     # Claims its own run record; the request's unit of work only checks the permission.
     return RunStarted(run_id=await RunService(u).run_now(rt.scheduler, rt.background))
 
 
 @runs.post("/run-now/system", response_model=RunStarted, status_code=202)
+@own_commit("the system run is claimed in a unit of its own (ScheduledJob.claim)")
 async def run_system_now(u: UoW, rt: Rt):
     return RunStarted(run_id=await RunService(u).run_system_now(rt.scheduler, rt.background))
 
@@ -79,7 +80,7 @@ manual_order_settings = settings_router(ManualOrderSettingsService, uow=get_uow)
 
 
 # Health → Log levels (user 2026-11-23): raise a logger for a while; it goes back by itself.
-log_levels = APIRouter(prefix="/config/log-levels", tags=["settings"])
+log_levels = Router(prefix="/config/log-levels", tags=["settings"])
 
 
 class LogLevelIn(BaseModel):
@@ -105,21 +106,17 @@ async def get_log_levels(u: UoW) -> dict:
 @log_levels.post("")
 async def raise_log_level(u: UoW, body: LogLevelIn) -> dict:
     from app.services.log_levels import LogLevelService
-    out = await LogLevelService(u, settings).raise_level(body.logger, body.level.upper(), body.minutes, body.reason)
-    await u.commit()
-    return out
+    return await LogLevelService(u, settings).raise_level(body.logger, body.level.upper(), body.minutes, body.reason)
 
 
 @log_levels.post("/clear")
 async def clear_log_level(u: UoW, body: LogLevelClearIn) -> dict:
     from app.services.log_levels import LogLevelService
-    out = await LogLevelService(u, settings).clear(body.logger, body.reason)
-    await u.commit()
-    return out
+    return await LogLevelService(u, settings).clear(body.logger, body.reason)
 
 
 # Health → Switches (user 2026-11-23): partner writes, external email, the scheduler — a person may turn one off.
-features = APIRouter(prefix="/config/features", tags=["settings"])
+features = Router(prefix="/config/features", tags=["settings"])
 
 
 class FeatureIn(BaseModel):
@@ -138,6 +135,4 @@ async def get_features(u: UoW) -> list[dict]:
 @features.post("")
 async def set_feature(u: UoW, body: FeatureIn) -> list[dict]:
     from app.services.features import FeatureService
-    out = await FeatureService(u, settings).set(body.name, body.value, body.reason)
-    await u.commit()
-    return out
+    return await FeatureService(u, settings).set(body.name, body.value, body.reason)

@@ -2,15 +2,16 @@
 sales.read to look. The texts live in the domain (app/domain/status_help.py), beside the rules."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 
 from app.core.deps import get_uow
 from app.domain.status_help import payload
 from app.platform.authorization import requires
+from app.platform.routes import Router
 
 UoW = Annotated[Any, Depends(get_uow)]
 
-router = APIRouter(prefix="/help", tags=["help"])
+router = Router(prefix="/help", tags=["help"])
 
 
 class HelpService:

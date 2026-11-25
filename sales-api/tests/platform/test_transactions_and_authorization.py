@@ -1,15 +1,12 @@
 """STEP 1 (2026-10-29): one transaction per operation, and authorization at
 the service.
 
-- Only the outermost caller commits (an endpoint, once; a job's unit). An
+- Only the outermost caller commits (a write route, once; a job's unit). An
   operation that calls two services and fails in the second leaves nothing —
   no row, no audit row, no outbox row.
 - A service checks the keys it declares before it reads or writes anything;
   the system actor passes only where that is declared.
 """
-import ast
-from pathlib import Path
-
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, Header
@@ -20,6 +17,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import PermissionDenied, authorize, requires
 from app.platform.errors import BusinessError, install_error_handlers
 from app.platform.outbox import Outbox
+from app.platform.routes import Router
 from app.platform.services import Service
 from app.platform.state import StateMachine
 from app.platform.uow import UnitOfWorkFactory
@@ -64,8 +62,8 @@ async def _thing(uow_factory, person, status="open"):
 
 @pytest_asyncio.fixture
 async def op_http(uow_factory):
-    """An endpoint that runs two services in one unit of work and commits
-    once at the end — the shape every write endpoint has."""
+    """An endpoint that runs two services in one unit of work, committed once
+    when it returned — the shape every write route has."""
     async def uow(x_perms: str = Header(default="")):
         async with uow_factory(actor_with(*[k for k in x_perms.split(",") if k], name="Op")) as u:
             yield u
@@ -77,22 +75,24 @@ async def op_http(uow_factory):
 
     from fastapi import Depends
 
-    @app.post("/op2/{thing_id}")
+    routes = Router()
+
+    @routes.post("/op2/{thing_id}")
     async def op2(thing_id: int, u: Annotated[object, Depends(uow)], name: str = "fine"):
         await Finish(u).execute(thing_id)  # first: a command (audit row)
         OUTBOX.add(u.session, "notify", {"t": thing_id})
         await WidgetService(u).create(WidgetCreate(code="W2", name=name))  # second: may refuse
-        await u.commit()
         return {"ok": True}
 
-    @app.post("/op/{thing_id}")
+    @routes.post("/op/{thing_id}")
     async def op(thing_id: int, u: Annotated[object, Depends(uow)], refuse: bool = False):
         await WidgetService(u).create(WidgetCreate(code="W1", name="made first"))  # flushes; audit row
         OUTBOX.add(u.session, "notify", {"w": "W1"})
         await u.session.flush()
         await Finish(u).execute(thing_id, refuse=refuse)  # the second service
-        await u.commit()
         return {"ok": True}
+
+    app.include_router(routes)
 
     async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://t") as c:
         yield c
@@ -156,68 +156,6 @@ async def test_a_state_change_locks_moves_and_raises_its_event_once_committed(uo
         with pytest.raises(BusinessError) as e:  # done already: the machine refuses
             await Finish(uow).execute(tid)
     assert e.value.code == "state.invalid_transition"
-
-
-# ── the rule "a write endpoint commits exactly once" (static check) ──────────
-
-APP = Path(__file__).resolve().parents[2] / "app"
-WRITE_METHODS = {"post", "put", "patch", "delete"}
-
-
-def endpoint_commit_counts(source: str) -> dict[str, int]:
-    """Every function decorated with `<router>.post/put/patch/delete(...)` →
-    how many `.commit()` calls its body contains."""
-    out = {}
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        writes = any(
-            isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute) and d.func.attr in WRITE_METHODS
-            for d in node.decorator_list
-        )
-        if writes:
-            out[node.name] = sum(
-                1 for n in ast.walk(node)
-                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "commit"
-            )
-    return out
-
-
-# POST endpoints that write nothing through the request's unit of work, each
-# with its reason. They must commit exactly zero times.
-NO_REQUEST_WRITE = {
-    "api/v1/operations.py:connection_test": "reads only: lists folders, never writes (FR-OB-74)",
-    "api/v1/operations.py:run_now": "the run is claimed in a unit of its own (ScheduledJob.claim)",
-    "api/v1/operations.py:run_system_now": "the system run is claimed in a unit of its own (ScheduledJob.claim)",
-    "api/v1/operations.py:connection_run_now": "the connection's run is claimed in a unit of its own (ScheduledJob.claim)",
-    "api/v1/orders.py:manual_preview": "the EA preview before saving: reads only (FR-OB-19a)",
-}
-
-
-def test_every_write_endpoint_commits_exactly_once():
-    files = [APP / "platform" / "crud_router.py", *sorted((APP / "api").rglob("*.py"))]
-    counts = {f"{p.relative_to(APP)}:{name}": n for p in files for name, n in endpoint_commit_counts(p.read_text()).items()}
-    assert len(counts) >= 4, counts  # crud_router's import, create, update, deactivate
-    assert {k: n for k, n in counts.items() if n != 1 and k not in NO_REQUEST_WRITE} == {}
-    assert {k: counts.get(k) for k in NO_REQUEST_WRITE} == dict.fromkeys(NO_REQUEST_WRITE, 0)
-
-
-def test_the_endpoint_check_flags_missing_and_double_commits():
-    src = '''
-@router.post("/a")
-async def none(u): await svc(u).create()
-@router.put("/b")
-async def twice(u):
-    await u.commit()
-    await u.commit()
-@router.post("/c")
-async def once(u):
-    await svc(u).create()
-    await u.commit()
-@router.get("/d")
-async def read(u): return 1
-'''
-    assert endpoint_commit_counts(src) == {"none": 0, "twice": 2, "once": 1}
 
 
 # ── authorization at the service ─────────────────────────────────────────────

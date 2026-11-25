@@ -37,6 +37,7 @@ from app.platform.commands import Stale, check_version, require_reason
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import QuerySpec, query_spec
 from app.platform.uow import Savepoint
+from app.platform.routes import Router, own_commit
 
 MAX_RECORDS = 500
 # (uow, record) → None, or why it is skipped: the words, or the rule's own BusinessError (its words and its code)
@@ -235,9 +236,10 @@ def _no_runtime() -> None:
 def action_router(registry: ActionRegistry, get_uow: Callable[..., Any], get_runtime: Callable[..., Any] | None = None) -> APIRouter:
     """POST /actions/{action_id}: include it in the list's router BEFORE its /{id}/… routes. `get_runtime`: the module's
     long-lived objects, for the actions that need them (ActionContext.runtime)."""
-    router = APIRouter()
+    router = Router()
 
     @router.post("/actions/{action_id}", response_model=ActionOut)
+    @own_commit("a dry run keeps nothing")
     async def run(action_id: str, body: ActionIn, u: Annotated[Any, Depends(get_uow)],
                   rt: Annotated[Any, Depends(get_runtime or _no_runtime)] = None) -> ActionOut:
         out = await run_action(u, registry, action_id, body, rt)

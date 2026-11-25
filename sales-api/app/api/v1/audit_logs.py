@@ -3,16 +3,17 @@ changes (list, meta). sales.config for now."""
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
+from app.platform.routes import Router
 from app.schemas.audit_logs import AuditLogDetail
 from app.services.audit_logs import AuditLogService, EntityChangeService
 
 UoW = Annotated[Any, Depends(get_uow)]
 
-detail = APIRouter(prefix="/audit-logs", tags=["audit"])
+detail = Router(prefix="/audit-logs", tags=["audit"])
 
 
 @detail.get("/{id}/detail", response_model=AuditLogDetail)

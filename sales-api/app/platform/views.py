@@ -30,6 +30,7 @@ from app.platform.authorization import authorize
 from app.platform.entities import Audited, Versioned
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import MAX_FILTERS, MAX_GROUP_KEYS, MAX_PAGE_SIZE
+from app.platform.routes import Router
 
 VIEW_STATE_VERSION = 1
 MAX_VIEWS_PER_LIST = 50
@@ -263,8 +264,8 @@ class ViewService:
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 def views_router(service_cls: type[ViewService], *, uow: Callable[..., Any]) -> APIRouter:
-    """`/views`: the caller's own views of one list. Each write commits once."""
-    r = APIRouter(prefix="/views", tags=["views"])
+    """`/views`: the caller's own views of one list. Each write commits by itself."""
+    r = Router(prefix="/views", tags=["views"])
     UoW = Annotated[Any, Depends(uow)]
 
     @r.get("", response_model=list[ViewRead])
@@ -273,26 +274,19 @@ def views_router(service_cls: type[ViewService], *, uow: Callable[..., Any]) -> 
 
     @r.post("", response_model=ViewRead, status_code=201)
     async def create(u: UoW, data: ViewCreate):
-        out = await service_cls(u).create(data)
-        await u.commit()
-        return out
+        return await service_cls(u).create(data)
 
     @r.put("/{id}", response_model=ViewRead)
     async def update_(u: UoW, id: int, data: ViewUpdate, version: Annotated[int | None, Query()] = None):
-        out = await service_cls(u).update(id, data, version)
-        await u.commit()
-        return out
+        return await service_cls(u).update(id, data, version)
 
     @r.delete("/{id}", status_code=204)
     async def delete(u: UoW, id: int):
         await service_cls(u).delete(id)
-        await u.commit()
         return Response(status_code=204)
 
     @r.post("/{id}/default", response_model=ViewRead)
     async def default(u: UoW, id: int, on: bool = True):
-        out = await service_cls(u).set_default(id, on)
-        await u.commit()
-        return out
+        return await service_cls(u).set_default(id, on)
 
     return r

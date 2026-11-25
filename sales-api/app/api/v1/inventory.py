@@ -4,11 +4,12 @@ from typing import Annotated, Any
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, UploadFile
 
 from app.core.deps import get_uow
 from app.platform.crud_router import resource_router
 from app.platform.files import read_upload
+from app.platform.routes import Router
 from app.schemas.stock import (AdjustIn, CountCompareRow, CountUpdateIn, StockCountLineRead,
                                StockCountRead, StockMoveRead)
 from app.services.stock import StockItemService, StockLotService, StockMoveService
@@ -16,14 +17,12 @@ from app.services.stock_counts import MAX_BYTES, StockCountService
 
 UoW = Annotated[Any, Depends(get_uow)]
 
-routes = APIRouter(prefix="/inventory", tags=["inventory"])
+routes = Router(prefix="/inventory", tags=["inventory"])
 
 
 @routes.post("/adjust", response_model=StockMoveRead)
 async def adjust(u: UoW, body: AdjustIn):
-    m = await StockMoveService(u).adjust(item_code=body.item_code, lot=body.lot, qty_ea=body.qty_ea, reason=body.reason)
-    await u.commit()
-    return StockMoveRead.model_validate(m, from_attributes=True)
+    return await StockMoveService(u).adjust(item_code=body.item_code, lot=body.lot, qty_ea=body.qty_ea, reason=body.reason)
 
 
 # ── Radiant's inventory reports (counts, user 2026-11-13) ────────────────────
@@ -32,9 +31,7 @@ async def adjust(u: UoW, body: AdjustIn):
 async def upload_count(u: UoW, file: Annotated[UploadFile, File()], counted_at: Annotated[datetime, Form()],
                        note: Annotated[str | None, Form()] = None):
     data = await read_upload(file, MAX_BYTES)
-    out = await StockCountService(u).create(name=file.filename or "inventory", data=data, counted_at=counted_at, note=note)
-    await u.commit()
-    return out
+    return await StockCountService(u).create(name=file.filename or "inventory", data=data, counted_at=counted_at, note=note)
 
 
 @routes.get("/counts/{count_id}", response_model=StockCountRead)
@@ -44,9 +41,7 @@ async def get_count(u: UoW, count_id: int):
 
 @routes.put("/counts/{count_id}", response_model=StockCountRead)
 async def update_count(u: UoW, count_id: int, body: CountUpdateIn):
-    out = await StockCountService(u).update(count_id, version=body.version, counted_at=body.counted_at, note=body.note)
-    await u.commit()
-    return out
+    return await StockCountService(u).update(count_id, version=body.version, counted_at=body.counted_at, note=body.note)
 
 
 @routes.get("/counts/{count_id}/lines", response_model=list[StockCountLineRead])
@@ -59,7 +54,7 @@ async def compare_count(u: UoW, count_id: int):
     return await StockCountService(u).compare(count_id)
 
 
-router = APIRouter()
+router = Router()
 for r in (resource_router(StockItemService, uow=get_uow),
           resource_router(StockLotService, uow=get_uow),
           resource_router(StockMoveService, uow=get_uow),
