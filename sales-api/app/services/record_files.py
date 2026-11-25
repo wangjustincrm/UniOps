@@ -23,7 +23,7 @@ from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.models.transfers import Transfer, TransferLine
 from app.platform.services import Service
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.schemas.orders import TimelineEntry
 from app.schemas.records import AttachmentRead, RecordDocumentRead
 from app.platform.audit import audit_also
@@ -184,7 +184,7 @@ class Attachments(Service):
     async def _record(self, k: RecordKind, entity_id: int):
         rec = await self.s.get(k.model, entity_id)
         if rec is None:
-            raise BusinessError("entity.not_found", f"no such {k.label}", status_code=404)
+            raise NotFound(k.model.__name__, entity_id, f"no such {k.label}")
         return rec
 
     async def list(self, entity_type: str, entity_id: int) -> list[AttachmentRead]:
@@ -236,7 +236,7 @@ class Attachments(Service):
         link = (await self.s.execute(select(DocumentLink).where(DocumentLink.document_id == document_id, DocumentLink.entity_type == k.entity_type,
                                                                 DocumentLink.entity_id == entity_id))).scalar_one_or_none()
         if doc is None or link is None:
-            raise BusinessError("entity.not_found", "this file is not on this record", status_code=404)
+            raise NotFound("Document", document_id, "this file is not on this record")
         if doc.kind != "ATTACHMENT":
             raise BusinessError("attachment.not_attachment", "only a file a person attached can be removed; EDI files stay with their record")
         audit_also(self.s, "delete", link)  # in the record's Activity (timeline_of); the file itself stays

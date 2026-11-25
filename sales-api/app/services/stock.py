@@ -45,7 +45,7 @@ from app.models.stock import (ADJUSTED, CUSTOMER, PLANT, RADIANT, RETURNING, TO_
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.authorization import requires
 from app.platform.clock import clock
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.resource import Resource
@@ -341,7 +341,7 @@ class StockMoveService(ReadOnlyService[StockMove, StockMoveRead]):
         if qty_ea == 0:
             raise BusinessError("stock.zero", "the quantity must not be zero")
         if (await s.execute(select(Item.id).where(Item.item_code == item_code))).first() is None:
-            raise BusinessError("stock.item", f"no item {item_code}", status_code=404)
+            raise NotFound("Item", item_code, f"no item {item_code}")
         expiry = (await s.execute(select(func.max(StockMove.expiry)).where(StockMove.item_code == item_code, StockMove.lot == lot))).scalar()
         actor = self.uow.actor
         m = StockMove(at=clock().now(), item_code=item_code, lot=lot or None, expiry=expiry, qty_ea=abs(qty_ea),

@@ -16,7 +16,7 @@ from app.models.config import Item, ItemUnit
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment
 from app.platform.commands import ANY_VERSION, VersionArg, check_version, touch
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.services import oplog
 
 AMENDABLE = (F.PENDING, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940)
@@ -28,7 +28,7 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
     s = uow.session
     o = await s.get(Order, order_id, with_for_update=True)
     if o is None:
-        raise BusinessError("order.not_found", "no such order", status_code=404)
+        raise NotFound("Order", order_id)
     check_version(o, version, "this order")
     if o.historical:
         raise BusinessError("order.amend", "a historical order is not changed")

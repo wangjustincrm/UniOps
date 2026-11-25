@@ -778,7 +778,7 @@ class ManualOrderService(Service):
     async def _draft(self, id: int, version: int | None) -> Order:
         o = (await self.s.execute(select(Order).where(Order.id == id).with_for_update())).scalar_one_or_none()
         if o is None or o.source_type != "MANUAL":
-            raise BusinessError("entity.not_found", f"manual order {id} not found", status_code=404)
+            raise NotFound("Order", id, f"manual order {id} not found")
         if o.fulfillment_status != F.DRAFT:
             raise BusinessError("order.not_draft", "only a Draft can be changed or submitted",
                                 {"status": o.fulfillment_status})
@@ -835,7 +835,7 @@ class ManualOrderService(Service):
         adds the lines and a reason, then submits. The 945 of what it sends then matches it: no conflict on the source."""
         src = (await self.s.execute(select(Order).where(Order.id == source_id))).scalar_one_or_none()
         if src is None:
-            raise BusinessError("entity.not_found", f"order {source_id} not found", status_code=404)
+            raise NotFound("Order", source_id)
         p = await self._reorder_partner(src)
         self.uow.set_reason(f"reorder of {src.source_reference}")
         ref = src.source_reference or str(src.order_number)

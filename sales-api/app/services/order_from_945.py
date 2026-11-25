@@ -39,7 +39,7 @@ from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
 from app.platform.clock import clock
 from app.platform.services import Service
-from app.platform.errors import BusinessError, InvalidInput
+from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.services import oplog
 from app.services.orders import Catalog, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -212,7 +212,7 @@ class OrderFrom945(Service):
         """Make the order (or join the part's order), link the shipment and its rows."""
         sh = await self.s.get(Shipment, shipment_id, with_for_update=True)
         if sh is None:
-            raise BusinessError("shipment.not_found", "no such shipment", status_code=404)
+            raise NotFound("Shipment", shipment_id)
         p = await self._plan(sh, partner_code)
         if p.refused:
             raise BusinessError(p.refused, p.refused_message)

@@ -58,7 +58,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.platform.audit import audit_act
 from app.platform.clock import clock, utc_now
 from app.platform.commands import VersionArg, check_version, touch
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
@@ -889,7 +889,7 @@ class Shipments:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
         if order is None:
-            raise BusinessError("order.not_found", "no such order", status_code=404)
+            raise NotFound("Order", order_id)
         await self.refuse_fulfil(s, order)  # what is done or queued says so, whatever the version
         check_version(order, version, "this order")
         touch(uow, order)  # the same press from the same page is refused: the order has moved
@@ -906,7 +906,7 @@ class Shipments:
         s = uow.session
         sh = await s.get(Shipment, shipment_id, with_for_update=True)
         if sh is None:
-            raise BusinessError("shipment.not_found", "no such shipment", status_code=404)
+            raise NotFound("Shipment", shipment_id)
         await refuse_queued(s, (FULFILL, CLOSE), sh, "the Shopify write of this shipment")  # first: a stuck one says how it ends
         if sh.shopify_status not in ("Failed", "Suppressed"):
             raise BusinessError("shipment.not_failed", f"the Shopify write is {sh.shopify_status}")

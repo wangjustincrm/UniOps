@@ -47,7 +47,7 @@ from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock
 from app.platform.commands import VersionArg, check_version, require_reason
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
@@ -384,7 +384,7 @@ class Outbound940:
         why = require_reason(reason, code="send940.reason", message="say why the live 940 is replaced (a few words)") if replace else None
         order = await s.get(Order, order_id, with_for_update=True)
         if order is None:
-            raise BusinessError("order.not_found", "no such order", status_code=404)
+            raise NotFound("Order", order_id)
         partner, live = await self.refuse_send(s, order, replace=replace)  # what is done or under way says so, whatever the version
         check_version(order, version, "this order")
         if replace:

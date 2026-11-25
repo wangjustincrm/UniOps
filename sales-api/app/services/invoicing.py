@@ -212,7 +212,7 @@ class Invoicing:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
         if order is None:
-            raise BusinessError("order.not_found", "no such order", status_code=404)
+            raise NotFound("Order", order_id)
         await self._refuse_shadow(s, order)
         self._refuse_cancelled(order)
         if order.invoice_status != Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
@@ -367,7 +367,7 @@ class Invoicing:
         why = resend_reason(reason) if again else None
         pair = await self._lock(s, invoice_id)
         if pair is None:
-            raise BusinessError("invoice.not_found", "no such invoice", status_code=404)
+            raise NotFound("Invoice", invoice_id)
         order, inv = pair
         await self.refuse_send(s, order, inv, again=again)  # what is done or under way says so, whatever the version
         check_version(inv, version, "this invoice")
@@ -387,7 +387,7 @@ class Invoicing:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
         if order is None:
-            raise BusinessError("order.not_found", "no such order", status_code=404)
+            raise NotFound("Order", order_id)
         check_version(order, version, "this order")
         if order.fulfillment_status not in (F.SHIPPED.value, F.ON_HOLD.value):
             raise BusinessError("return.not_shipped", "only an order that shipped can be cancelled or returned after shipment")

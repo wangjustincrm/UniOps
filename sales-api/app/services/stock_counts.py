@@ -26,7 +26,7 @@ from app.models.documents import Document, DocumentLink
 from app.models.stock import ADJUSTED, RADIANT, StockCount, StockCountLine, StockMove, _net
 from app.platform.authorization import authorize
 from app.platform.clock import clock
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
@@ -112,7 +112,7 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
     async def _count(self, count_id: int, *, lock: bool = False) -> StockCount:
         c = await self.uow.session.get(StockCount, count_id, with_for_update=lock)
         if c is None:
-            raise BusinessError("stock_count.not_found", "no such count", status_code=404)
+            raise NotFound("StockCount", count_id)
         return c
 
     async def create(self, *, name: str, data: bytes, counted_at: datetime, note: str | None) -> StockCountRead:
