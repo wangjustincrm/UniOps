@@ -54,12 +54,12 @@ async def says(press) -> BusinessError | None:
     return None
 
 
-async def twice(t, actor, work) -> BusinessError | None:
-    """The same press by two people at once: the first has done its work and not committed when the second comes, which
+async def twice(t, actor, work, then=None) -> BusinessError | None:
+    """The same press (or `work`, and `then` the other's) by two people at once: the first has done its work and not committed when the second comes, which
     must wait for the record (else both see nothing under way). The first commits; what the second is then told."""
     async def second():
         async with t.factory(actor) as u:
-            await work(u)
+            await (then or work)(u)
             await u.commit()
     async with t.factory(actor) as u:
         await work(u)

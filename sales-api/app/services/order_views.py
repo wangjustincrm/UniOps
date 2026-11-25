@@ -97,6 +97,7 @@ from app.services.order_status_sql import (
     TO_CONFIRM_SQL,
 )
 from app.services.orders import BarcodeLookup, order_ref
+from app.services.return_total import refuse_more_than_shipped
 from app.services.settings import SETTINGS, SHADOW_MODE, automatic_runs_on
 
 READ = "sales.read"
@@ -458,6 +459,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 changed.append((ln, ln.returned_ea, c.returned_ea))
         if not changed:
             return await self.detail(id)
+        await refuse_more_than_shipped(s, id, returned={ln.id: new for ln, _old, new in changed})  # with what is recorded after shipment
         touch(self.uow, o)  # only the lines (and a draft invoice) change: the order's version moves all the same
         reason = body.reason.strip()
         cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
