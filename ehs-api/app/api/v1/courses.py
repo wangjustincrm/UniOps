@@ -420,6 +420,7 @@ class QuizResultRow(BaseModel):
     user_id: uuid.UUID | None
     user_name: str
     score_percent: float
+    points_possible: int
     passed: bool
     submitted_at: datetime
 
@@ -438,7 +439,8 @@ async def quiz_results(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIn
         select(QuizAttempt).where(QuizAttempt.delivery_id == delivery.id)
         .order_by(QuizAttempt.submitted_at.desc()))).scalars().all()
     return [QuizResultRow(user_id=a.user_id, user_name=a.user_name,
-                          score_percent=float(a.score_percent), passed=a.passed,
+                          score_percent=float(a.score_percent),
+                          points_possible=a.points_possible, passed=a.passed,
                           submitted_at=a.submitted_at) for a in rows]
 
 

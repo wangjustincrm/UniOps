@@ -31,7 +31,7 @@ import {
 interface Quiz {
   id: string; course_id: string | null; document_id: string | null; title: string; intro: string | null
   pass_mark_percent: number; max_attempts: number | null
-  is_active: boolean; qr_token: string | null; question_count: number
+  is_active: boolean; qr_token: string | null; question_count: number; marked_count: number
 }
 interface LearnerQuestion {
   id: string; seq: number; prompt: string; kind: string
@@ -159,7 +159,8 @@ export default function QuizPage() {
                     {renaming?.id === q.id && <ErrorNote error={rename.error} />}
                     <span className="mt-0.5 block text-xs text-neutral-500">
                       {q.question_count} question{q.question_count === 1 ? '' : 's'} ·
-                      pass at {q.pass_mark_percent}%
+                      {q.question_count > 0 && q.marked_count === 0
+                        ? 'feedback only, not marked' : `pass at ${q.pass_mark_percent}%`}
                       {q.max_attempts && ` · ${q.max_attempts} attempts`}
                     </span>
                   </span>
@@ -653,6 +654,8 @@ function ResultView({ attempt, quizId, documentId }: {
 }) {
   const navigate = useNavigate()
   const wrong = attempt.marked.filter((m) => !m.correct)
+  // ★ UAT 16 TC-09: nothing in it was marked, so there is no score to show.
+  const feedbackOnly = attempt.points_possible === 0
 
   return (
     <div className="mx-auto max-w-xl p-4">
@@ -660,17 +663,28 @@ function ResultView({ attempt, quizId, documentId }: {
         'rounded-xl p-5 text-center ' +
         (attempt.passed ? 'bg-success-50' : 'bg-warning-50')
       }>
-        <p className={`font-mono text-4xl font-bold tabular-nums ${
-          attempt.passed ? 'text-success-700' : 'text-warning-700'}`}>
-          {Math.round(Number(attempt.score_percent))}%
-        </p>
-        <p className={`mt-1 text-sm font-semibold ${
-          attempt.passed ? 'text-success-700' : 'text-warning-700'}`}>
-          {attempt.passed ? 'Passed' : `Not this time — the pass mark is ${attempt.pass_mark_percent}%`}
-        </p>
-        <p className="mt-0.5 text-sm text-neutral-600">
-          {attempt.points_scored} of {attempt.points_possible} points
-        </p>
+        {feedbackOnly ? (
+          <>
+            <p className="text-lg font-semibold text-success-700">Thank you</p>
+            <p className="mt-1 text-sm text-neutral-600">
+              Your feedback has been submitted. These questions are not marked.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className={`font-mono text-4xl font-bold tabular-nums ${
+              attempt.passed ? 'text-success-700' : 'text-warning-700'}`}>
+              {Math.round(Number(attempt.score_percent))}%
+            </p>
+            <p className={`mt-1 text-sm font-semibold ${
+              attempt.passed ? 'text-success-700' : 'text-warning-700'}`}>
+              {attempt.passed ? 'Passed' : `Not this time — the pass mark is ${attempt.pass_mark_percent}%`}
+            </p>
+            <p className="mt-0.5 text-sm text-neutral-600">
+              {attempt.points_scored} of {attempt.points_possible} points
+            </p>
+          </>
+        )}
         {/* ★ Round 6: passing the quiz does not pass the course. The person
             running the session marks the pass, and the certificate is issued
             when they close it. */}
@@ -684,8 +698,8 @@ function ResultView({ attempt, quizId, documentId }: {
             outside any session is a practice run and says so. */}
         {attempt.passed && !documentId && attempt.delivery_id && (
           <p className="mt-2 text-sm text-neutral-600">
-            Your pass is on the session roster. The person running the session confirms it, and
-            your certificate is issued when they close the session.
+            {feedbackOnly ? 'Your answers are' : 'Your pass is'} on the session roster. The person
+            running the session confirms it, and your certificate is issued when they close the session.
           </p>
         )}
         {attempt.passed && !documentId && !attempt.delivery_id && (
@@ -789,7 +803,9 @@ export function EditQuizPage() {
   return (
     <div className="p-4">
       <PageHeader title={quiz.data?.title ?? 'Quiz'}
-                  subtitle={`Pass at ${quiz.data?.pass_mark_percent ?? 80}%`} />
+                  subtitle={rows.length > 0 && rows.every((r) => isFeedback(r.kind))
+                    ? 'Course feedback only, not marked'
+                    : `Pass at ${quiz.data?.pass_mark_percent ?? 80}%`} />
 
       {/* The code is shown on its own, never on this page.
           This is the authoring view: the questions and their answers are below.
@@ -816,7 +832,7 @@ export function EditQuizPage() {
         <QuizCodeScreen quiz={quiz.data} onClose={() => setPresenting(false)} />
       )}
 
-      {(results.data?.people ?? 0) > 0 && (
+      {(results.data?.people ?? 0) > 0 && (results.data?.by_question.length ?? 0) > 0 && (
         <Card className="mb-4">
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Stat label="Passed" value={`${results.data?.passed} of ${results.data?.people}`} />
@@ -1026,7 +1042,7 @@ function Stat({ label, value }: { label: string; value: string }) {
  */
 interface AttemptRow {
   id: string; user_id: string | null; user_name: string
-  submitted_at: string; score_percent: string; passed: boolean
+  submitted_at: string; score_percent: string; points_possible: number; passed: boolean
 }
 
 /**
@@ -1055,13 +1071,21 @@ function WhoTookIt({ quizId }: { quizId: string }) {
         {attempts.data.map((a) => (
           <li key={a.id} className="flex flex-wrap items-baseline gap-x-2.5 text-sm">
             <span className="min-w-0 flex-1 text-neutral-800">{a.user_name}</span>
-            <span className="font-mono tabular-nums text-neutral-700">
-              {Number(a.score_percent)}%
-            </span>
-            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-              a.passed ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
-              {a.passed ? 'Passed' : 'Did not pass'}
-            </span>
+            {a.points_possible > 0 && (
+              <span className="font-mono tabular-nums text-neutral-700">
+                {Number(a.score_percent)}%
+              </span>
+            )}
+            {a.points_possible === 0 ? (
+              <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-600">
+                Submitted
+              </span>
+            ) : (
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                a.passed ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
+                {a.passed ? 'Passed' : 'Did not pass'}
+              </span>
+            )}
             <span className="text-xs text-neutral-500">{formatDate(a.submitted_at)}</span>
           </li>
         ))}

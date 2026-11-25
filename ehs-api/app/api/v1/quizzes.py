@@ -92,6 +92,9 @@ class QuizOut(BaseModel):
     is_active: bool
     qr_token: str | None
     question_count: int = 0
+    # Questions with a right answer. None of them, and there is no pass mark to
+    # speak of: the quiz is course feedback (UAT 16 TC-09).
+    marked_count: int = 0
 
 
 class AttemptIn(BaseModel):
@@ -161,6 +164,7 @@ class AttemptSummary(BaseModel):
     user_name: str
     submitted_at: datetime
     score_percent: Decimal
+    points_possible: int
     passed: bool
 
 
@@ -200,7 +204,9 @@ class ResultsOut(BaseModel):
 
 async def _quiz_out(db, quiz) -> QuizOut:
     item = QuizOut.model_validate(quiz)
-    item.question_count = len(await crud.questions_for(db, quiz.id))
+    questions = await crud.questions_for(db, quiz.id)
+    item.question_count = len(questions)
+    item.marked_count = sum(1 for q in questions if q.kind not in crud.FEEDBACK_KINDS)
     return item
 
 

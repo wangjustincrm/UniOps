@@ -49,7 +49,8 @@ function lengthText(minutes: number | null): string | null {
   return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ')
 }
 interface QuizResult {
-  user_id: string | null; user_name: string; score_percent: number; passed: boolean; submitted_at: string
+  user_id: string | null; user_name: string; score_percent: number
+  points_possible: number; passed: boolean; submitted_at: string
 }
 interface Enrolment {
   id: string; user_id: string | null; user_name: string; department_name: string | null
@@ -344,9 +345,13 @@ function QuizCard({ session, mayRun }: { session: Session; mayRun: boolean }) {
                   {(results.data ?? []).map((r, i) => (
                     <li key={`${r.user_id}-${i}`} className="flex items-center gap-3 text-sm">
                       <span className="min-w-0 flex-1 truncate text-neutral-800">{r.user_name}</span>
-                      <span className={`tabular-nums font-semibold ${r.passed ? 'text-success-700' : 'text-warning-700'}`}>
-                        {Math.round(r.score_percent)}% {r.passed ? 'passed' : 'not passed'}
-                      </span>
+                      {r.points_possible === 0 ? (
+                        <span className="font-semibold text-neutral-600">feedback submitted</span>
+                      ) : (
+                        <span className={`tabular-nums font-semibold ${r.passed ? 'text-success-700' : 'text-warning-700'}`}>
+                          {Math.round(r.score_percent)}% {r.passed ? 'passed' : 'not passed'}
+                        </span>
+                      )}
                       <span className="shrink-0 text-xs tabular-nums text-neutral-500">
                         {formatDateTime(r.submitted_at)}
                       </span>

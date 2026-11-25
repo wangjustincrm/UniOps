@@ -28,7 +28,9 @@ interface Course {
   applies_to_all: boolean; validity_months: number | null; is_active: boolean
   material_filename: string | null
 }
-interface QuizSummary { id: string; title: string; course_id: string | null }
+interface QuizSummary {
+  id: string; title: string; course_id: string | null; question_count: number; marked_count: number
+}
 /** What the quiz's own page already computes, shown where the question is asked. */
 interface QuizResults {
   people: number; passed: number; average_score: number | null; total_attempts: number
@@ -1061,6 +1063,8 @@ function CourseQuiz({ quiz }: { quiz: QuizSummary }) {
         {results.isError ? 'results unavailable'
           : results.isLoading || !r ? '…'
           : r.people === 0 ? 'nobody has taken it yet'
+          : quiz.question_count > 0 && quiz.marked_count === 0
+            ? `feedback from ${r.people}, all sittings`
           : `${r.passed} of ${r.people} passed, all sittings`
             + (r.average_score !== null ? ` · average ${r.average_score}%` : '')}
       </span>

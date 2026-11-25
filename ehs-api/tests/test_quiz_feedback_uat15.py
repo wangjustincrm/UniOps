@@ -75,3 +75,27 @@ async def test_a_feedback_answer_must_be_one_of_its_choices(hse_manager, test_en
         long = await c.post(f"/api/v1/quizzes/{quiz.id}/attempts", json={"answers": {
             qs["true_false"]["id"]: ["t"], qs["comment"]["id"]: ["x" * 2001]}})
         assert long.status_code == 422
+
+
+async def test_a_feedback_only_quiz_says_nothing_was_marked(hse_manager, test_engine, db_session):
+    """UAT 16 TC-09: "quizzes have to have a pass mark above 1 which can not
+    happen on feedback" — the screens need to know there is no score to show."""
+    _, hse = hse_manager
+    quiz = await _quiz(db_session, None)
+    assert (await hse.put(f"/api/v1/quizzes/{quiz.id}/questions", json={"questions": [
+        {"prompt": "How was the course?", "kind": "rating"},
+        {"prompt": "Comments", "kind": "comment"}]})).status_code == 200
+    listed = {q["id"]: q for q in (await hse.get("/api/v1/quizzes")).json()}[str(quiz.id)]
+    assert (listed["question_count"], listed["marked_count"]) == (2, 0)
+
+    person = await make_user(test_engine)
+    async with authed_client(make_token(person.id, person.role), db_session) as c:
+        got = (await c.post(f"/api/v1/quizzes/{quiz.id}/attempts", json={"answers": {}})).json()
+    assert got["passed"] is True and got["points_possible"] == 0
+    rows = (await hse.get(f"/api/v1/quizzes/{quiz.id}/attempts")).json()
+    assert [r["points_possible"] for r in rows] == [0]
+
+    mixed = await _quiz(db_session, None)
+    await _with_feedback(hse, mixed)
+    listed = {q["id"]: q for q in (await hse.get("/api/v1/quizzes")).json()}[str(mixed.id)]
+    assert (listed["question_count"], listed["marked_count"]) == (4, 1)
