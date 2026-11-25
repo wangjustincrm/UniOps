@@ -125,7 +125,14 @@ describe('Transfers', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: /Amend and send again/ }))
     expect(await within(dialog).findByRole('textbox', { name: /What was wrong/ })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Amend and send again' })).toBeInTheDocument()
-    // its new 943 failed its checks: saved, and said as an error
+    // the 943 that went stays (its new one failed): the form stays with what was typed
+    const said = 'the new 943 failed its checks, so nothing was changed and the 943 that went stays: CF0093 has no gross weight'
+    api.amend.mockRejectedValueOnce(Object.assign(new Error('422'), { body: { error: { code: 'file.failed_checks', message: said, details: { problems: [] } } } }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /What was wrong/ }), { target: { value: 'first try' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Amend and send again' }))
+    expect(await within(dialog).findByText(said)).toBeInTheDocument()
+    expect(within(dialog).getByRole('textbox', { name: /What was wrong/ })).toHaveValue('first try')
+    // nothing live to keep: saved, and said as an error
     api.amend.mockResolvedValue({ ...waiting, status: 'Failed', problem: 'the 943 failed its checks and was not sent: CF0093 has no gross weight' })
     fireEvent.change(within(dialog).getByRole('textbox', { name: /What was wrong/ }), { target: { value: 'wrong item' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Amend and send again' }))

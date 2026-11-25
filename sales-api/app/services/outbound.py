@@ -51,6 +51,7 @@ from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
+from app.services.generated import FileRefused
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import (
     CHANGED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_997_UNMATCHED, problem, send_refused,
@@ -251,9 +252,8 @@ class Outbound940:
             bill_to=Address.of(order.ship_to if order.source_type == "SHOPIFY" else order.bill_to), contact=order.contact or {},
             express=("express" in (order.shipping_method or "").lower()), lines=tuple(out))
 
-    async def generate(self, uow, order: Order, partner: Partner, *, reason: str) -> Document:
-        """One 940 for a locked order in Pending / a resend status: the file,
-        its record (locked values) and, when valid, the outbox row."""
+    async def _built(self, uow, order: Order, partner: Partner):
+        """The file itself, with its checks; nothing is written (a control number is drawn)."""
         s = uow.session
         if await SETTINGS.get(s, SHADOW_MODE):
             raise BusinessError("send940.shadow", TEST_RUN_REFUSAL)
@@ -266,7 +266,13 @@ class Outbound940:
         snap = await self.snapshot(s, order, partner)
         ctl = (await s.execute(text("SELECT nextval('sales_x12_control_seq')"))).scalar_one()
         now = self.clock()
-        built = build_940(snap, ctl, clock().to_business(now))
+        return conn, now, build_940(snap, ctl, clock().to_business(now))
+
+    async def generate(self, uow, order: Order, partner: Partner, *, reason: str, made=None) -> Document:
+        """One 940 for a locked order in Pending / a resend status: the file (`made`: built and checked already),
+        its record (locked values) and, when valid, the outbox row."""
+        s = uow.session
+        conn, now, built = made or await self._built(uow, order, partner)
         doc = Document(
             direction="OUT", origin="UNIOPS", system="RADIANT", connection_id=conn.id, kind="940_EDI",
             remote_name=file_name(partner.abbrev, order, clock().to_business(now)), size=len(built.content),
@@ -387,11 +393,15 @@ class Outbound940:
             raise NotFound("Order", order_id)
         partner, live = await self.refuse_send(s, order, replace=replace)  # what is done or under way says so, whatever the version
         check_version(order, version, "this order")
+        made = await self._built(uow, order, partner)
         if replace:
+            if not made[2].ok:  # nothing is replaced by a file that cannot go (user 2026-11-25)
+                raise FileRefused("940", made[2].errors + made[2].issues.errors, made[2].lines_sent)
             OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events,
                                      reason=f"replaced by a confirmed resend (FR-OB-03c): {why}")
             await self.tasks.resolve_problem(s, CHANGED_AFTER_940, order.id, by=uow.actor.user_id)
-        doc = await self.generate(uow, order, partner, reason=f"replacement resend (FR-OB-03c): {why}" if replace else "Send 940 now (FR-OB-03c)")
+        doc = await self.generate(uow, order, partner, reason=f"replacement resend (FR-OB-03c): {why}" if replace else "Send 940 now (FR-OB-03c)",
+                                  made=made)
         if replace:
             live.replaced_by_id = doc.id
         for event in (EDI_940_REJECTED, EDI_940_TIMEOUT):

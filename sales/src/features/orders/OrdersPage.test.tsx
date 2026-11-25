@@ -282,6 +282,24 @@ describe('Orders: 940s (P4)', () => {
     await waitFor(() => expect(api.replace).toHaveBeenLastCalledWith(6, seen.version + 1, 'wrong quantity'))
   })
 
+  it('a replacement whose new 940 fails its checks says why in the dialog, keeps why it is replaced, and goes once corrected', async () => {
+    const said = 'the new 940 failed its checks, so nothing was changed and the 940 that went stays: ship_to.city is empty'
+    api.fetchOrder.mockResolvedValue({ ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')], send_940: 'replace' })
+    api.replace.mockRejectedValueOnce(Object.assign(new Error('x'), { body: { error: { code: 'file.failed_checks', message: said, details: {} } } }))
+    api.replace.mockResolvedValueOnce({ id: 6, status: 'done', note: '940 000000124 queued' })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9304'))
+    const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
+    fireEvent.click(await within(dialog).findByText('Replace 940'))
+    const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
+    fireEvent.change(within(confirm).getByLabelText(/^Why it is replaced/), { target: { value: 'wrong quantity' } })
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
+    await waitFor(() => expect(within(confirm).getByRole('alert')).toHaveTextContent(said))
+    expect(within(confirm).getByLabelText(/^Why it is replaced/)).toHaveValue('wrong quantity')
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
+    await waitFor(() => expect(api.replace.mock.calls).toEqual([[6, sentOrder.version, 'wrong quantity'], [6, sentOrder.version, 'wrong quantity']]))
+  })
+
   it('a 940 that fails its checks says why and that it was not sent', async () => {
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [], send_940: 'send' })
     api.send.mockResolvedValue({ id: 5, status: 'done', problem: 'the 940 failed its checks and was not sent: ship_to.zip is empty' })
@@ -862,7 +880,26 @@ describe('the order sheet: facts, actions and tabs', () => {
     await waitFor(() => expect(api.amend).toHaveBeenCalledWith(5, detail.version, { reason: '12 cases, not 10', lines: [{ id: 1, item_code: 'CF0092', ordered_qty: '12' }] }))
     await waitFor(() => expect(within(sheet).queryByRole('button', { name: 'Amend and send again' })).toBeNull())  // the form closes
     expect(sheet).not.toHaveTextContent('failed its checks')
-    // a new 940 that failed its checks: saved, and said as an error
+    // the 940 that went stays (its new one failed): the form stays with what was typed, says why, and goes once corrected
+    const said = 'the new 940 failed its checks, so nothing was changed and the 940 that went stays: line 1: CF0092 has no gross weight'
+    api.amend.mockReset()
+    api.amend.mockRejectedValueOnce(Object.assign(new Error('422'), { body: { error: { code: 'file.failed_checks', message: said, details: { problems: [] } } } }))
+    api.amend.mockResolvedValueOnce({ order: sent, sent: true, document_id: 79 })
+    fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
+    fireEvent.change(await within(sheet).findByRole('textbox', { name: /Quantity line/ }), { target: { value: '13' } })
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /What was wrong/ }), { target: { value: 'thirteen' } })
+    const reads = api.fetchOrder.mock.calls.length
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
+    expect(await within(sheet).findByText(said)).toBeInTheDocument()
+    expect(within(sheet).getByRole('textbox', { name: /Quantity line/ })).toHaveValue('13')
+    expect(within(sheet).getByRole('textbox', { name: /What was wrong/ })).toHaveValue('thirteen')
+    expect(within(sheet).queryByText('Someone else saved this record meanwhile')).toBeNull()
+    expect(api.fetchOrder.mock.calls.length).toBe(reads)  // nothing moved: nothing is read again
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /Quantity line/ }), { target: { value: '14' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
+    await waitFor(() => expect(api.amend.mock.calls.map((c) => [c[1], c[2].lines[0].ordered_qty])).toEqual([[detail.version, '13'], [detail.version, '14']]))
+    await waitFor(() => expect(within(sheet).queryByRole('button', { name: 'Amend and send again' })).toBeNull())
+    // nothing live to keep (a rejected one): saved, and said as an error
     api.amend.mockResolvedValue({ order: sent, sent: false, document_id: 78, problem: 'the 940 failed its checks and was not sent: ship_to.zip is empty' })
     fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
     fireEvent.change(await within(sheet).findByRole('textbox', { name: /What was wrong/ }), { target: { value: 'again' } })

@@ -3,6 +3,8 @@ the wrong item): amend and send again before the 944; settle the difference afte
 arrived, or accepted — with why; the inventory follows."""
 import pytest
 
+from app.models.documents import Document
+from app.models.transfers import Transfer
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
@@ -80,6 +82,15 @@ async def _raise_old(t, x):
     assert set(await _open(t)) == set(TASKS)
 
 
+async def _failed(t, x):
+    """Nothing live any more: its 943 was rejected (a sent one is kept when the new one fails: tests/test_refused_file.py)."""
+    async with t.factory(SYSTEM_ACTOR) as u:
+        row = await u.session.get(Transfer, x.id, with_for_update=True)
+        row.status = "Failed"
+        (await u.session.get(Document, row.document_id)).ack_status = "Rejected"
+        await u.commit()
+
+
 async def _amend(t, x, code, n):
     async with t.factory(OP) as u:
         out = await TransferService(u).amend(t.tr, x.id, AmendIn(lines=[{"item_code": code, "qty_ea": n}], reason=f"only {code}"), ANY_VERSION)
@@ -89,6 +100,7 @@ async def _amend(t, x, code, n):
 
 async def test_a_failing_943_keeps_its_task_open_and_a_good_one_closes_the_old_ones(p7):  # noqa: F811
     x = await sent_transfer(p7)
+    await _failed(p7, x)
     await _raise_old(p7, x)
     await no_weight(p7)
     assert (await _amend(p7, x, "CF0093", 12)).status == "Failed"
@@ -109,6 +121,7 @@ async def test_a_good_943_closes_every_old_task(p7):  # noqa: F811
 
 async def test_an_amendment_whose_new_943_fails_its_checks_says_so(p7):  # noqa: F811
     x = await sent_transfer(p7)
+    await _failed(p7, x)
     await no_weight(p7)
     sent = await p7.q("SELECT id FROM sales_outbox WHERE kind = 'send_943'")
     async with p7.factory(OP) as u:

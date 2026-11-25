@@ -39,6 +39,7 @@ from app.domain.order_status import (
     status_detail,
 )
 from app.domain.order_payment import PAYMENT_STATUSES
+from app.platform.uow import Savepoint
 from app.platform.clock import clock
 from app.services.order_columns import ORDER_COLUMNS
 from app.services.record_files import RECORDS, TIMELINES, timeline_of
@@ -89,6 +90,7 @@ from app.schemas.orders import (
 )
 from app.services import oplog, print_docs
 from app.services.carriers import carriers_by_scac
+from app.services.generated import FileRefused, keep_attempt
 from app.services.intake import ConnectionSnapshot
 from app.services.order_status_sql import (
     BACKORDERED_SQL,
@@ -496,7 +498,15 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
 
     async def _run_send_940(self, id: int, outbound, *, replace: bool, version: VersionArg, reason: str | None):
         self.uow.set_reason(f"940 replaced: {(reason or '').strip()}" if replace else "Send 940 now")
-        return await outbound.send_now(self.uow, id, replace=replace, version=version, reason=reason)
+        try:
+            return await outbound.send_now(self.uow, id, replace=replace, version=version, reason=reason)
+        except FileRefused as e:
+            await self._attempt(outbound, id, "replace_refused", reason, e)
+            raise
+
+    async def _attempt(self, outbound, id: int, act: str, why: str | None, e: FileRefused, context: dict | None = None) -> None:
+        o = await self.uow.session.get(Order, id, populate_existing=True)
+        await keep_attempt(outbound.uow_factory, self.uow, (Order, id), act, why, e, step="order", label=f"order {o.label}", context=context, order_id=id)
 
     @requires(OPERATE)
     async def amend(self, id: int, body, outbound, version: VersionArg = None) -> dict:
@@ -506,7 +516,12 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         for x in lines:
             if not x["removed"] and (not x["item_code"] or x["ordered_qty"] is None):
                 raise BusinessError("order.amend_line", f"line {x['id']}: an item and a quantity, or take it off")
-        out = await amend_order(self.uow, outbound, id, lines, body.reason, carrier=body.carrier, version=version)
+        try:
+            async with Savepoint.of(self.uow):  # its 940 refused: not a line of it stays, whoever catches it
+                out = await amend_order(self.uow, outbound, id, lines, body.reason, carrier=body.carrier, version=version)
+        except FileRefused as e:
+            await self._attempt(outbound, id, "amend_refused", body.reason, e, {"asked": body.model_dump(mode="json")})
+            raise
         order = await self.repo.get(id)
         await self._load_runs_on()  # the next step needs it (else none is shown)
         return {"order": self.to_read(order).model_dump(mode="json"), **out}

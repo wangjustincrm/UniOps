@@ -9,6 +9,7 @@ from app.domain.status import Transfer as T
 from app.models.config import Warehouse
 from app.models.documents import Document
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
+from app.platform.uow import Savepoint
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
@@ -16,7 +17,7 @@ from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog, print_docs
-from app.services.generated import came_to
+from app.services.generated import FileRefused, came_to, keep_attempt
 from app.services.record_files import RECORDS, TIMELINES, documents_of, timeline_of
 from app.schemas.transfers import ReceiptRead, ReceiptRowRead, TransferDetail, TransferLineRead, TransferRead
 
@@ -110,8 +111,15 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
 
     @requires(MANAGE)
     async def amend(self, transfers, id: int, body, version: int | None) -> TransferDetail:
-        doc = await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
-                                    reason=body.reason)
+        try:
+            async with Savepoint.of(self.uow):  # its 943 refused: not a line of it stays, whoever catches it
+                doc = await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
+                                            reason=body.reason)
+        except FileRefused as e:
+            t = await self.uow.session.get(Transfer, id, populate_existing=True)
+            await keep_attempt(transfers.uow_factory, self.uow, (Transfer, id), "amend_refused", body.reason, e, step="transfer",
+                               label=f"transfer {t.transfer_number}", context={"asked": body.model_dump(mode="json")}, transfer_id=id)
+            raise
         out = await self._detail_after(id)
         out.problem = came_to(doc)[1]
         return out

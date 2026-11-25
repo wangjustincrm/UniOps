@@ -70,7 +70,7 @@ from app.services.problems import (
     send_refused,
 )
 from app.services.doc_links import link
-from app.services.generated import came_to
+from app.services.generated import FileRefused, came_to
 from app.services.queued import refuse_queued, unknown_outcome
 from app.services.returns_944 import apply_return_944, is_return
 from app.services.settings import (
@@ -256,13 +256,18 @@ class Transfers:
             t.notes = notes
         await s.flush()
         live = await s.get(Document, t.document_id, with_for_update=True) if t.document_id else None
-        if live is not None and live.file_status == OutboundFile.SENT.value:
+        made = await self._built(uow, t)
+        ok = made[1].ok
+        if not ok and t.status != T.FAILED.value:  # nothing is replaced by a file that cannot go (user 2026-11-25)
+            raise FileRefused("943", made[1].errors + made[1].issues.errors, [(x["item_code"], int(x["qty_ea"])) for x in lines])
+        stays = not ok and live is not None and live.file_status == OutboundFile.SENT.value  # a rejected one: no new file took its place
+        if not stays and live is not None and live.file_status == OutboundFile.SENT.value:
             OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}")
         elif live is not None and live.file_status in (OutboundFile.READY_TO_SEND.value, OutboundFile.SUPPRESSED.value):
             await OUTBOX.cancel_for(s, t, "transfer amended")
             OUTBOUND_FILE.transition(live, OutboundFile.CANCELLED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}")
-        doc = await self.generate(uow, t, reason=f"amended: {reason}")
-        if live is not None:
+        doc = await self.generate(uow, t, reason=f"amended: {reason}", made=made)
+        if live is not None and not stays:
             live.replaced_by_id = doc.id
         problem = came_to(doc)[1]
         for event in (EDI_943_TIMEOUT, EDI_943_REJECTED) if problem else (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED):
@@ -325,7 +330,8 @@ class Transfers:
         c = await s.get(Connection, cid) if cid else None
         return c if c is not None and c.kind == "SFTP" and c.active else None
 
-    async def generate(self, uow, t: Transfer, *, reason: str) -> Document:
+    async def _built(self, uow, t: Transfer):
+        """The file itself, with its checks; nothing is written (a control number is drawn)."""
         s = uow.session
         if await SETTINGS.get(s, SHADOW_MODE):
             raise BusinessError("transfer.shadow", TEST_RUN_TRANSFER_REFUSAL)
@@ -338,9 +344,13 @@ class Transfers:
         weights = dict((await s.execute(select(Item.item_code, Item.gross_weight_lb_per_ea).where(
             Item.item_code.in_([ln.item_code for ln in lines])))).all())
         ctl = (await s.execute(text("SELECT nextval('sales_x12_control_seq')"))).scalar_one()
-        built = build_943(Transfer943(t.transfer_number, _party(frm), _party(to), tuple(
+        return conn, build_943(Transfer943(t.transfer_number, _party(frm), _party(to), tuple(
             Line943(ln.line_no, ln.item_code, ln.qty_ea, weights.get(ln.item_code)) for ln in lines)),
             ctl, clock().to_business(self.clock()))
+
+    async def generate(self, uow, t: Transfer, *, reason: str, made=None) -> Document:
+        s = uow.session
+        conn, built = made or await self._built(uow, t)
         doc = Document(direction="OUT", origin="UNIOPS", system="RADIANT", connection_id=conn.id, kind="943_EDI",
                        remote_name=built.file_name, size=len(built.content), sha256=hashlib.sha256(built.content).hexdigest(),
                        content=built.content, file_status=OutboundFile.READY_TO_SEND.value, ack_status=Ack.WAITING.value,
