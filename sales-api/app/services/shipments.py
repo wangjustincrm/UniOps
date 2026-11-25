@@ -598,12 +598,21 @@ class Shipments:
         return OutboxKind(effect=self._close, policy=ONCE, pre_check=self._pre_check, on_done=self._closed,
                           on_failed=self._write_failed, on_suppressed=self._suppressed)
 
+    @staticmethod
+    async def _lock(s, shipment_id: int) -> tuple[Order | None, Shipment | None]:
+        """The order, then its shipment (releasing a hold and a 945 row's decision take the order first): one order of locks,
+        so no two of them wait for each other. The shipment's order is read without a lock: the caller looks whether it is
+        still that one (a 945's order may be made for it meanwhile)."""
+        order_id = (await s.execute(select(Shipment.order_id).where(Shipment.id == shipment_id))).scalar_one_or_none()
+        order = await s.get(Order, order_id, with_for_update=True) if order_id is not None else None
+        return order, await s.get(Shipment, shipment_id, with_for_update=True)
+
     async def _pre_check(self, payload: dict[str, Any], uow) -> str | None:
         """The second barrier: nothing is written during the shadow run or for
         a shadow shipment (also after the switch-off)."""
         s = uow.session
-        sh = await s.get(Shipment, payload["shipment_id"], with_for_update=True)
-        if sh is None or sh.order_id is None:
+        order, sh = await self._lock(s, payload["shipment_id"])
+        if sh is None or sh.order_id is None or order is None or order.id != sh.order_id:
             return "the shipment or its order is gone"
         if await SETTINGS.get(s, SHADOW_MODE) or sh.shadow:
             await oplog.write(s, "WARNING", STEP, f"shadow run: no Shopify write for shipment {sh.id}", order_id=sh.order_id)
@@ -611,7 +620,6 @@ class Shipments:
             return "the shadow run: nothing is written to Shopify"
         if not sh.applied:
             return "the shipment was not applied"
-        order = await s.get(Order, sh.order_id, with_for_update=True)
         conn = await s.get(Connection, order.connection_id) if order.connection_id else None
         if conn is not None and conn.kind == "SHOPIFY" and not conn.can_write:
             # Writing is off for the store: the write is skipped on purpose. Not a failure: the order goes on
@@ -688,13 +696,19 @@ class Shipments:
         await self._record(sh.id, str(f["id"]), "fulfillment created")
 
     async def _record(self, shipment_id: int, fulfillment_id: str, how: str) -> None:
-        async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            sh = await uow.session.get(Shipment, shipment_id, with_for_update=True)
-            sh.shopify_fulfillment_id = fulfillment_id
-            order = await uow.session.get(Order, sh.order_id, with_for_update=True)
-            order.shopify_fulfillment_id = fulfillment_id
-            await oplog.write(uow.session, "INFO", STEP, f"Shopify: {how} ({fulfillment_id})", order_id=order.id)
-            await uow.commit()
+        """After Shopify's answer: the fulfilment exists, so its id is never lost — a shipment given another order meanwhile is
+        locked again, by the order it has now."""
+        while True:
+            async with self.uow_factory(SYSTEM_ACTOR) as uow:
+                order, sh = await self._lock(uow.session, shipment_id)
+                if sh.order_id != (order.id if order is not None else None):
+                    continue  # this unit lets go of both
+                sh.shopify_fulfillment_id = fulfillment_id
+                if order is not None:
+                    order.shopify_fulfillment_id = fulfillment_id
+                await oplog.write(uow.session, "INFO", STEP, f"Shopify: {how} ({fulfillment_id})", order_id=sh.order_id)
+                await uow.commit()
+                return
 
     async def _fulfilled(self, row, exc, uow) -> None:
         sh = await uow.session.get(Shipment, row.payload["shipment_id"], with_for_update=True)

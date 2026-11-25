@@ -145,11 +145,15 @@ class OrderActions(Service):
 
     @requires(OPERATE)
     async def resolve_row(self, shipment_id: int, row_id: int, order_line_id: int | None, reason: str | None) -> Order:
-        row = await self.s.get(ShipmentRow, row_id, with_for_update=True)
-        sh = await self.s.get(Shipment, shipment_id, with_for_update=True)
-        if row is None or sh is None or row.shipment_id != sh.id or sh.order_id is None:
+        # The order, then its shipment, then the row (Shipments._lock): the shipment's order is read without a lock first.
+        order_id = (await self.s.execute(select(Shipment.order_id).where(Shipment.id == shipment_id))).scalar_one_or_none()
+        if order_id is None:
             raise BusinessError("entity.not_found", "no such 945 row", status_code=404)
-        o = await self._order(sh.order_id, ANY_VERSION)  # the row's decision acts on the order as it is
+        o = await self._order(order_id, ANY_VERSION)  # the row's decision acts on the order as it is
+        sh = await self.s.get(Shipment, shipment_id, with_for_update=True)
+        row = await self.s.get(ShipmentRow, row_id, with_for_update=True)
+        if row is None or sh is None or row.shipment_id != sh.id or sh.order_id != o.id:
+            raise BusinessError("entity.not_found", "no such 945 row", status_code=404)
         if not row.needs_review:
             raise BusinessError("shipment.row_resolved", "this 945 row needs no decision")
         why = (reason or "").strip()
