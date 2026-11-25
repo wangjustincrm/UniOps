@@ -7,7 +7,7 @@ the HTTP endpoint (exactly once, at the end) or a job's unit (`isolated`).
 A service calling another service shares the caller's unit of work.
 
 Authorization: each service declares its keys (`read_permission`,
-`write_permission`, `CommandService.permission`, or `@requires` on a method)
+`write_permission`, or `@requires` on a method)
 and checks them itself at the start of the operation, before anything is
 written (app/platform/authorization.py). `system_allowed` lets the system
 actor through; otherwise it is refused like a person without the key.
@@ -39,7 +39,6 @@ from app.platform.options import ResourceOptions, options
 from app.platform.query import Page, QuerySpec
 from app.platform.repository import Repository, _humanise
 from app.platform.resource import ResolvedResource, Resource, resolve
-from app.platform.state import StateMachine
 from app.platform.uow import Savepoint
 
 T = TypeVar("T")
@@ -58,7 +57,7 @@ _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 class Service:
     """THE root of every request-scoped application service (design §13.5): lists and CRUD tables
-    (ReadOnlyService, CrudService), commands (CommandService), and the operations a page asks for directly (a
+    (ReadOnlyService, CrudService), and the operations a page asks for directly (a
     record's actions, a facade over an engine). Holds the unit of work, its session and actor;
     each public operation checks its permission first (@requires, or self._authorize in its body) — the
     authorization-coverage test refuses one that does not. It never commits: the caller that opened the unit of
@@ -631,53 +630,6 @@ def _constraint_name(e: DBAPIError) -> str | None:
 
 def _norm_key(v: Any) -> str:
     return str(v).strip().casefold()
-
-
-@dataclass(kw_only=True)
-class Command:
-    aggregate_id: int
-    reason: str | None = None
-
-
-class CommandService(Service, Generic[T]):
-    """A state change on one aggregate. Aggregates are never edited by a
-    generic PUT: each change is a command that checks its permission, locks
-    the row, re-checks its rule, transitions through the machine and flushes
-    (the audit rows are written then). It does not commit: the caller that
-    opened the unit of work does, once.
-
-    Subclasses set `repo_cls`, `machine` and `permission` and implement
-    `target`; `check` and `apply` are hooks. Runs inside an entered unit of
-    work."""
-
-    repo_cls: ClassVar[type[Repository]]
-    machine: ClassVar[StateMachine]
-    permission: ClassVar[str]
-
-    def __init__(self, uow) -> None:
-        super().__init__(uow)
-        self.repo = self.repo_cls(uow)
-
-    def target(self, agg: T, cmd: Command) -> Any:
-        raise NotImplementedError
-
-    def check(self, agg: T, cmd: Command) -> None:
-        """Re-check the rule on the locked row; raise BusinessError to refuse."""
-
-    async def apply(self, agg: T, cmd: Command) -> None:
-        """Further changes and events after the transition."""
-
-    async def execute(self, cmd: Command) -> T:
-        await self._authorize(self.permission)
-        agg = await self.repo.get(cmd.aggregate_id, for_update=True)  # SELECT … FOR UPDATE
-        self.check(agg, cmd)
-        self.uow.set_reason(cmd.reason or type(cmd).__name__)
-        self.machine.transition(
-            agg, self.target(agg, cmd), actor=self.actor, reason=cmd.reason, events=self.uow.events,
-        )
-        await self.apply(agg, cmd)
-        await self.uow.session.flush()
-        return agg
 
 
 def changed_columns(entity: Any) -> list[str]:

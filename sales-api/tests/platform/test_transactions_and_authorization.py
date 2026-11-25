@@ -18,15 +18,32 @@ from sqlalchemy import event, select
 
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import PermissionDenied, authorize, requires
-from app.platform.errors import install_error_handlers
+from app.platform.errors import BusinessError, install_error_handlers
 from app.platform.outbox import Outbox
+from app.platform.services import Service
+from app.platform.state import StateMachine
 from app.platform.uow import UnitOfWorkFactory
 from tests.platform.conftest import (
     AuditRow, OutboxRow, Thing, Widget, WidgetCreate, WidgetService, actor_with,
 )
-from tests.platform.test_crud_service import Finish, FinishCmd
 
 OUTBOX = Outbox(OutboxRow)
+MACHINE = StateMachine({"open": {"done"}, "done": set()}, "thing")
+MACHINE.bind(Thing)
+
+
+class Finish(Service):
+    """A state change on one record, as the module's services make them: checked, locked, moved, flushed — never committed."""
+
+    @requires("pt.operate")
+    async def execute(self, thing_id: int, *, refuse: bool = False, reason: str = "finished") -> Thing:
+        t = await self.s.get(Thing, thing_id, with_for_update=True)
+        if refuse:
+            raise BusinessError("thing.refused")
+        self.uow.set_reason(reason)
+        MACHINE.transition(t, "done", actor=self.uow.actor, reason=reason, events=self.uow.events)
+        await self.s.flush()
+        return t
 
 
 async def _count(uow_factory, model):
@@ -62,7 +79,7 @@ async def op_http(uow_factory):
 
     @app.post("/op2/{thing_id}")
     async def op2(thing_id: int, u: Annotated[object, Depends(uow)], name: str = "fine"):
-        await Finish(u).execute(FinishCmd(aggregate_id=thing_id))  # first: a command (audit row)
+        await Finish(u).execute(thing_id)  # first: a command (audit row)
         OUTBOX.add(u.session, "notify", {"t": thing_id})
         await WidgetService(u).create(WidgetCreate(code="W2", name=name))  # second: may refuse
         await u.commit()
@@ -73,7 +90,7 @@ async def op_http(uow_factory):
         await WidgetService(u).create(WidgetCreate(code="W1", name="made first"))  # flushes; audit row
         OUTBOX.add(u.session, "notify", {"w": "W1"})
         await u.session.flush()
-        await Finish(u).execute(FinishCmd(aggregate_id=thing_id, refuse=refuse))  # the second service
+        await Finish(u).execute(thing_id, refuse=refuse)  # the second service
         await u.commit()
         return {"ok": True}
 
@@ -119,14 +136,26 @@ async def test_a_denied_second_service_also_leaves_nothing(op_http, uow_factory,
             await _count(uow_factory, OutboxRow)) == (0, 0, 0)
 
 
-async def test_a_command_service_on_its_own_commits_nothing(uow_factory, person):
+async def test_a_state_change_on_its_own_commits_nothing(uow_factory, person):
     tid = await _thing(uow_factory, person)
     async with uow_factory(person) as uow:
-        out = await Finish(uow).execute(FinishCmd(aggregate_id=tid))
+        out = await Finish(uow).execute(tid)
         assert out.status == "done"  # changed and flushed inside the unit …
     async with uow_factory(person) as uow:
         assert (await uow.session.get(Thing, tid)).status == "open"  # … but never committed
     assert await _count(uow_factory, AuditRow) == 0
+
+
+async def test_a_state_change_locks_moves_and_raises_its_event_once_committed(uow_factory, person):
+    tid = await _thing(uow_factory, person)
+    async with uow_factory(person) as uow:
+        await Finish(uow).execute(tid)
+        await uow.commit()  # the outermost caller
+        assert [e.new for e in uow.events.dispatched] == ["done"]
+    async with uow_factory(person) as uow:
+        with pytest.raises(BusinessError) as e:  # done already: the machine refuses
+            await Finish(uow).execute(tid)
+    assert e.value.code == "state.invalid_transition"
 
 
 # ── the rule "a write endpoint commits exactly once" (static check) ──────────
@@ -214,7 +243,7 @@ async def test_a_denied_call_flushes_nothing(uow_factory, stranger):
         with pytest.raises(PermissionDenied):
             await WidgetService(uow).create(WidgetCreate(code="X", name="x"))
         with pytest.raises(PermissionDenied):
-            await Finish(uow).execute(FinishCmd(aggregate_id=1))
+            await Finish(uow).execute(1)
         assert flushes == [] and not uow.session.new and not uow.session.dirty
     assert await _count(uow_factory, AuditRow) == 0
 

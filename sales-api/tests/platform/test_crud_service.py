@@ -1,16 +1,11 @@
-from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
-from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.query import QuerySpec
-from app.platform.services import Command, CommandService
-from app.platform.state import StateMachine
-from tests.platform.conftest import AuditRow, Thing, Widget, WidgetCreate, WidgetService, WidgetUpdate
-from app.platform.repository import Repository
+from tests.platform.conftest import AuditRow, Widget, WidgetCreate, WidgetService, WidgetUpdate
 
 
 async def _create(uow_factory, actor, **kw):
@@ -131,62 +126,6 @@ async def test_export_round_trips(uow_factory, person):
     async with uow_factory(person) as uow:
         rep = await WidgetService(uow).import_csv(data, dry_run=True)
     assert rep.ok and rep.counts == {"create": 0, "update": 0, "unchanged": 2}
-
-
-# ── CommandService
-
-MACHINE = StateMachine({"open": {"done"}, "done": set()}, "thing")
-MACHINE.bind(Thing)
-
-
-class ThingRepository(Repository[Thing]):
-    model = Thing
-
-
-class Finish(CommandService[Thing]):
-    repo_cls = ThingRepository
-    machine = MACHINE
-    permission = "pt.operate"
-
-    def target(self, agg, cmd):
-        return "done"
-
-    def check(self, agg, cmd):
-        if getattr(cmd, "refuse", False):
-            raise BusinessError("thing.refused")
-
-
-@dataclass(kw_only=True)
-class FinishCmd(Command):
-    refuse: bool = False
-
-
-async def test_command_locks_transitions_raises_event_and_the_caller_commits(uow_factory, person):
-    async with uow_factory(person) as uow:
-        t = Thing(status="open")
-        uow.session.add(t)
-        await uow.commit()
-    async with uow_factory(person) as uow:
-        await Finish(uow).execute(FinishCmd(aggregate_id=t.id, reason="all good"))
-        await uow.commit()  # the outermost caller
-        assert [e.new for e in uow.events.dispatched] == ["done"]
-    async with uow_factory(person) as uow:
-        assert (await uow.session.get(Thing, t.id)).status == "done"
-        with pytest.raises(BusinessError) as e:
-            await Finish(uow).execute(FinishCmd(aggregate_id=t.id))
-        assert e.value.code == "state.invalid_transition"
-
-
-async def test_command_refused_by_check_changes_nothing(uow_factory, person):
-    async with uow_factory(person) as uow:
-        t = Thing(status="open")
-        uow.session.add(t)
-        await uow.commit()
-    async with uow_factory(person) as uow:
-        with pytest.raises(BusinessError):
-            await Finish(uow).execute(FinishCmd(aggregate_id=t.id, refuse=True))
-    async with uow_factory(SYSTEM_ACTOR) as uow:
-        assert (await uow.session.get(Thing, t.id)).status == "open"
 
 
 # ── CSV hardening (review 2026-10-28)
