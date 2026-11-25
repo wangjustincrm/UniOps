@@ -12,7 +12,7 @@ from app.platform.errors import InvalidInput
 from app.schemas.orders import AmendOrderIn, InvoicePricesIn, ReturnedIn
 from app.services.order_views import OrderService
 from tests.test_invoicing import OP, confirm, p6, shipped_850  # noqa: F401 — p6 is a fixture
-from tests.test_order_amend import _order
+from tests.test_order_amend import SHIP_TO, _order
 from tests.test_order_payment import OPERATOR, _orders, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -104,6 +104,10 @@ async def test_the_scheduler_s_writers_go_on_after_each(p6):  # noqa: F811
     await p6.inv.advance()
     assert (await confirm(p6, o.id)).lines  # the delivery and the draft
     o2 = await _order(p6, "PO-LU5", "940 Rejected")  # amended, its new 940 is made in the same unit, and the pass goes on
+    async with p6.factory(OP) as u:  # one the warehouse can deliver: its new 940 passes its checks
+        row = await u.session.get(Order, o2.id)
+        row.ship_to, row.bill_to = SHIP_TO, SHIP_TO
+        await u.commit()
     [r] = await p6.q("SELECT o.version, l.id FROM sales_orders o JOIN sales_order_lines l ON l.order_id = o.id WHERE o.id = :o", o=o2.id)
     async with p6.factory(OP) as u:
         out = await amend(p6, OrderService(u), o2, r["id"], 7, r["version"])
