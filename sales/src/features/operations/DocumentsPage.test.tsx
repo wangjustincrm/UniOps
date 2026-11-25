@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { noticeIn } from '@/platform-ui/testing'
 import { RouterOpenRecord } from '@/app/RouterOpenRecord'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
 import type { DocumentRead } from './operationsApi'
@@ -62,7 +63,7 @@ describe('Documents page', () => {
   })
 
   describe('Send again (its owner’s rules; an invoice already sent says why)', () => {
-    beforeEach(() => { api.again.mockReset(); api.again.mockResolvedValue({ result: 'queued' }) })
+    beforeEach(() => { api.again.mockReset(); api.again.mockResolvedValue({ id: 6, status: 'done', note: '940 000000123 queued' }) })
     const open = async (name: string) => {
       renderPage()
       fireEvent.click(await screen.findByText(name))
@@ -91,9 +92,17 @@ describe('Documents page', () => {
       await waitFor(() => expect(api.again.mock.calls).toEqual([[5], [5, 'lost in the mail']]))
     })
 
-    it('a 940 asks nothing', async () => {
+    it('a 940 asks nothing, and says what was queued', async () => {
       await open('940_EDI-Failed')
       await waitFor(() => expect(api.again.mock.calls).toEqual([[6]]))
+      await waitFor(() => expect(noticeIn(screen.getByRole('dialog'))).toHaveTextContent('940 000000123 queued'))
+    })
+
+    it('a file that failed its checks is an error: never "queued"', async () => {
+      api.again.mockResolvedValue({ id: 6, status: 'done', note: null, problem: 'the 940 failed its checks and was not sent: ship_to.zip is empty' })
+      await open('940_EDI-Failed')
+      await waitFor(() => expect(noticeIn(screen.getByRole('dialog'))).toHaveTextContent('The 940 failed its checks and was not sent: ship_to.zip is empty'))
+      expect(screen.getByRole('dialog')).not.toHaveTextContent(/queued/i)
     })
   })
 

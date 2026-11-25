@@ -1,10 +1,12 @@
 """Resending a transfer's 943 (stage 3 h): once, by the version seen, never past a 943 still under way. The fake SFTP behind
 the real guard."""
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy as sa
 
-from app.models.config import Connection
+from app.models.config import Connection, Item
 from app.models.transfers import Transfer
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import PermissionDenied
@@ -102,6 +104,26 @@ async def test_two_presses_at_once_make_one_943(p7):  # noqa: F811
     assert len(ctls) == 2 == len(set(ctls)) and [r["status"] for r in await rows(p7, SEND_943)] == ["FAILED", "PENDING"]
     await p7.worker.run_once()
     assert len(puts(p7)) == 1
+
+
+async def no_weight(t, code="CF0093"):
+    async with t.factory(SYSTEM_ACTOR) as u:
+        (await u.session.execute(sa.select(Item).where(Item.item_code == code))).scalar_one().gross_weight_lb_per_ea = None
+        await u.commit()
+
+
+async def test_a_943_that_fails_its_checks_again_is_a_problem_not_a_success(p7):  # noqa: F811
+    x = await failed(p7)
+    await no_weight(p7)
+    before = await rows(p7, SEND_943)
+    r = await act(p7, x, (await tr(p7, x))["version"])
+    assert r.status == "done" and r.note is None and r.problem.startswith("the 943 failed its checks and was not sent: ") and "CF0093" in r.problem
+    assert (await tr(p7, x))["status"] == "Failed" and await rows(p7, SEND_943) == before and len(await n_943(p7)) == 2  # kept; nothing queued
+    async with p7.factory(SYSTEM_ACTOR) as u:
+        (await u.session.execute(sa.select(Item).where(Item.item_code == "CF0093"))).scalar_one().gross_weight_lb_per_ea = Decimal("2.2")
+        await u.commit()
+    r = await act(p7, x, (await tr(p7, x))["version"])
+    assert (r.status, r.problem) == ("done", None) and r.note == f"943 {(await n_943(p7))[-1]} queued"
 
 
 async def test_by_the_version_seen_and_a_failed_one_again(p7):  # noqa: F811

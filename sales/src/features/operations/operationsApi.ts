@@ -93,8 +93,8 @@ export const documentFile = (id: number, name: string, title = name): FileSource
 export const readAgain = (id: number) => runOne(documentsClient, 'read_again', { id, version: null })
 export const ignoreDocument = (id: number, reason: string) => runOne(documentsClient, 'ignore', { id, version: null }, { reason })
 /** FR-OB-24: a sent file again, by its order's, transfer's or invoice's own rules; an invoice already sent says why. */
-export const sendAgain = async (id: number, reason?: string): Promise<{ result: string }> =>
-  ({ result: (await runOne(documentsClient, 'send_again', { id, version: null }, reason === undefined ? {} : { reason })).note ?? 'Queued' })
+export const sendAgain = (id: number, reason?: string) =>
+  runOne(documentsClient, 'send_again', { id, version: null }, reason === undefined ? {} : { reason })
 export const runNow = () => api.post<{ run_id: number }>('/runs/run-now')
 /** The system job alone, now (Health). */
 export const runSystemNow = () => api.post<{ run_id: number }>('/runs/run-now/system')

@@ -77,5 +77,5 @@ async def test_a_refused_940_is_sent_again_from_the_register(edi):  # noqa: F811
     async with edi.env.factory(OP) as u:
         text = await DocumentActions(u).send_again(d["id"], SimpleNamespace(outbound=edi.out))
         await u.commit()
-    assert text.startswith("940 ") and (await edi.worker.run_once()).done == 1
+    assert text.startswith("940 ") and text.endswith(" queued") and (await edi.worker.run_once()).done == 1
     assert await status(edi, o.id) == F.SENT_940

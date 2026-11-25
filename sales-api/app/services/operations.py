@@ -36,6 +36,7 @@ from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.operations import DocumentRead, EntityRef, LogRead, RunRead
+from app.services.generated import came_to
 from app.services.problems import ORDER_FILE_UNREADABLE, UNREADABLE_FILE
 
 READ = "sales.read"
@@ -313,15 +314,15 @@ class DocumentActions(Service):
             raise NotFound("Document", id)
         owner = await self._owner(doc)
         await self._authorize(owner.permission)
-        return await self._run_send_again(owner, rt, reason)
+        note, problem = await self._run_send_again(owner, rt, reason)
+        return problem or note
 
-    async def _run_send_again(self, owner: Owner, rt, reason: str | None) -> str:
+    async def _run_send_again(self, owner: Owner, rt, reason: str | None) -> tuple[str | None, str | None]:
+        """(what to say, what went wrong: a file that failed its checks is kept as Failed and queues nothing)."""
         if owner.kind == "order":  # what is there now; a live 940 is replaced only from the order
             self.uow.set_reason("Send 940 now (from its file)")
-            new = await rt.outbound.send_now(self.uow, owner.id, version=ANY_VERSION)
-            return f"940 {new.st02} queued for the order"
+            return came_to(await rt.outbound.send_now(self.uow, owner.id, version=ANY_VERSION))
         if owner.kind == "transfer":
-            await rt.transfers.resend(self.uow, owner.id, ANY_VERSION)
-            return "943 queued for the transfer"
+            return came_to(await rt.transfers.resend(self.uow, owner.id, ANY_VERSION))
         inv = await rt.invoicing.send(self.uow, owner.id, version=ANY_VERSION, again=owner.again, reason=reason)
-        return f"invoice {inv.invoice_number} queued"
+        return f"invoice {inv.invoice_number} queued", None

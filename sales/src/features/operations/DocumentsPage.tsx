@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys, useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, businessErrorOf, columnsOf, Text, useActionSends,
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys, useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, actionDone, businessErrorOf, columnsOf, Text, useActionSends, type ActionDone, type ActionResultRow,
 } from '@/platform-ui'
 import { documentFile, documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
@@ -68,6 +68,9 @@ const ERRORS = {
   'auth.forbidden': 'You do not have permission for this.',
 }
 
+/** What a send came to: queued (its note), or a file that failed its checks (an error, never a success). */
+const saidOf = (r: unknown): ActionDone => (r ? actionDone(r as ActionResultRow, 'Queued') : null)
+
 function Detail({ d }: { d: DocumentRead }) {
   const st = status(d)
   const qc = useQueryClient()
@@ -83,7 +86,7 @@ function Detail({ d }: { d: DocumentRead }) {
       onConfirm={async (why) => { await ignoreDocument(d.id, why ?? ''); await refresh() }} />
     <ConfirmAction open={resending} onOpenChange={setResending} title="Send this invoice again?" confirmLabel="Send again"
       description="The partner has this invoice: it gets it a second time." reason={{ label: 'Why it is sent again' }} sends={sends} errorMessages={ERRORS}
-      done={(r) => (r as { result: string }).result} onConfirm={async (why) => { const r = await sendAgain(d.id, why); await refresh(); return r }} />
+      done={saidOf} onConfirm={async (why) => { const r = await sendAgain(d.id, why); await refresh(); return r }} />
     <RecordSheet
       title={d.remote_name ?? `Document ${d.id}`}
       subtitle={[`#${d.id}`, d.kind, d.direction === 'IN' ? 'received' : 'sent', d.system].filter(Boolean).join(' · ')}
@@ -105,7 +108,7 @@ function Detail({ d }: { d: DocumentRead }) {
             onAction={async () => { await readAgain(d.id); await refresh() }}>Read again</ActionButton>}
           {stuck && <ActionButton size="sm" variant="secondary" permission={RETRY} onAction={() => setIgnoring(true)}>Ignore</ActionButton>}
           {d.direction === 'OUT' && RESENDABLE.includes(d.kind) && <ActionButton size="sm" variant="secondary" permission={RETRY}
-            errorMessages={ERRORS} sends={sends} done={(r) => (r as { result: string } | null)?.result ?? null} onAction={async () => {
+            errorMessages={ERRORS} sends={sends} done={saidOf} onAction={async () => {
               if (INVOICE_KINDS.includes(d.kind) && d.file_status === 'Sent') { setResending(true); return null }
               try { const r = await sendAgain(d.id); await refresh(); return r } catch (e) {
                 // This file did not go, but its invoice did before: the server asks why.

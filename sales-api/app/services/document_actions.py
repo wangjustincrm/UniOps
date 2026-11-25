@@ -42,7 +42,7 @@ async def send_again_prepare(uow, ids: list[int], ctx) -> dict[int, Owner]:
 
 
 async def send_again_run(uow, d: Document, data, ctx) -> None:  # noqa: ARG001
-    ctx.note = await DocumentActions(uow)._run_send_again(ctx.prepared[d.id], ctx.runtime, ctx.reason)
+    ctx.note, ctx.problem = await DocumentActions(uow)._run_send_again(ctx.prepared[d.id], ctx.runtime, ctx.reason)
 
 
 DOCUMENT_ACTIONS = ActionRegistry(DocumentRepository, [

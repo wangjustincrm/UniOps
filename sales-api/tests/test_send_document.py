@@ -111,6 +111,33 @@ async def test_an_invoice_s_file_in_each_state(p6, state, minutes, expected):  #
     assert len(await rows(p6, SEND_INVOICE)) == 2 + (0 if expected else 1)
 
 
+# ── a file that fails its checks is kept as Failed and queues nothing: a problem, never "queued" ──
+
+async def test_a_940_that_fails_its_checks_from_its_file_is_a_problem(t):
+    o, did = await refused_940(t)
+    await s940.set_order(t, o.id, ship_to={"name": "A B", "address1": "1 rue", "city": "Montreal", "province": "QC", "country": "CA"})  # no postal code
+    before = await rows(t, SEND_940)
+    r = await act(t, did)
+    assert r.status == "done" and r.note is None and r.problem.startswith("the 940 failed its checks and was not sent: ")
+    assert await status(t.edi, o.id) == F.FAILED_940 and await rows(t, SEND_940) == before
+
+
+async def test_a_943_that_fails_its_checks_from_its_file_is_a_problem(p7):  # noqa: F811
+    await s943.failed(p7)
+    did = await its_file(p7, "943_EDI")
+    await s943.no_weight(p7)
+    before = await rows(p7, SEND_943)
+    r = await act(p7, did)
+    assert r.status == "done" and r.note is None and r.problem.startswith("the 943 failed its checks and was not sent: ")
+    assert await rows(p7, SEND_943) == before
+
+
+async def test_one_that_is_queued_says_its_number(t):
+    _, did = await refused_940(t)
+    r = await act(t, did)
+    assert (r.status, r.problem) == ("done", None) and r.note == f"940 {(await docs(t.edi))[-1]['st02']} queued"
+
+
 # ── two at once, from here and from its own page ─────────────────────────────
 
 async def test_two_presses_on_a_940_s_file_make_one(t):

@@ -218,17 +218,18 @@ class Transfers:
         if t.status != T.FAILED.value:
             raise BusinessError("transfer.not_failed", f"only a Failed transfer is resent (it is {t.status})", {"status": t.status})
 
-    async def resend(self, uow, id: int, version: VersionArg = None) -> Transfer:
-        """FR-OB-81 / FR-OB-24: a Failed transfer gets a new 943 (a new control number)."""
+    async def resend(self, uow, id: int, version: VersionArg = None) -> Document:
+        """FR-OB-81 / FR-OB-24: a Failed transfer gets a new 943 (a new control number): that file, queued or — its checks
+        failed again — not (app/services/generated.py says which)."""
         s = uow.session
         t = await self._get(s, id, ANY_VERSION)
         await self.refuse_resend(s, t)  # what is done or queued says so, whatever the version
         check_version(t, version, "this transfer")
         uow.set_reason("943 resent")
-        await self.generate(uow, t, reason="resend (FR-OB-81)")
+        doc = await self.generate(uow, t, reason="resend (FR-OB-81)")
         await self.tasks.resolve_problem(s, EDI_943_REJECTED, t.id, by=uow.actor.user_id)
         await s.flush()
-        return t
+        return doc
 
     async def amend(self, uow, id: int, *, version: int | None, lines: list[dict[str, Any]], notes: str | None,
                     reason: str) -> Transfer:

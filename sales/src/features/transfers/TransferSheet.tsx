@@ -1,7 +1,7 @@
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, DateCell, DetailList, LocalTable, ViewFileButton, RecordSheet, Section, StatusCell, queryKeys, useFileViewer, type ColumnDef, type RecordTab, compareRecord, useActionSends, useRefresh, columnsOf, useRecord, Text, Cluster } from '@/platform-ui'
+import { ActionButton, ConfirmAction, actionDone, type ActionResultRow, DateCell, DetailList, LocalTable, ViewFileButton, RecordSheet, Section, StatusCell, queryKeys, useFileViewer, type ColumnDef, type RecordTab, compareRecord, useActionSends, useRefresh, columnsOf, useRecord, Text, Cluster } from '@/platform-ui'
 import { Attachments } from '@/features/common/Attachments'
 import { RecordActivity } from '@/features/common/RecordActivity'
 import { RecordFilesTable } from '@/features/common/RecordFilesTable'
@@ -127,7 +127,7 @@ export function TransferSheet({ row }: { row: TransferRead }) {
           <>
             {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" sends={readySends} invalidates={reread} onAction={() => readyTransfer(id, t.version)}>Ready to send</ActionButton>}
             {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
-            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" sends={resendSends} invalidates={reread} onAction={() => resendTransfer(id, t.version)}>Resend 943</ActionButton>}
+            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done={(r) => actionDone(r as ActionResultRow, '943 queued again')} sends={resendSends} invalidates={reread} onAction={() => resendTransfer(id, t.version)}>Resend 943</ActionButton>}
             {t.status === 'On Hold' && <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release hold…</ActionButton>}
             {AMENDABLE.includes(t.status) && t.receipts.every((r) => !r.applied) && !amending && !settling && (
               <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setAmending(true)}>Amend and send again…</ActionButton>)}

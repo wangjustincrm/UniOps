@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
-import { ActionButton, ActionRefused, ConfirmAction, NoticeScope, businessErrorOf, runOne, useActionSends, type ActionResultRow, type ListMeta } from './index'
+import { ActionButton, ActionRefused, ConfirmAction, NoticeScope, actionDone, businessErrorOf, runOne, useActionSends, type ActionResultRow, type ListMeta } from './index'
 
 // One record through its record action (stage 3 l): what was left out or failed is an error, never a success.
 const client = (row: Partial<ActionResultRow> | null) => ({ action: vi.fn(async () => ({ action: 'x', dry_run: false, counts: { done: 0, skipped: 0, failed: 0 },
@@ -41,6 +41,15 @@ describe('runOne', () => {
     await act(async () => { fireEvent.click(screen.getByText('Send')) })
     expect(screen.getAllByText('already queued').length).toBeGreaterThan(1)
     expect(screen.queryByText('Sent!')).toBeNull()
+  })
+})
+
+describe('actionDone', () => {
+  const row = (x: Partial<ActionResultRow>) => ({ id: 7, status: 'done', ...x }) as ActionResultRow
+  it('a problem is an error whatever else it says; then the note; then the words given', () => {
+    expect(actionDone(row({ problem: 'the file failed', note: 'queued' }), 'Sent', 'k')).toEqual({ tone: 'error', text: 'The file failed', key: 'k' })
+    expect(actionDone(row({ note: 'file 12 queued' }), 'Sent')).toEqual({ tone: 'success', text: 'file 12 queued' })
+    expect(actionDone(row({}), 'Sent')).toEqual({ tone: 'success', text: 'Sent' })
   })
 })
 

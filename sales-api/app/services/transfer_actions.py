@@ -8,6 +8,7 @@ from app.models.transfers import Transfer
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
+from app.services.generated import came_to
 from app.services.transfer_views import MANAGE, TransferRepository, TransferService, not_on_hold
 
 
@@ -40,7 +41,7 @@ async def resend_check(uow, t: Transfer, ctx) -> BusinessError | None:
 
 
 async def resend_run(uow, t: Transfer, data, ctx) -> None:  # noqa: ARG001
-    await ctx.runtime.transfers.resend(uow, t.id, ANY_VERSION)
+    came_to(await ctx.runtime.transfers.resend(uow, t.id, ANY_VERSION), ctx)
 
 
 TRANSFER_ACTIONS = ActionRegistry(TransferRepository, [

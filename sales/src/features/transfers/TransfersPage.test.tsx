@@ -209,6 +209,9 @@ describe('Transfers', () => {
     fireEvent.click(resend)
     await waitFor(() => expect(api.resend).toHaveBeenCalledWith(2, 1))
     await waitFor(() => expect(sheet).toHaveTextContent('943 queued again'))
+    api.resend.mockResolvedValue({ id: 2, status: 'done', problem: 'the 943 failed its checks and was not sent: CF0093 has no gross weight' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Resend 943' }))
+    await waitFor(() => expect(sheet).toHaveTextContent('The 943 failed its checks and was not sent: CF0093 has no gross weight'))
   })
 
   it('a draft is cancelled with a reason; a reader sees no actions', async () => {

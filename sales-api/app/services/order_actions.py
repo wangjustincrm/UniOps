@@ -19,6 +19,7 @@ from app.models.orders import Order
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
+from app.services.generated import came_to
 from app.services.invoice_views import MANAGE as INVOICE_MANAGE
 from app.services.invoice_views import InvoiceService
 from app.services.order_holds import OPERATE, OrderActions, cancel_refusal, shadow_refusal
@@ -131,11 +132,7 @@ async def replace_940_check(uow, o: Order, ctx) -> BusinessError | None:
 
 async def _send_940(uow, o: Order, ctx, *, replace: bool) -> None:
     doc = await OrderService(uow)._run_send_940(o.id, ctx.runtime.outbound, replace=replace, version=ANY_VERSION, reason=ctx.reason)  # run_action checked the version
-    errors = (doc.body_json or {}).get("errors", [])
-    if errors:
-        ctx.problem = f"the 940 failed its checks and was not sent: {'; '.join(errors)}"
-    else:
-        ctx.note = f"940 {doc.st02} queued"
+    came_to(doc, ctx)
 
 
 async def send_940_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001

@@ -1,7 +1,7 @@
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
 import {
-  ActionButton, ConfirmAction, queryKeys, useActionSends, type ActionDone, type ActionResultRow, Stack, Text,
+  ActionButton, ConfirmAction, actionDone, queryKeys, useActionSends, type ActionDone, type ActionResultRow, Stack, Text,
 } from '@/platform-ui'
 import { ordersClient, replace940, send940, type OrderDetail } from './ordersApi'
 
@@ -27,9 +27,7 @@ export function Send940({ o }: { o: OrderDetail }) {
   const sent = {
     done: (res: unknown): ActionDone => {
       const r = res as ActionResultRow
-      return r.problem
-        ? { key: `send940:${o.id}`, tone: 'error', text: `${r.problem[0].toUpperCase()}${r.problem.slice(1)}` }
-        : { key: `send940:${o.id}`, tone: 'success', text: `${r.note ?? '940 queued'}: it is sent on the next outbox pass.` }
+      return actionDone({ ...r, note: `${r.note ?? '940 queued'}: it is sent on the next outbox pass.` }, '', `send940:${o.id}`)
     },
     invalidates: [queryKeys.list(ordersClient), queryKeys.detail(ordersClient, o.id)],
   }
