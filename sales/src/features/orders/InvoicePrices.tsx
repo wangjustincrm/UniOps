@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  MasterDetailForm, formatMoney, readColumn, textColumn, type EditableColumn, type FieldSpec, Text,
+  MasterDetailForm, formatMoney, readColumn, textColumn, type EditableColumn, type FieldSpec, Text, versionOf,
 } from '@/platform-ui'
 import { lineNumbers, setInvoicePrices, type OrderDetail } from './ordersApi'
 
@@ -59,7 +59,7 @@ export function InvoicePricesForm({ o, onSaved, onCancel }: { o: OrderDetail; on
       blocked={({ values, lines }) => (lines.some((l) => differs(l.price, l.po_price) || (l.po_price == null && l.price.trim() !== ''))
         && String(values.reason ?? '').trim().length < 3 ? 'An invoice price differs from the PO: give the reason.' : null)}
       submitLabel="Save prices" errorMessages={errorMessages} onCancel={onCancel} version={o.version}
-      onSubmit={async (v, lines, edit) => onSaved(await setInvoicePrices(o.id, edit.version ?? o.version, {
+      onSubmit={async (v, lines, edit) => onSaved(await setInvoicePrices(o.id, versionOf(edit), {
         reason: (v.reason as string | null) ?? null,
         lines: lines.map((l) => ({ id: l.id, invoice_unit_price: l.price.trim() === '' ? null : l.price.trim() })) }))}
     />

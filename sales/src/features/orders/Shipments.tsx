@@ -1,8 +1,9 @@
+import { orderMoved } from '@/features/common/moved'
 import {
-  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, queryKeys, useOpenRecord, type ColumnDef, Hint, columnsOf, Text, Cluster, Stack, Columns,
+  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, useOpenRecord, type ColumnDef, Hint, columnsOf, Text, Cluster, Stack, Columns,
 } from '@/platform-ui'
 import { LineNo } from './LineNo'
-import { ordersClient, packingListPdf, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
+import { packingListPdf, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 import { ResolveRow } from './ResolveRow'
 
 const errorMessages: Record<string, string> = {
@@ -77,7 +78,7 @@ function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
   return (
     <Stack as="span" inline gap={1}>
       <ActionButton size="sm" variant="secondary" permission="sales.order.operate" errorMessages={errorMessages} done="Shopify write queued again"
-        invalidates={[queryKeys.detail(ordersClient, orderId)]} onAction={() => retryShopify(s.id)}>
+        invalidates={orderMoved(orderId)} onAction={() => retryShopify(s.id)}>
         Retry in Shopify
       </ActionButton>
     </Stack>

@@ -79,6 +79,12 @@ const ROW_AND_PROMPT = [
   { selector: "CallExpression[callee.object.name='window'][callee.property.name=/^(confirm|alert|prompt)$/]", message: 'Ask in the app dialog: ask() or ConfirmAction from @/platform-ui, not window.confirm / alert / prompt.' },
   { selector: "CallExpression[callee.type='Identifier'][callee.name=/^(confirm|alert|prompt)$/]", message: 'Ask in the app dialog: ask() or ConfirmAction from @/platform-ui.' },
 ]
+// A form that edits a record sends the version its content was read with (edit.version → versionOf(edit)), never the
+// record's latest: the server would take old content with a new version, over someone else's change (2026-11-25).
+const EDIT_VERSION = [
+  { selector: "JSXAttribute[name.name='onSubmit'] MemberExpression[property.name='version'][object.name!='edit']",
+    message: 'Send versionOf(edit): the version this form started from, not the record\'s latest (give the form `version`).' },
+]
 const DIRECT_REFETCH = [
   { selector: "CallExpression[callee.property.name='refetch']", message: 'Refresh through useRefresh (and RefreshControl) from @/platform-ui, not refetch().' },
 ]
@@ -240,17 +246,17 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...EDIT_VERSION, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...EDIT_VERSION, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
   },
   {
     // Health is a dashboard (no list or sheet scope): its own result text may still be read aloud.
     files: ['src/features/health/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...EDIT_VERSION, ...RAW_HEADINGS, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
   },
 ])

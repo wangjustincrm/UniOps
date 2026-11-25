@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys, useOpenView, useCan, useNotices, type ColumnDef, columnsOf, useRecordList, Cluster,
+  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys, useOpenView, useCan, useNotices, type ColumnDef, columnsOf, useRecordList, Cluster, versionOf,
 } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, type ConnectionRead } from './connectionsApi'
@@ -47,12 +47,13 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
         ['Last error', c.last_error],
         ['Next run', <NextRun key="n" c={c} />],
       ]} />
-      <SchemaForm key={`${c.id}:${c.version}`} schema={connectionScheduleSchema} fields={fields} changesOnly readOnly={!canEdit}
+      <SchemaForm key={c.id} version={c.version} schema={connectionScheduleSchema} fields={fields} changesOnly readOnly={!canEdit}
         submitLabel="Save schedule" errorMessages={errorMessages} defaultValues={scheduleValues(c)}
-        onSubmit={async (values) => {
-          await connectionsClient.update(c.id, values, c.version)
+        onSubmit={async (values, edit) => {
+          const saved = await connectionsClient.update(c.id, values, versionOf(edit))
           await qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
           notify({ tone: 'success', text: 'Schedule saved' })
+          return saved
         }} />
       <Cluster gap={2} align="center">
         <RunNowButton connection={c} />

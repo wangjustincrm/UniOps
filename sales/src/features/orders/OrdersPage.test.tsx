@@ -76,8 +76,9 @@ function fakeViews(mine: SavedView[] = []): ViewsClient & { rows: SavedView[] } 
   }
 }
 
+let client: QueryClient
 function renderAs(keys: string[], views: ViewsClient = fakeViews()) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const qc = client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<MemoryRouter><QueryClientProvider client={qc}><ToastProvider><ViewsProvider client={views}>
     <PermissionProvider can={(k) => keys.includes(k)}><OrdersPage /></PermissionProvider></ViewsProvider></ToastProvider></QueryClientProvider></MemoryRouter>)
 }
@@ -384,6 +385,95 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(api.update).toHaveBeenCalledWith(9, expect.objectContaining({ partner_code: 'MAN', customer_reference: 'REF-9',
       ship_to: manualDraft.ship_to, lines: [{ item_code: 'CF0092', quantity: 3, unit: 'CASE' }] }), 3))
+  })
+
+  const line = (n: string) => ({ id: 90, line_no: 1, item_code: 'CF0092', source: {}, ordered_qty: n, order_unit: 'CASE', factor_ea: '6', qty_ea: Number(n) * 6,
+    unit_price: null, line_status: 'Active', removed: false, problem: null })
+  const opened = async () => {
+    fireEvent.click(within((await screen.findByText('REF-9')).closest('tr')!).getByText('REF-9'))
+    return screen.findByRole('dialog', { name: 'MAN-109' })
+  }
+  const edit = async (sheet: HTMLElement, n: string) => {
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit draft' }))
+    await change(sheet, n)
+  }
+  const change = async (sheet: HTMLElement, n: string) => {
+    fireEvent.change(await within(sheet).findByLabelText('Quantity 1'), { target: { value: n } })
+    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: n, unit: 'CASE', qty_ea: Number(n) * 6, problem: null }])
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Preview EA' }))
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Save changes' })).toBeEnabled())
+  }
+
+  it('a draft saved twice by the same person goes with the version the first save made; Submit too', async () => {
+    const read = (version: number, n: string) => ({ ...detail, ...manualDraft, version, lines: [line(n)] })
+    api.fetchOrder.mockResolvedValue(read(3, '2'))
+    api.update.mockImplementation(async (_id: number, body: { lines: { quantity: number }[] }, version: number) => {
+      api.fetchOrder.mockResolvedValue(read(version + 1, String(body.lines[0].quantity)))
+      return { ...manualDraft, version: version + 1 }
+    })
+    api.submit.mockResolvedValue({ ...manualDraft, fulfillment_status: 'Pending' })
+    renderAs(['sales.read', 'sales.order.operate'])
+    const sheet = await opened()
+    await edit(sheet, '3')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.update.mock.calls.map((c) => c[2])).toEqual([3]))
+    await edit(sheet, '4')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.update.mock.calls.map((c) => c[2])).toEqual([3, 4]))
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Submit' }))
+    await waitFor(() => expect(api.submit).toHaveBeenCalledWith(9, 5))
+  })
+
+  it('after a save nothing can be pressed, and nobody is said to have changed it, until the draft and the list are read again', async () => {
+    const read = (version: number) => ({ ...detail, ...manualDraft, version, lines: [line('2')] })
+    api.fetchOrder.mockResolvedValue(read(3))
+    let draft: (v: unknown) => void = () => {}
+    let list: (v: unknown) => void = () => {}
+    api.update.mockImplementation(async () => {
+      api.fetchOrder.mockImplementation(() => new Promise((r) => { draft = r }))
+      api.list.mockImplementation(() => new Promise((r) => { list = r }))
+      return { ...manualDraft, version: 4 }
+    })
+    renderAs(['sales.read', 'sales.order.operate'])
+    const sheet = await opened()
+    await edit(sheet, '3')
+    const before = api.list.mock.calls.length
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(before))  // saved: being read again
+    const quiet = () => {
+      for (const name of ['Submit', 'Edit draft', 'Save changes', 'Saving…']) expect(within(sheet).queryByRole('button', { name })).toBeNull()
+      expect(within(sheet).queryByText('Someone else saved this record meanwhile')).toBeNull()  // it was this person
+    }
+    await waitFor(quiet)
+    draft(read(4))  // the draft has come, the list has not
+    await new Promise((r) => setTimeout(r, 50))
+    quiet()
+    list({ items: [{ ...manualDraft, version: 4 }], total: 1 })
+    expect(await within(sheet).findByRole('button', { name: 'Submit' })).toBeInTheDocument()
+  })
+
+  it("someone else's save while a draft is edited is said, what is typed stays with the version seen, and Reload takes theirs", async () => {
+    const read = (version: number, n: string) => ({ ...detail, ...manualDraft, version, lines: [line(n)] })
+    api.fetchOrder.mockResolvedValue(read(3, '2'))
+    api.update.mockRejectedValueOnce(Object.assign(new Error('409'), { body: { error: { code: 'entity.stale', message: 'this order was changed by someone else; reload it', details: {} } } }))
+    api.update.mockResolvedValueOnce({ ...manualDraft, version: 5 })
+    renderAs(['sales.read', 'sales.order.operate'])
+    const sheet = await opened()
+    await edit(sheet, '3')
+    api.fetchOrder.mockResolvedValue(read(4, '8'))
+    await client.invalidateQueries()
+    expect(await within(sheet).findByText('Someone else saved this record meanwhile')).toBeInTheDocument()
+    expect(within(sheet).getByLabelText('Quantity 1')).toHaveValue(3)
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.update.mock.calls.map((c) => c[2])).toEqual([3]))  // never the version of what was not seen
+    fireEvent.click(await within(sheet).findByRole('button', { name: /^Reload/ }))
+    await waitFor(() => expect(within(sheet).getByLabelText('Quantity 1')).toHaveValue(8))
+    expect(within(sheet).getByRole('button', { name: 'Save changes' })).toBeDisabled()  // the preview of the old lines is gone
+    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '8', unit: 'CASE', qty_ea: 48, problem: null }])
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Preview EA' }))
+    expect(await within(sheet).findByText('48')).toBeInTheDocument()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith(9, expect.objectContaining({ lines: [{ item_code: 'CF0092', quantity: 8, unit: 'CASE' }] }), 4))
   })
 
   it("the unit offers only the item's units and goes back to EA when the item changes", async () => {

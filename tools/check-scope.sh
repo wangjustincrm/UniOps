@@ -452,6 +452,9 @@ TS
       probe src/features/__eslint_probe__.ts "import { Sheet } from \"@/platform-ui\""
       # A refresh the user sees goes through useRefresh: a feature calling refetch() is refused.
       control_probe src/features/__eslint_probe__.tsx "<button onClick={() => q.refetch()} />" fires
+      # A form that edits a record sends the version its content was read with, never the record's latest.
+      control_probe src/features/__eslint_probe__.tsx "<SchemaForm onSubmit={(v) => save(o.version)} />" fires
+      control_probe src/features/__eslint_probe__.tsx "<SchemaForm onSubmit={(v, edit) => save(versionOf(edit), edit.version)} />" passes
       # What happened goes through useNotices: an ad-hoc status / alert / live element in a feature is refused.
       control_probe src/features/__eslint_probe__.tsx "<p role=\"status\">Saved</p>" fires
       control_probe src/features/__eslint_probe__.tsx "<span aria-live=\"polite\">Saved</span>" fires

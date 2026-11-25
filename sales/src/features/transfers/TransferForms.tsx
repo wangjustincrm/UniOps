@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Autocomplete, MasterDetailForm, SchemaForm, numberColumn, problemDone, type EditableColumn, type FieldSpec } from '@/platform-ui'
+import { Autocomplete, MasterDetailForm, SchemaForm, numberColumn, problemDone, type EditableColumn, type FieldSpec, versionOf } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import { amendTransfer, createTransfer, resolveTransfer, updateTransfer, type TransferDetail } from './transfersApi'
 import { errorMessages } from './transferRules'
@@ -42,7 +42,7 @@ export function TransferForm({ t, onSaved, onCancel }: { t?: TransferDetail; onS
       onSubmit={async (v, lines, edit) => {
         const body = { from_warehouse_id: Number(v.from_warehouse_id), to_warehouse_id: Number(v.to_warehouse_id),
           notes: (v.notes as string) ?? null, lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) }
-        onSaved(t ? await updateTransfer(t.id, edit.version ?? t.version, body) : await createTransfer(body))
+        onSaved(t ? await updateTransfer(t.id, versionOf(edit), body) : await createTransfer(body))
       }}
     />
   )
@@ -72,7 +72,7 @@ export function AmendForm({ t, onSaved, onCancel }: { t: TransferDetail; onSaved
       onCancel={onCancel}
       version={t.version}
       onSubmit={async (v, lines, edit) => {
-        const out = await amendTransfer(t.id, edit.version ?? t.version, { notes: (v.notes as string) || null, reason: String(v.reason),
+        const out = await amendTransfer(t.id, versionOf(edit), { notes: (v.notes as string) || null, reason: String(v.reason),
           lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) })
         onSaved(out)
         return out
@@ -98,9 +98,9 @@ const resolveFields: FieldSpec[] = [
 export function ResolveForm({ t, onSaved, onCancel }: { t: TransferDetail; onSaved: (d: TransferDetail) => void; onCancel: () => void }) {
   return (
     <SchemaForm schema={resolveSchema} fields={resolveFields} submitLabel="Settle the difference" onCancel={onCancel} errorMessages={errorMessages}
-      defaultValues={{ how: '', reason: '' }}
-      onSubmit={async (v) => {
-        const out = await resolveTransfer(t.id, t.version, v.how as 'corrected' | 'accepted', String(v.reason))
+      defaultValues={{ how: '', reason: '' }} version={t.version}
+      onSubmit={async (v, edit) => {
+        const out = await resolveTransfer(t.id, versionOf(edit), v.how as 'corrected' | 'accepted', String(v.reason))
         onSaved(out)
         return out
       }} />

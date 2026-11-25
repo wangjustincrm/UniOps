@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ADDRESS_FIELDS, ActionButton, Autocomplete, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups, ActionErrors, Text, Stack,
+  ADDRESS_FIELDS, ActionButton, Autocomplete, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups, ActionErrors, Text, Stack, versionOf,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
 import {
@@ -59,11 +59,13 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   draft?: OrderDetail; onSaved: (order: OrderRead) => void; onCancel: () => void
 }) {
   const [preview, setPreview] = useState<LinePreview[] | null>(null)
-  const [lines, setLines] = useState<ManualLine[]>(() => {
-    const own = (draft?.lines ?? []).filter((l) => !l.removed)
+  const saved = draft?.lines
+  const start = useMemo<ManualLine[]>(() => {
+    const own = (saved ?? []).filter((l) => !l.removed)
       .map((l) => ({ item_code: l.item_code ?? '', quantity: Number(l.ordered_qty), unit: l.order_unit ?? 'EA' }))
     return own.length ? own : [{ ...blank }]  // a reorder starts with no lines: one empty line to fill
-  })
+  }, [saved])
+  const [lines, setLines] = useState(start)
   const customers = useLookup(['sales', 'lookup', 'manual-customers'], () => manualPartnerOptions(''), { enabled: !draft })
   const codes = [...new Set(lines.map((l) => l.item_code).filter(Boolean))]
   const unitQueries = useLookups(codes.map((c) => ['sales', 'lookup', 'units', c]), (k) => itemUnits(String(k[3])), { staleTime: 60_000 })
@@ -99,7 +101,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       defaultValues={{ partner_code: draft?.partner_code ?? single, customer_reference: draft?.source_order_number ?? '', carrier: draft?.shipping_method ?? '',
         reason: draft?.manual_reason ?? '', requested_delivery_date: draft?.requested_delivery_date ?? '', notes: draft?.notes ?? '', ship_to: shipToDefaults(draft?.ship_to) }}
       addresses={[{ name: 'ship_to', legend: 'Ship to', phoneRequired: true }]}
-      lines={{ label: 'Order lines', columns, initial: lines, add: () => ({ ...blank }), removable: true,
+      lines={{ label: 'Order lines', columns, initial: start, add: () => ({ ...blank }), removable: true,
         problem: (l, i) => lineProblem(l) ?? preview?.[i]?.problem ?? null }}
       // The EA depends on the lines only: a header or address change keeps the preview.
       onChange={(st) => { if (st.lines !== lines) { setLines(st.lines); setPreview(null) } }}
@@ -114,13 +116,14 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
         </ActionErrors>
       )}
       submitLabel={draft ? 'Save changes' : 'Save draft'}
+      version={draft?.version}
       onCancel={onCancel}
-      onSubmit={async (v, ls) => {
+      onSubmit={async (v, ls, edit) => {
         const body: ManualOrderIn = { partner_code: String(v.partner_code), customer_reference: (v.customer_reference as string) ?? null,
           requested_delivery_date: (v.requested_delivery_date as string) ?? null, notes: (v.notes as string) ?? null,
           ship_to: cleanAddress(v.ship_to as Record<string, unknown>), lines: ls,
           carrier: isCarrier(v.carrier) ? v.carrier : null, reason: (v.reason as string) || null }
-        onSaved(draft ? await updateManual(draft.id, body, draft.version) : await createManual(body))
+        onSaved(draft ? await updateManual(draft.id, body, versionOf(edit)) : await createManual(body))
       }}
     />
   )

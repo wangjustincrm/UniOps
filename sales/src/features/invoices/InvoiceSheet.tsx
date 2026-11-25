@@ -1,8 +1,9 @@
+import { orderMoved, readMoved } from '@/features/common/moved'
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { ActionButton, ConfirmAction, DetailList, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useActionSends, useRefresh, Callout, useRecord, Text } from '@/platform-ui'
+import { ActionButton, ConfirmAction, DetailList, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useActionSends, useRefresh, Callout, useRecord, Text, versionOf } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, sendInvoiceAgain, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { RecordActivity } from '@/features/common/RecordActivity'
 import { partnerLabel } from '@/features/common/labels'
@@ -85,7 +86,7 @@ function InvoiceForm({ inv, onSaved, onCancel }: { inv: InvoiceDetail; onSaved: 
         ? 'An invoice price changed: give the reason for the price change.' : null)}
       submitLabel="Save changes" errorMessages={errorMessages} onCancel={onCancel}
       version={inv.version}
-      onSubmit={async (v, lines, edit) => onSaved(await editInvoice(inv.id, edit.version ?? inv.version, {
+      onSubmit={async (v, lines, edit) => onSaved(await editInvoice(inv.id, versionOf(edit), {
         invoice_date: String(v.invoice_date), delivery_number: (v.delivery_number as string | null) ?? null,
         reason: (v.reason as string | null) ?? null,
         lines: lines.map((l) => ({ id: l.id, qty: Number(l.qty), unit_price: l.unit_price })) }))}
@@ -104,11 +105,10 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
   const sends = useActionSends(invoicesClient, 'send')
   const againSends = useActionSends(invoicesClient, 'send_again')
   const refresh = async () => {
-    await qc.invalidateQueries({ queryKey: queryKeys.detail(invoicesClient, id) })
-    await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
+    await readMoved(qc, row.order_id)
   }
   const inv = q.data
-  const reread = [queryKeys.detail(invoicesClient, id), queryKeys.list(invoicesClient)]
+  const reread = orderMoved(row.order_id)
   const sendable = inv && (inv.status === 'Ready' || inv.status === 'Failed' || inv.status === 'Sent')
   const tabs: RecordTab[] = !inv ? [] : editing ? [{
     id: 'edit', label: 'Edit invoice', render: () => (

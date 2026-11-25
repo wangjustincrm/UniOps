@@ -1,8 +1,9 @@
+import { orderMoved } from '@/features/common/moved'
 import { useState } from 'react'
 import { orderRef } from '@/features/common/labels'
 import { z } from 'zod'
 import {
-  ActionButton, MasterDetailForm, numberColumn, queryKeys, readColumn, useCan, type FieldSpec, useRecord, FormDialog,
+  ActionButton, MasterDetailForm, numberColumn, readColumn, useCan, type FieldSpec, useRecord, FormDialog, versionOf,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { recordReturn } from './invoicesApi'
@@ -49,9 +50,9 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
               initial: q.data.lines.filter((l) => l.shipped_ea).map((line) => ({ line, qty: '' })) }}
             blocked={(st) => (st.lines.some((b) => Number(b.qty) > 0) ? null : 'Enter the EA of at least one line.')}
             submitLabel="Record (holds the invoice)" onCancel={() => setOpen(false)}
-            invalidates={[queryKeys.detail(ordersClient, o.id)]} after={() => setOpen(false)}
+            invalidates={orderMoved(o.id)} after={() => setOpen(false)}
             version={q.data.version}
-            onSubmit={(v, lines, edit) => recordReturn({ order_id: o.id, version: edit.version ?? o.version, kind: v.kind as 'Returned' | 'Cancelled after shipment', reason: String(v.reason),
+            onSubmit={(v, lines, edit) => recordReturn({ order_id: o.id, version: versionOf(edit), kind: v.kind as 'Returned' | 'Cancelled after shipment', reason: String(v.reason),
               lines: lines.filter((b) => Number(b.qty) > 0).map((b) => ({ order_line_id: b.line.id, qty_ea: Number(b.qty) })) })}
           />
         )}

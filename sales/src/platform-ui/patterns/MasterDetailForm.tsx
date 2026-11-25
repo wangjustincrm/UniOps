@@ -1,13 +1,13 @@
 import { useReportUnsaved } from '../primitives/unsaved'
 import { ChangedElsewhere } from './ChangedElsewhere'
-import { useEditVersion } from './editVersion'
+import { useEditVersion, whatChanged } from './editVersion'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useForm, useWatch, type FieldValues, type Resolver } from 'react-hook-form'
 import type { z } from 'zod'
 import { EditableTable, type EditableColumn } from '../primitives/EditableTable'
 import { Button } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
-import { useAfterAction, type ActionOptions } from './useAction'
+import { useAfterAction, useReadAgain, type ActionOptions } from './useAction'
 import { AddressFields } from './AddressFields'
 import { ADDRESS_FIELDS } from './address'
 import { SchemaFields, type FieldSpec } from './SchemaForm'
@@ -76,6 +76,7 @@ export function MasterDetailForm<L>({
   errorMessages, readOnly, addresses = [], version, done, invalidates, after,
 }: MasterDetailFormProps<L>) {
   const afterAction = useAfterAction()
+  const readAgain = useReadAgain()
   // Server errors name nested address fields too (e.g. ship_to.zip).
   const known: FieldSpec[] = [...fields, ...addresses.flatMap((a) => ADDRESS_FIELDS.map((f) => ({ name: `${a.name}.${f}`, label: f })))]
   const resolver = useMemo<Resolver<FieldValues>>(() => {
@@ -88,8 +89,12 @@ export function MasterDetailForm<L>({
   const [startLines, setStartLines] = useState(lines)
   const dirty = form.formState.isDirty || lines !== startLines
   useReportUnsaved(dirty)
+  // The lines as last changed: a header field's change event must not report older ones.
+  const latestLines = useRef(lines)
   const edit = useEditVersion(version, dirty, () => {
-    form.reset(toInputs(defaultValues, fields)); setLines(spec.initial); setStartLines(spec.initial)
+    const start = toInputs(defaultValues, fields)
+    form.reset(start); latestLines.current = spec.initial; setLines(spec.initial); setStartLines(spec.initial)
+    onChange?.({ values: start, lines: spec.initial })  // the parent follows: a preview of the lines before is no preview
   })
   const [error, setError] = useState<unknown>(null)
   const inFlight = useRef(false)
@@ -100,8 +105,6 @@ export function MasterDetailForm<L>({
   const waiting = blocked?.(state) ?? null
   const { isSubmitting } = form.formState
 
-  // The lines as last changed: a header field's change event must not report older ones.
-  const latestLines = useRef(lines)
   const changeLines = (next: L[]) => {
     latestLines.current = next
     setLines(next)
@@ -117,16 +120,24 @@ export function MasterDetailForm<L>({
       if (done || invalidates || after) await afterAction(saved, { done, invalidates, refreshes: false, after })
     } catch (e) {
       if (!applyServerError(form, known, e, errorMessages)) setError(e)
+      readAgain(e, invalidates)  // the record had moved: read again; what was typed stays, ChangedElsewhere says what changed
     } finally {
       inFlight.current = false
     }
   })
   const submit = (e: FormEvent<HTMLFormElement>) => submitWith(onSubmit)(e)
+  const theirs = () => {
+    const now = toInputs(defaultValues, fields)
+    const was = form.formState.defaultValues
+    return [...fields.map((f) => ({ label: f.label, before: was?.[f.name], now: now[f.name] })),
+      ...addresses.map((a) => ({ label: a.legend, before: was?.[a.name], now: now[a.name] })),
+      { label: spec.label, before: startLines, now: spec.initial }]
+  }
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4"
       onChange={() => onChange?.({ values: form.getValues(), lines: latestLines.current })}>
-      {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} />}
+      {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} changed={whatChanged(theirs())} />}
       <SchemaFields form={form} fields={fields} readOnly={readOnly} idPrefix="md" />
       {addresses.map((a) => <AddressFields key={a.name} form={form} name={a.name} legend={a.legend} readOnly={readOnly}
         phoneRequired={a.phoneRequired} />)}

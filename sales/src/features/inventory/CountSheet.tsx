@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, LocalTable, RecordSheet, ViewFileButton, columnsOf, formatDateTime, formatNumber, queryKeys, type ColumnDef, type RecordTab, useLookup, FormDialog, SchemaForm, type FieldSpec } from '@/platform-ui'
+import { ActionButton, ConfirmAction, LocalTable, RecordSheet, ViewFileButton, columnsOf, formatDateTime, formatNumber, queryKeys, type ColumnDef, type RecordTab, useLookup, FormDialog, SchemaForm, type FieldSpec, versionOf } from '@/platform-ui'
 import { api } from '@/lib/api'
 import { applyCount, fetchCountLines, stockCountsClient, stockItemsClient, stockLotsClient, undoCount, updateCount, type StockCountLineRead, type StockCountRead } from './inventoryApi'
 import { ADJUST, errorMessages } from './countRules'
@@ -33,7 +33,7 @@ function ChangeDialog({ count, open, onOpenChange }: { count: StockCountRead; op
       <SchemaForm schema={changeSchema} fields={fields} defaultValues={{ counted_at: count.counted_at, note: count.note ?? '' }}
         errorMessages={errorMessages} onCancel={() => onOpenChange(false)}
         done="Saved" invalidates={[queryKeys.list(stockCountsClient)]} after={() => onOpenChange(false)}
-        onSubmit={(v) => updateCount(count.id, count.version, count.applied_at ? null : String(v.counted_at), (v.note as string | null)?.trim() || null)} />
+        version={count.version} onSubmit={(v, edit) => updateCount(count.id, versionOf(edit), count.applied_at ? null : String(v.counted_at), (v.note as string | null)?.trim() || null)} />
     </FormDialog>
   )
 }
@@ -79,7 +79,7 @@ export function CountSheet({ row }: { row: StockCountRead }) {
       </>}
       tabs={tabs}
     />
-      <ChangeDialog key={`${row.id}-${row.version}`} count={row} open={changing} onOpenChange={setChanging} />
+      <ChangeDialog key={row.id} count={row} open={changing} onOpenChange={setChanging} />
       <ConfirmAction open={applying} onOpenChange={setApplying} title="Apply this report as the start?"
         description={`At ${formatDateTime(row.counted_at)} every lot is set to Radiant's figure (a lot Radiant does not list goes to 0). `
           + 'The moves before are kept; every 944 and 945 after it adds up from there. It can be undone.'}

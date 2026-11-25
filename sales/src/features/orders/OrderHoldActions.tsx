@@ -1,7 +1,8 @@
+import { orderMoved } from '@/features/common/moved'
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
 import {
-  ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys, Stack, useActionSends,
+  ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, Stack, useActionSends,
 } from '@/platform-ui'
 import { cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
 import { compare945 } from './orderStatus'
@@ -16,8 +17,6 @@ const errorMessages: Record<string, string> = {
   'auth.forbidden': 'You do not have permission to do this.',
 }
 
-/** What an order's change reads again: the order and the list. */
-const orderKeys = (id: number) => [queryKeys.detail(ordersClient, id), queryKeys.list(ordersClient)]
 
 // What each way out of a hold is called, and what it does.
 function exitOf(to: string, conflict: boolean): { label: string; text: string; destructive?: boolean } {
@@ -49,7 +48,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
         <ActionButton size="sm" permission={OPERATE} onAction={() => setSheet(true)}>{conflict ? 'Compare the 945s' : 'Release hold'}</ActionButton>
       )}
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel order ${name}?`} description={NOTHING_WRITTEN} destructive
-        confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} done={{ key: `cancel:${o.id}`, tone: 'success', text: `Order ${name} cancelled.` }} invalidates={orderKeys(o.id)}
+        confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} done={{ key: `cancel:${o.id}`, tone: 'success', text: `Order ${name} cancelled.` }} invalidates={orderMoved(o.id)}
         record={o} toStatusRow={isTestRunRefusal} onConfirm={(why) => cancelOrder(o.id, o.version, why)} />
       <FormSheet open={sheet} onOpenChange={setSheet} title={conflict ? 'Two 945s for this order' : 'Release hold'}
         description={conflict ? 'The applied 945 set the quantities; the second is stored and changed nothing.'
@@ -72,7 +71,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
       </FormSheet>
       <ConfirmAction open={choice !== null} onOpenChange={(v) => { if (!v) setChoice(null) }} title={picked ? `${picked.label}?` : ''} description={picked?.text}
         destructive={picked?.destructive} confirmLabel={picked?.label} reason={{ label: 'Why' }} errorMessages={errorMessages}
-        done={{ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${choice}.` }} invalidates={orderKeys(o.id)}
+        done={{ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${choice}.` }} invalidates={orderMoved(o.id)}
         record={o} sends={choice === 'Shipped' ? releaseSends : undefined} toStatusRow={isTestRunRefusal} after={() => setSheet(false)} onConfirm={(why) => releaseHold(o.id, o.version, choice!, why)} />
     </>
   )

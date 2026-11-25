@@ -1,4 +1,5 @@
-import { ActionButton, queryKeys, useActionSends } from '@/platform-ui'
+import { orderMoved } from '@/features/common/moved'
+import { ActionButton, useActionSends } from '@/platform-ui'
 import { fulfilInShopify, ordersClient, type OrderDetail } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -19,7 +20,7 @@ export function FulfilInShopify({ o }: { o: OrderDetail }) {
   return (
     <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={errorMessages} sends={sends}
       done={{ key: `fulfil:${o.id}`, tone: 'success', text: 'Queued: Shopify is fulfilled and the order archived on the next outbox pass.' }}
-      invalidates={[queryKeys.detail(ordersClient, o.id)]} onAction={() => fulfilInShopify(o.id, o.version)}>
+      invalidates={orderMoved(o.id)} onAction={() => fulfilInShopify(o.id, o.version)}>
       {o.shopify_fulfillment_id ? 'Archive in Shopify now' : 'Fulfil in Shopify now'}
     </ActionButton>
   )

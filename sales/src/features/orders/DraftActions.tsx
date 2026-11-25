@@ -1,7 +1,8 @@
+import { orderMoved, readMoved } from '@/features/common/moved'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, Skeleton, queryKeys, useRecord, Stack, Cluster,
+  ActionButton, ConfirmAction, Skeleton, useRecord, Stack, Cluster,
 } from '@/platform-ui'
 import { ManualOrderForm } from './ManualOrderForm'
 import { cancelManual, fetchOrder, ordersClient, submitManual, type OrderRead } from './ordersApi'
@@ -19,18 +20,21 @@ const SUBMIT_ERRORS: Record<string, string> = {
 export function DraftActions({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
+  const [reading, setReading] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const detail = useRecord(ordersClient, o.id, fetchOrder, { enabled: editing })
   // Submitted or cancelled: the list reads again and the sheet closes.
-  const closes = { invalidates: [queryKeys.list(ordersClient)], after: close }
+  const closes = { invalidates: orderMoved(o.id), after: close }
   if (editing) {
-    if (!detail.data) return <Skeleton className="h-40 w-full" />
+    if (!detail.data || reading) return <Skeleton className="h-40 w-full" />
     return (
       <ManualOrderForm draft={detail.data} onCancel={() => setEditing(false)}
         onSaved={async () => {
+          // Read again before anything can be pressed: it stands on the version (and the lines) this save made.
+          setReading(true)
+          await readMoved(qc, o.id)
           setEditing(false)
-          await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
-          await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
+          setReading(false)
         }} />
     )
   }
@@ -52,7 +56,7 @@ export function SubmitDraft({ o }: { o: OrderRead }) {
   return (
     <Stack as="span" inline gap={1}>
       <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={SUBMIT_ERRORS} done={`${o.source_reference ?? `#${o.order_number}`} submitted`}
-        invalidates={[queryKeys.list(ordersClient)]} onAction={() => submitManual(o.id, o.version)}>Submit</ActionButton>
+        invalidates={orderMoved(o.id)} onAction={() => submitManual(o.id, o.version)}>Submit</ActionButton>
     </Stack>
   )
 }

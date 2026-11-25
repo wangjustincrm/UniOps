@@ -1,3 +1,4 @@
+import { readMoved } from '@/features/common/moved'
 import { useContext, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -80,18 +81,19 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       amending ? (
         <AmendForm o={d} onCancel={() => setAmending(false)} onSaved={async () => {
           setAmending(false)
-          await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
+          await readMoved(qc, o.id)
         }} />
       ) : returning ? (
-        <ReturnedForm o={d} onCancel={() => setReturning(false)} onSaved={(next) => {
+        <ReturnedForm o={d} onCancel={() => setReturning(false)} onSaved={async (next) => {
           qc.setQueryData(queryKeys.detail(ordersClient, o.id), next)
           setReturning(false)
+          await readMoved(qc, o.id, { answered: true })
         }} />
       ) : pricing ? (
         <InvoicePricesForm o={d} onCancel={() => setPricing(false)} onSaved={async (next) => {
           qc.setQueryData(queryKeys.detail(ordersClient, o.id), next)
           setPricing(false)
-          await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
+          await readMoved(qc, o.id, { answered: true })
         }} />
       ) : (
         <LinesTab o={d} />
@@ -186,8 +188,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}
           onConfirm={async (why) => {
             await releaseInvoice(d.id, d.version, why)
-            await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
-            await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
+            await readMoved(qc, o.id)
           }} />
       )}
     </>

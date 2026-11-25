@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec } from '@/platform-ui'
+import { MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec, versionOf } from '@/platform-ui'
 import { lineNumbers, setReturned, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
@@ -52,7 +52,7 @@ export function ReturnedForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved
         initial: shipped.map((ln) => ({ id: ln.id, line_no: numbers.get(ln.line_no) ?? ln.line_no, item: ln.item_code ?? 'unmatched',
           shipped: ln.shipped_ea ?? 0, returned: String(ln.returned_ea ?? 0) })) }}
       submitLabel="Save returned" errorMessages={errorMessages} onCancel={onCancel} version={o.version}
-      onSubmit={async (v, lines, edit) => onSaved(await setReturned(o.id, edit.version ?? o.version, {
+      onSubmit={async (v, lines, edit) => onSaved(await setReturned(o.id, versionOf(edit), {
         reason: String(v.reason ?? '').trim(),
         lines: lines.map((l) => ({ id: l.id, returned_ea: l.returned.trim() === '' ? 0 : Number(l.returned) })) }))}
     />

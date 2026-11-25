@@ -1,7 +1,8 @@
+import { orderMoved } from '@/features/common/moved'
 import {
-  ActionButton, formatTime, queryKeys, type ActionDone, type ActionResultRow, Stack, Text,
+  ActionButton, formatTime, type ActionDone, type ActionResultRow, Stack, Text,
 } from '@/platform-ui'
-import { ordersClient, resolveReview, type OrderRead } from './ordersApi'
+import { resolveReview, type OrderRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'entity.stale': 'The order changed since you opened it: it is read again here. Look, then re-check again.',
@@ -24,7 +25,7 @@ export function Recheck({ o, compact, bare, onResolved }: { o: OrderRead; compac
   }
   const button = (
     <ActionButton size="sm" variant={compact ? 'secondary' : undefined} permission="sales.order.operate"
-      done={said} invalidates={[queryKeys.list(ordersClient), queryKeys.detail(ordersClient, o.id)]}
+      done={said} invalidates={orderMoved(o.id)}
       after={(r) => { if (!(r as ActionResultRow).note) onResolved?.() }}
       errorMessages={errorMessages} onAction={() => resolveReview(o.id, o.version)}>Re-check</ActionButton>
   )

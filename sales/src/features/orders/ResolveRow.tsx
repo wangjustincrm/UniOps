@@ -1,9 +1,10 @@
+import { orderMoved } from '@/features/common/moved'
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
 import {
-  ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, queryKeys, type ComboOption, Stack,
+  ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, type ComboOption, Stack,
 } from '@/platform-ui'
-import { ordersClient, resolveRow, type LineRead, type ShipmentRowRead } from './ordersApi'
+import { resolveRow, type LineRead, type ShipmentRowRead } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
 const errorMessages: Record<string, string> = {
@@ -22,7 +23,7 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
   const [line, setLine] = useState<string | null>(null)
   // A link or an acceptance: said in the order's status row, the sheet closes; the order and the list read again.
   const resolved = { done: `945 row ${r.item_code ?? ''} resolved.`, after: () => setOpen(false),
-    invalidates: [queryKeys.detail(ordersClient, orderId), queryKeys.list(ordersClient)] }
+    invalidates: orderMoved(orderId) }
   const matching = lines.filter((l) => !l.removed && (r.matching_lines ?? []).includes(l.id))
   const options = async (q: string): Promise<ComboOption[]> => matching
     .map((l) => ({ value: String(l.id), label: `Line ${l.line_no} · ${l.item_code ?? '?'}`, hint: `${l.qty_ea ?? '?'} EA` }))

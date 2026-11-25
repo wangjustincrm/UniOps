@@ -1,14 +1,15 @@
+import { readMoved } from '@/features/common/moved'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, MasterDetailForm, numberColumn, queryKeys, readColumn, todayDate, useCan, type ActionDone, type FieldSpec, useRecord, QueryState, FormDialog, SchemaForm,
+  ActionButton, MasterDetailForm, numberColumn, readColumn, todayDate, useCan, type ActionDone, type FieldSpec, useRecord, QueryState, FormDialog, SchemaForm, versionOf,
 } from '@/platform-ui'
 import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
 import { DELIVERY_ACTIONS } from '@/features/orders/orderActions'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
-import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
+import { confirmBulk, confirmDelivery, type ConfirmResult } from './invoicesApi'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const OPERATE = 'sales.order.operate'
@@ -46,11 +47,10 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const q = useRecord(ordersClient, o.id, fetchOrder, { errors: 'inline' })
   if (!q.data) return <QueryState q={q}>{() => null}</QueryState>
   const seen = q.data.version
-  const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean, version = seen) => {
+  const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean, version: number) => {
     await confirmDelivery({ order_id: o.id, version, confirmed_date: String(v.confirmed_date), ...(send ? { send } : {}),
       lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: deliveredOf(d) })) }).catch(refused)
-    await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
-    await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
+    await readMoved(qc, o.id)
     close()
   }
   const today = todayDate()
@@ -62,9 +62,9 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
         initial: q.data.lines.filter((l) => (l.shipped_ea ?? l.shipped_shadow_ea) != null)
           .map((line) => ({ line: { ...line, shipped_ea: line.shipped_ea ?? line.shipped_shadow_ea }, returned: String(line.returned_ea ?? 0) })) }}
       submitLabel="Confirm delivery"
-      alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: (v, lines, edit) => save(v, lines, true, edit.version) } : undefined}
+      alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: (v, lines, edit) => save(v, lines, true, versionOf(edit)) } : undefined}
       version={seen}
-      onSubmit={(v, lines, edit) => save(v, lines, false, edit.version)}
+      onSubmit={(v, lines, edit) => save(v, lines, false, versionOf(edit))}
     />
   )
 }

@@ -1,7 +1,8 @@
+import { orderMoved } from '@/features/common/moved'
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
 import {
-  ActionButton, ConfirmAction, actionDone, queryKeys, useActionSends, type ActionDone, type ActionResultRow, Stack, Text,
+  ActionButton, ConfirmAction, actionDone, useActionSends, type ActionDone, type ActionResultRow, Stack, Text,
 } from '@/platform-ui'
 import { ordersClient, replace940, send940, type OrderDetail } from './ordersApi'
 
@@ -29,7 +30,7 @@ export function Send940({ o }: { o: OrderDetail }) {
       const r = res as ActionResultRow
       return actionDone({ ...r, note: `${r.note ?? '940 queued'}: it is sent on the next outbox pass.` }, '', `send940:${o.id}`)
     },
-    invalidates: [queryKeys.list(ordersClient), queryKeys.detail(ordersClient, o.id)],
+    invalidates: orderMoved(o.id),
   }
   // sales-api says what is offered (app/domain/order_rules.py send_940_action): never once a 945 came.
   if (!o.send_940) return null

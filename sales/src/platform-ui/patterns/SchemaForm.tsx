@@ -1,6 +1,6 @@
 import { useReportUnsaved } from '../primitives/unsaved'
 import { ChangedElsewhere } from './ChangedElsewhere'
-import { useEditVersion } from './editVersion'
+import { useEditVersion, whatChanged } from './editVersion'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
@@ -16,7 +16,7 @@ import { Select } from '../primitives/Select'
 import { TagInput } from '../primitives/TagInput'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
-import { useAfterAction, type ActionOptions } from './useAction'
+import { useAfterAction, useReadAgain, type ActionOptions } from './useAction'
 import { applyServerError, emptyToNull, hiddenFields, notShown, prepare, toInputs, withDefaultsWhenHidden } from './formValues'
 import { Section } from './Section'
 import { zodResolver } from './zodResolver'
@@ -123,6 +123,7 @@ export function SchemaForm({
   done, invalidates, after,
 }: SchemaFormProps) {
   const afterAction = useAfterAction()
+  const readAgain = useReadAgain()
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
     const start = toInputs(defaultValues, fields)
@@ -165,14 +166,20 @@ export function SchemaForm({
       // (details.errors: [{field, message}] for a request the server's
       // schema refused); each message goes next to its input.
       // A field not on screen cannot show it: then it is said under the form.
+      // The record had moved: it is read again, what was typed stays, and ChangedElsewhere says what changed.
+      readAgain(e, invalidates)
       if (!applyServerError(form, fields.filter((f) => !off.includes(f.name)), e, errorMessages, fieldLabels)) setError(e)
     }
   })
   const submit = submitWith(onSubmit)
+  const theirs = () => {
+    const now = toInputs(defaultValues, fields)
+    return fields.map((f) => ({ label: f.label, before: form.formState.defaultValues?.[f.name], now: now[f.name] }))
+  }
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-      {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} />}
+      {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} changed={whatChanged(theirs())} />}
       <SchemaFields form={form} fields={fields} readOnly={readOnly} />
       {typeof errors.root?.message === 'string' && (
         <p role="alert" className="text-sm text-danger-700">{errors.root.message}</p>
