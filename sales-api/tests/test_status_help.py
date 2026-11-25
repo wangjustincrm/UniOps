@@ -6,7 +6,8 @@ from pathlib import Path
 
 from app.domain.order_status import DELIVERY_DUE, HOLD_REASONS, ORDER_STATUSES, SENDS
 from app.domain.order_payment import PAYMENT_STATUSES
-from app.domain.status_help import DETAIL_HELP, HOLD_HELP, MAX_BODY, PAYMENT_HELP, SHORT_SHIPPED, STATUS_HELP, payload
+from app.domain.status_help import (
+    DETAIL_HELP, HOLD_HELP, MAX_BODY, OVER_SHIPPED, PAYMENT_HELP, SHIPMENTS, SHORT_SHIPPED, STATUS_HELP, payload)
 from tests.test_orders_api import READER, NOBODY, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401
 
@@ -16,7 +17,7 @@ FRONT = Path(__file__).resolve().parents[2] / "sales" / "src"
 def test_every_status_reason_and_detail_has_a_text():
     assert set(STATUS_HELP) == set(ORDER_STATUSES)
     assert set(HOLD_HELP) == set(HOLD_REASONS)
-    assert set(DETAIL_HELP) == {SENDS, DELIVERY_DUE, SHORT_SHIPPED}
+    assert set(DETAIL_HELP) == {SENDS, DELIVERY_DUE, SHORT_SHIPPED, OVER_SHIPPED, SHIPMENTS}
     assert set(PAYMENT_HELP) == set(PAYMENT_STATUSES)
 
 

@@ -3,16 +3,18 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
 import type { OrderDetail, ShipmentRead } from './ordersApi'
-import { compare945 } from './orderStatus'
+import { applied945, compare945 } from './orderStatus'
 
 const cancelOrder = vi.fn(async () => ({}))
 const releaseHold = vi.fn(async () => ({}))
+const applyLater945 = vi.fn(async () => ({}))
 const SENDS = 'the Shopify write its hold stopped, when released to Shipped'
 vi.mock('./ordersApi', async (orig) => ({
   ...(await orig<typeof import('./ordersApi')>()),
   ordersClient: { basePath: '/orders', meta: async () => ({ version: 1, fields: [], searchable: false, default_sort: [], capabilities: { export: null, suggest: false,
     actions: [{ id: 'release_hold', allowed: true, sends: SENDS }] } }) },
   cancelOrder: (...a: unknown[]) => (cancelOrder as (...x: unknown[]) => unknown)(...a),
+  applyLater945: (...a: unknown[]) => (applyLater945 as (...x: unknown[]) => unknown)(...a),
   releaseHold: (...a: unknown[]) => (releaseHold as (...x: unknown[]) => unknown)(...a),
 }))
 const { OrderHoldActions } = await import('./OrderHoldActions')
@@ -34,7 +36,7 @@ const reason = async (text: string) => {
 }
 
 describe('Cancel order and Release hold', () => {
-  beforeEach(() => { cancelOrder.mockClear(); releaseHold.mockClear() })
+  beforeEach(() => { cancelOrder.mockClear(); releaseHold.mockClear(); applyLater945.mockClear() })
 
   it('offers nothing when the server opens nothing (a shadow order, a shipped order)', () => {
     show(base)
@@ -87,6 +89,48 @@ describe('Cancel order and Release hold', () => {
     expect(table).toHaveTextContent('CF0092 EA: 12')
     expect(table).toHaveTextContent('CF0092 EA: 6')
     expect(screen.getByRole('button', { name: 'Keep the applied 945' })).toBeInTheDocument()
+  })
+
+  const held = { ...base, on_hold_reason: '945 Conflict', hold_exits: ['Shipped', 'Cancelled'],
+    shipments: [ship(1, true, 8, 'A'), ship(2, false, 4, 'B'), ship(3, false, 8, 'A')] } as OrderDetail  // 3: a resend of 1
+  const open = async (o: OrderDetail) => { show(o); fireEvent.click(screen.getByRole('button', { name: 'Compare the 945s' })); await screen.findByRole('table', { name: 'The two 945s' }) }
+
+  it('a missing part: the server names the 945, the press carries it with a reason', async () => {
+    await open({ ...held, later_945: { shipment_id: 2, kind: 'part', items: [{ item_code: 'CF0092', carried_ea: 12, earlier_ea: 8, this_ea: 4, above_ea: 0 }] } })
+    expect(screen.getByRole('table', { name: 'The two 945s' })).toHaveTextContent('CF0092 EA: 4')  // 2, not the resend
+    expect(screen.queryByRole('button', { name: 'Apply, more than ordered' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply the missing part' }))
+    const dialog = await reason('the warehouse sent the rest')
+    expect(dialog).toHaveTextContent('CF0092: 4 EA is added')
+    expect(dialog).toHaveTextContent('Nothing is written to Shopify for it and nobody is emailed about it')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply the missing part' }))
+    await waitFor(() => expect(applyLater945).toHaveBeenCalledWith(3, 7, 'part', 2, 'the warehouse sent the rest'))
+    expect(releaseHold).not.toHaveBeenCalled()
+  })
+
+  it('more than ordered: says item by item how much, and that a corrected 945 must not be applied', async () => {
+    await open({ ...held, later_945: { shipment_id: 2, kind: 'more', items: [{ item_code: 'CF0092', carried_ea: 12, earlier_ea: 8, this_ea: 5, above_ea: 1 },
+      { item_code: 'CF0093', carried_ea: 6, earlier_ea: 2, this_ea: 4, above_ea: 0 }] } })
+    expect(screen.queryByRole('button', { name: 'Apply the missing part' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply, more than ordered' }))
+    const dialog = await reason('an extra can')
+    expect(dialog).toHaveTextContent('CF0092: 1 EA above the 12 EA on the 940 (13 EA in all)')
+    expect(dialog).not.toHaveTextContent('CF0093')
+    expect(dialog).toHaveTextContent('a corrected 945 of the same goods (another lot or date) must not be applied')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply, more than ordered' }))
+    await waitFor(() => expect(applyLater945).toHaveBeenCalledWith(3, 7, 'more', 2, 'an extra can'))
+  })
+
+  it('refused: the reason is shown, and nothing to add', async () => {
+    await open({ ...held, later_945: { shipment_id: 2, kind: null, refused: 'an order was made from this one', items: [] } })
+    expect(screen.getByText('The second 945 cannot be added here: an order was made from this one.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Keep the applied 945' })).toBeInTheDocument()
+  })
+
+  it('a third 945 is compared with both that count', () => {
+    const rows = compare945(applied945([ship(1, true, 8, 'A'), ship(2, true, 4, 'B'), ship(3, false, 1, 'C')])!, ship(3, false, 1, 'C'))
+    expect(rows.map((r) => r.left)).toEqual(expect.arrayContaining(['CF0092 EA: 12', 'CF0092 lots: A, B']))
   })
 
   it('compare945 marks only what differs', () => {

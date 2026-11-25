@@ -40,6 +40,10 @@ export interface OrderRead {
   order_status_label: string
   /** A mark beside the Status: the 945 (applied or the shadow run's) left something unshipped. */
   short_shipped: boolean
+  /** How many 945s of it count: the "2 shipments" mark, from 2. */
+  applied_945s?: number
+  /** EA shipped above what the 940 carried: the Over shipped mark. */
+  over_shipped_ea?: number
   /** Only what the Status does not say (a time, the hold's detail); usually empty. */
   status_detail: string | null
   status_detail_at: string | null

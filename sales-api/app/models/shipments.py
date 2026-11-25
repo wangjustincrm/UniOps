@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
-    Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, case, exists, false, func, select,
+    Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, case, cast, exists, false, func, select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column
@@ -111,6 +111,17 @@ Order.shopify_error_sql = order_fact(
     .order_by(Shipment.id.desc()).limit(1).correlate_except(Shipment).scalar_subquery())
 _order_940 = (DocumentLink.entity_type == "order", DocumentLink.entity_id == Order.id, Document.kind == "940_EDI",
               Document.direction == "OUT")
+# The marks beside the Status (user 2026-11-25), derived: how many 945s of the order count (a resend, a kept one or the shadow
+# run's does not), and the EA shipped above what its 940 carried — the newest that counts (services/outbound.latest_940), else
+# the line's own quantity: what the 945's own check compares with.
+Order.applied_945s_sql = order_fact(select(func.count(Shipment.id)).where(
+    Shipment.order_id == Order.id, Shipment.applied.is_(True)).correlate_except(Shipment).scalar_subquery())
+_carried = (select(Document.body_json["locked"]["lines"]).join(DocumentLink, DocumentLink.document_id == Document.id)
+            .where(*_order_940, Document.file_status.not_in(("Cancelled", "Replaced")))
+            .order_by(Document.id.desc()).limit(1).correlate(Order).scalar_subquery())
+Order.over_shipped_ea_sql = order_fact(select(func.coalesce(func.sum(func.greatest(OrderLine.shipped_ea - func.coalesce(
+    func.nullif(cast(_carried[cast(OrderLine.line_no, String)]["qty_ea"].astext, Integer), 0), OrderLine.qty_ea), 0)), 0)).where(
+    OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.shipped_ea.is_not(None)).correlate(Order).scalar_subquery())
 Order.file_note_sql = order_fact(  # the latest 940's rejection (the 997's codes) or failure
     select(func.coalesce(Document.ack_detail, Document.error)).join(DocumentLink, DocumentLink.document_id == Document.id)
     .where(*_order_940).order_by(Document.id.desc()).limit(1).correlate_except(Document, DocumentLink).scalar_subquery())

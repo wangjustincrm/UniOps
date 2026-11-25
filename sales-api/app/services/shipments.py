@@ -10,9 +10,11 @@ or, during the shadow run, only recorded as what Sales would have done
 - Idempotent: a shipment is (document, set index); rows are (shipment, LX
   position, W12 position) — never the tracking number (FR-OB-25). Identical
   bytes under another name never get here (intake: Duplicate, FR-OB-71).
-- One 945 per order (D18): the first closes the fulfilment (Shipped); a short
-  shipment raises a task, no second 940. A second, different 945 is stored
-  with `applied = false`, the order goes On Hold with a task.
+- The first 945 closes the fulfilment (Shipped); a short shipment raises a task, no
+  second 940. A later, different 945 that brings what the first left of the 940 is added
+  (user 2026-11-25; app/services/later_part.py): the quantities add up, the tasks close,
+  nothing goes to Shopify. Any other later, different one is stored with
+  `applied = false` and the order goes On Hold with a task that says why.
 - The checks (FR-OB-25d) only notify: recorded on the shipment and logged as
   "945 validation" (P8 routes them). The exceptions the requirements name are
   tasks: an unmatched line (review, FR-OB-25a), no order (FR-OB-25c).
@@ -41,9 +43,9 @@ from typing import Any, Callable
 from sqlalchemy import func, select
 
 from app.domain.edi945 import OrderKey, Shipment945, order_key, parse_945
-from app.domain.lifecycle import spread
+from app.domain.later_part import JOB, PART
 from app.domain.orders import FROM_945
-from app.domain.row_matching import assign_rows, identifiers, line_identifiers
+from app.domain.row_matching import Group, Row, line_identifiers, match_rows
 from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import FULFILLMENT, INBOUND_FILE, SHIPPED_WITHOUT_OUR_940, Ack, InboundFile
 from app.domain.status import Fulfillment as F
@@ -61,9 +63,10 @@ from app.platform.commands import VersionArg, check_version, lock, touch
 from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
-from app.services import oplog
+from app.services import later_part, oplog
 from app.services.doc_links import link
 from app.services.intake import ConnectionSnapshot
+from app.services.later_part import Judged, shipment_content, stored_content
 from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
 from app.services.outbound import FULFILL_AT_997, latest_940
 from app.services.problems import (
@@ -94,12 +97,6 @@ class RowPlan:
     order_line_id: int | None
 
 
-def shipment_content(ship_date, rows) -> tuple:
-    """What a 945 says shipped, to tell a resend from a second shipment: the date and every row's
-    item, EA, lot, expiry and parcel, in any order."""
-    return ship_date, sorted((str(i or ""), int(q or 0), str(lot or ""), str(exp or ""), str(t or "")) for i, q, lot, exp, t in rows)
-
-
 @dataclass
 class Plan:
     """What applying one 945 set does — computed, not yet written."""
@@ -107,7 +104,9 @@ class Plan:
     order_id: int | None = None
     order_number: int | None = None
     match_note: str | None = None          # why no order (none / several / two letters)
-    second_of: list[str] = field(default_factory=list)   # the earlier 945s' file names
+    second_of: list[str] = field(default_factory=list)   # the earlier 945s' file names: stored, not applied
+    part_of: list[str] = field(default_factory=list)     # the earlier 945s' file names: it brings what they left
+    later: Judged | None = None                          # the rule's answer for either
     repeat_of: str | None = None           # an earlier 945 of the order with the same content (a resend)
     rows: list[RowPlan] = field(default_factory=list)
     lines: dict[str, dict[str, Any]] = field(default_factory=dict)  # line id → {item, ordered, shipped}
@@ -129,6 +128,7 @@ class ShipmentReport:
     shipments: int = 0
     no_order: int = 0
     second: int = 0
+    parts: int = 0  # a later 945 that brought what the first left
     repeats: int = 0  # the same shipment sent again: stored, nothing changed
     shadow: int = 0
     failed: int = 0
@@ -137,6 +137,24 @@ class ShipmentReport:
 
 def _check(kind: str, message: str, **values: Any) -> dict[str, Any]:
     return {"check": kind, "message": message, **{k: (str(v) if isinstance(v, (date, datetime)) else v) for k, v in values.items()}}
+
+
+def _row_fits_no_line(g: Group) -> dict[str, Any]:
+    return _check("row fits no line", f"{g.lines[0].item_code}: a 945 row is larger than any line has room for; "
+                  "it is linked to the largest line, the quantities are right by item",
+                  found=[r.qty for r in g.rows], expected=g.room)
+
+
+def queue_stopped(s, order: Order, applied: list[Shipment]) -> None:
+    """What a hold stopped, when the order goes back to Shipped: the Shopify write of its 945 goes now, once. Never for a later
+    945: nothing is written there for one."""
+    if order.source_type != "SHOPIFY":
+        return
+    later = {x.id for x in later_part.later_ones(applied)}
+    for sh in applied:
+        if sh.id not in later and sh.shopify_status in ("Not needed", "Suppressed"):
+            sh.shopify_status = "Pending"
+            OUTBOX.add(s, CLOSE if sh.shopify_fulfillment_id else FULFILL, {"shipment_id": sh.id}, entity=sh)
 
 
 class Shipments:
@@ -253,22 +271,21 @@ class Shipments:
             return p
         order = orders[0]
         p.order_id, p.order_number = order.id, order.order_number
-        earlier = (await s.execute(select(Document.remote_name, Shipment.id, Shipment.ship_date)
+        stored = (await s.execute(select(Document.remote_name, Shipment.id, Shipment.ship_date, Shipment.applied)
                                    .join(Shipment, Shipment.document_id == Document.id).where(
-            Shipment.order_id == order.id, Shipment.applied.is_(True), Shipment.document_id != doc.id))).all()
+            Shipment.order_id == order.id, Shipment.document_id != doc.id,
+            Shipment.applied.is_(True) if doc.shadow else Shipment.shadow.is_(False)).order_by(Shipment.id))).all()
         mine = shipment_content(sh.ship_date, [(r.item_code, r.qty_shipped, r.lot, r.expiry, r.tracking) for r in sh.rows])
-        for name, sid, ship_date in earlier:
-            rows = (await s.execute(select(ShipmentRow.item_code, ShipmentRow.qty_shipped_ea, ShipmentRow.lot, ShipmentRow.expiry,
-                                           ShipmentRow.tracking).where(ShipmentRow.shipment_id == sid))).all()
-            if shipment_content(ship_date, [tuple(r) for r in rows]) == mine:
+        for name, sid, ship_date, _ in stored:
+            if await stored_content(s, sid, ship_date) == mine:
                 # The warehouse sent the same shipment again (2026-11-10: 55 of Zoho's archive, all
-                # identical): kept with the order, nothing changes, nobody is asked.
+                # identical): kept with the order, nothing changes, nobody is asked. Also one that was kept
+                # and not applied (user 2026-11-25): a person decides, or decided, about the first.
                 p.repeat_of = name or "?"
                 p.rows = [RowPlan(r.lx_index, r.w12_index, None) for r in sh.rows]
                 return p
-        if earlier:
-            earlier = [n for n, _, _ in earlier]
-            p.second_of = [n or "?" for n in earlier]
+        if earlier := [n or "?" for n, _, _, applied in stored if applied]:
+            p.second_of = earlier
             p.status_to = F.ON_HOLD.value if FULFILLMENT.can(F(order.fulfillment_status), F.ON_HOLD) else None
             p.checks.append(_check("order state", "a second, different 945 for an order already shipped: not applied",
                                    found=sh.order_key_raw, expected="one 945 per order"))
@@ -286,36 +303,24 @@ class Shipments:
             item = items.get(ln.item_code)
             return line_identifiers(ln.item_code, ln.source, item.upc if item else None, item.gtin if item else None)
 
-        # Several lines of the same item (a Shopify order's "Trial Can" and "Can", both CF0102):
-        # app/domain/row_matching.py says which line each row belongs to; what each line shipped
-        # is the item's total spread over them, up to each line's quantity, and only what is left
-        # over is over-shipped. A shadow-run 945 may be one part of a split shipment (Radiant /
-        # Zoho: "9451a", "9451b"): what the earlier parts shipped counts first, so the parts add
-        # up. Never for an applied 945 (one 945 per order: D18).
+        # app/domain/row_matching.py says which line each row belongs to and what each line got. A
+        # shadow-run 945 may be one part of a split shipment (Radiant / Zoho: "9451a", "9451b"): what
+        # the earlier parts shipped counts first, so the parts add up.
         shipped: dict[int, int] = await self._shadow_shipped(s, order.id, doc.id) if doc.shadow else {}
-        groups: dict[tuple[int, ...], tuple[list[OrderLine], list[Any]]] = {}
-        for r in sh.rows:
-            ident = identifiers(r.item_code, r.upc)
-            cands = [ln for ln in lines if ident & ids_of(ln)]
-            if not cands:
-                p.rows.append(RowPlan(r.lx_index, r.w12_index, None))
-                p.unmatched.append(f"LX {r.lx_number or r.lx_index} W12 {r.item_code or r.upc}: {r.qty_shipped} EA")
-                p.checks.append(_check("extra or substituted item", f"{r.item_code or r.upc} was not on the 940",
-                                       found=r.item_code or r.upc, expected=None))
-                continue
-            groups.setdefault(tuple(ln.id for ln in cands), (cands, []))[1].append(r)
-        for cands, rows in groups.values():
-            room = [max(ordered.get(ln.id, 0) - shipped.get(ln.id, 0), 0) for ln in cands]
-            total = sum(r.qty_shipped for r in rows)
-            placed = assign_rows([((r.lx_index, r.w12_index), r.qty_shipped) for r in rows],
-                                 [(ln.id, n) for ln, n in zip(cands, room)])
-            p.rows += [RowPlan(r.lx_index, r.w12_index, placed.links[(r.lx_index, r.w12_index)]) for r in rows]
-            for ln, n in zip(cands, spread(total, room)):
-                shipped[ln.id] = shipped.get(ln.id, 0) + n
-            if placed.did_not_fit and total <= sum(room):  # beyond that it is an over-shipment (AC-OB-56)
-                p.checks.append(_check("row fits no line", f"{cands[0].item_code}: a 945 row is larger than any line has room for; "
-                                       "it is linked to the largest line, the quantities are right by item",
-                                       found=[r.qty_shipped for r in rows], expected=room))
+        groups, unmatched = match_rows([Row((r.lx_index, r.w12_index), r.item_code, r.upc, r.qty_shipped) for r in sh.rows], lines,
+                                       ids_of, lambda ln: max(ordered.get(ln.id, 0) - shipped.get(ln.id, 0), 0))
+        lx = {(r.lx_index, r.w12_index): r.lx_number or r.lx_index for r in sh.rows}
+        for r in unmatched:
+            p.rows.append(RowPlan(*r.at, None))
+            p.unmatched.append(f"LX {lx[r.at]} W12 {r.item_code or r.upc}: {r.qty} EA")
+            p.checks.append(_check("extra or substituted item", f"{r.item_code or r.upc} was not on the 940",
+                                   found=r.item_code or r.upc, expected=None))
+        for g in groups:
+            p.rows += [RowPlan(*r.at, g.links[r.at]) for r in g.rows]
+            for lid, n in g.shipped.items():
+                shipped[lid] = shipped.get(lid, 0) + n
+            if not g.fits and g.total <= sum(g.room):  # beyond that it is an over-shipment (AC-OB-56)
+                p.checks.append(_row_fits_no_line(g))
         for ln in lines:
             if not ln.item_code or not (items.get(ln.item_code) and items[ln.item_code].warehouse_held):
                 continue
@@ -383,7 +388,8 @@ class Shipments:
                                                       Shipment.set_index == set_index))).scalar_one_or_none() is not None:
             return None  # applied before: nothing changes (AC-OB-36)
         p = await self.plan(s, doc, sh)
-        order = await s.get(Order, p.order_id, with_for_update=True) if p.order_id else None
+        await s.flush()  # what an earlier set of the same file changed of it
+        order = await lock(s, Order, p.order_id) if p.order_id else None
         if order is not None and order.source_type == FROM_945:
             # Made from a shadow-run 945: Zoho's, also after the switch-off. A later part only joins it.
             shipment = await self._store(s, doc, set_index, sh, p, applied=False, shadow=True)
@@ -398,6 +404,8 @@ class Shipments:
                               f"{order.label}; stored with the order, nothing changed", run_id=run_id, document_id=doc.id,
                               order_id=order.id)
             return shipment
+        if p.second_of:
+            await self._later(s, doc, order, sh, p)
         shipment = await self._store(s, doc, set_index, sh, p, applied=order is not None and not p.second_of, shadow=False)
         report.shipments += 1
         for c in p.checks:
@@ -427,8 +435,16 @@ class Shipments:
             await self.tasks.raise_problem(s, SECOND_945, order.id, problem(
                 SECOND_945, f"Second 945 for order {order.label}",
                 f"Order {order.label} already shipped by "
-                f"{', '.join(p.second_of)}; {doc.remote_name} differs and was stored without changing any quantity. "
-                "The order is On Hold: compare both 945s and decide.", urgent=True))
+                f"{', '.join(p.second_of)}; {doc.remote_name} differs and was stored without changing any quantity"
+                + (f": {p.later.answer.refused}. " if p.later and p.later.answer.refused else ". ")
+                + "The order is On Hold: compare both 945s and decide.", urgent=True))
+            return shipment
+        if p.part_of:
+            report.parts += 1
+            uow.set_reason(f"945 {doc.remote_name}: the part {', '.join(p.part_of)} left")
+            await later_part.book(uow, self.tasks, order, p.later, shipment, await later_part.stored_rows(s, shipment.id),
+                                  f"945 {doc.remote_name}")
+            await s.flush()
             return shipment
         for lid, info in p.lines.items():
             line = await s.get(OrderLine, int(lid))
@@ -466,6 +482,23 @@ class Shipments:
             OUTBOX.add(s, FULFILL, {"shipment_id": shipment.id}, entity=shipment)
         await s.flush()
         return shipment
+
+    async def _later(self, s, doc: Document, order: Order, sh: Shipment945, p: Plan) -> None:
+        """A later, different 945 (its order locked): the plan it gets from the rule — a part that counts, or stored with why."""
+        rows = [Row((r.lx_index, r.w12_index), r.item_code, r.upc, r.qty_shipped) for r in sh.rows]
+        p.later = await later_part.judge(s, order, rows, by=JOB, for_update=True)
+        if p.later.answer.kind != PART:
+            if why := p.later.answer.refused:
+                p.checks[-1]["message"] += f" — {why}"
+            return
+        p.part_of, p.second_of, p.status_to, p.checks = p.second_of, [], None, []
+        p.rows = [RowPlan(*at, lid) for at, lid in p.later.links.items()]
+        p.short = p.later.short
+        p.lines = {str(ln.id): {"line_no": ln.line_no, "item_code": ln.item_code, "ordered_ea": p.later.carried[ln.id],
+                                "shipped_ea": p.later.now(ln)} for ln in p.later.lines}
+        p.checks += [_row_fits_no_line(g) for g in p.later.groups if not g.fits]
+        sent = await latest_940(s, order.id)
+        await self._checks(s, order, sh, sent, (sent.body_json or {}).get("locked") or {}, p)
 
     async def _store(self, s, doc: Document, set_index: int, sh: Shipment945, p: Plan, *, applied: bool,
                      shadow: bool) -> Shipment:
@@ -650,6 +683,15 @@ class Shipments:
             lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id))).scalars())
             return sh, order, ConnectionSnapshot.of(conn), lines
 
+    async def _later_ea(self, sh: Shipment) -> dict[int, int]:
+        """EA per order line that later 945s of the order brought: nothing is written to Shopify for them, so a first 945's
+        fulfillment that runs (or is retried) after them carries only its own."""
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            s = uow.session
+            later = [x.id for x in later_part.later_ones(await later_part.applied_945s(s, sh.order_id)) if x.id != sh.id]
+            return {lid: int(n) for lid, n in (await s.execute(select(ShipmentRow.order_line_id, func.sum(ShipmentRow.qty_shipped_ea)).where(
+                ShipmentRow.shipment_id.in_(later), ShipmentRow.order_line_id.is_not(None)).group_by(ShipmentRow.order_line_id))).all()} if later else {}
+
     @staticmethod
     def _tracking(sh: Shipment) -> dict[str, Any] | None:
         """Every distinct number of the 945 (one per parcel): one as `number`, several as `numbers`."""
@@ -677,10 +719,10 @@ class Shipments:
             else:
                 await self._record(sh.id, str(zoho["id"]), "already fulfilled; no tracking to add")
             return
-        shipped_units = {}
+        shipped_units, elsewhere = {}, await self._later_ea(sh)
         for ln in lines:  # EA back to Shopify units (the line's factor); a part unit is not fulfilled
             if ln.shipped_ea and ln.factor_ea:
-                shipped_units[str(ln.line_no)] = int(ln.shipped_ea // int(ln.factor_ea))
+                shipped_units[str(ln.line_no)] = int(max(ln.shipped_ea - elsewhere.get(ln.id, 0), 0) // int(ln.factor_ea))
         items = []
         for fo in await self.shopify.fulfillment_orders(conn, oid):
             if fo.get("status") not in ("open", "in_progress"):

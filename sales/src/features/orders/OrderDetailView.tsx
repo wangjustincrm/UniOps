@@ -77,7 +77,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   const tabs: RecordTab[] = !d ? [] : [
     ...extraTabs,
     { id: 'overview', label: 'Overview', tone: d.review_reason ? 'warning' : undefined, render: () => <OverviewTab o={d} /> },
-    { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (returned ?? 0) > 0 || live.short_shipped || (live.backordered_ea ?? 0) > 0 ? 'warning' : undefined, render: () => (
+    { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (returned ?? 0) > 0 || live.short_shipped || (live.over_shipped_ea ?? 0) > 0 || (live.backordered_ea ?? 0) > 0 ? 'warning' : undefined, render: () => (
       amending ? (
         <AmendForm o={d} onCancel={() => setAmending(false)} onSaved={async () => {
           setAmending(false)

@@ -4,9 +4,10 @@ import {
 import type { OrderRead } from './ordersApi'
 import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatus'
 
-/** The Status, and beside it Short shipped when the 945 left something unshipped: a mark, not a status.
+/** The Status, and beside it its marks (never a status of their own): Short shipped when the 945s left something unshipped,
+ *  "2 shipments" from two 945s that count, Over shipped with the EA above what the 940 carried.
  *  Each is a button: a tap says what it means (the API's status help; an On Hold order: its reason's). */
-export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'order_status_label' | 'short_shipped' | 'on_hold_reason'> }) {
+export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'order_status_label' | 'short_shipped' | 'applied_945s' | 'over_shipped_ea' | 'on_hold_reason'> }) {
   return (
     <Cluster as="span" inline gap={1} align="center">
       <HelpTip id={o.on_hold_reason ? `hold:${o.on_hold_reason}` : `status:${o.order_status}`} tourSlot="row.status" tourKey="status" label={`What "${o.order_status_label}" means`}>
@@ -14,6 +15,12 @@ export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'o
       </HelpTip>
       {o.short_shipped && (
         <HelpTip id="detail:Short shipped" label='What "Short shipped" means'><Badge variant="warning">Short shipped</Badge></HelpTip>
+      )}
+      {(o.applied_945s ?? 0) > 1 && (
+        <HelpTip id="detail:Shipments" label='What "shipments" counts'><Badge variant="info">{o.applied_945s} shipments</Badge></HelpTip>
+      )}
+      {(o.over_shipped_ea ?? 0) > 0 && (
+        <HelpTip id="detail:Over shipped" label='What "Over shipped" means'><Badge variant="warning">Over shipped {o.over_shipped_ea} EA</Badge></HelpTip>
       )}
     </Cluster>
   )

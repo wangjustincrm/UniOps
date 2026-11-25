@@ -210,6 +210,16 @@ class Order(Audited, Versioned, Base):
         return self.__dict__.get("parent_reference_sql")
 
     @property
+    def applied_945s(self) -> int:
+        """How many 945s of it count (`applied_945s_sql`): the "n shipments" mark, from 2."""
+        return int(self.__dict__.get("applied_945s_sql") or 0)
+
+    @property
+    def over_shipped_ea(self) -> int:
+        """EA shipped above what its 940 carried, over the lines (`over_shipped_ea_sql`): the Over shipped mark; 0 when none."""
+        return int(self.__dict__.get("over_shipped_ea_sql") or 0)
+
+    @property
     def returned_ea(self) -> int | None:
         """What the customer returned of what shipped, over the lines (`returned_ea_sql`); None when nothing."""
         v = self.__dict__.get("returned_ea_sql")
@@ -297,7 +307,7 @@ Order.total_amount_sql = order_fact(func.coalesce(Order.total, select(
 
 
 # The order's backordered EA: the sum over its lines with an applied 945 (NULL
-# before any) — the list's Not shipped EA column and view (labelled Backordered EA before 2026-11-12: a short shipment is never sent later).
+# before any) — the list's Not shipped EA column and view (labelled Backordered EA before 2026-11-12: no second 940 asks for the rest).
 # What the customer returned of what shipped, over the order's lines (the list's Returned EA).
 Order.returned_ea_sql = order_fact(select(func.nullif(func.sum(OrderLine.returned_ea), 0)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())

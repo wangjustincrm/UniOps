@@ -11,6 +11,9 @@ export const ordersClient = createResourceClient<OrderRead, never>(api, '/orders
 export const cancelOrder = (id: number, version: number, reason: string) => runOne(ordersClient, 'cancel', { id, version }, { reason })
 export const releaseHold = (id: number, version: number, to: string, reason: string) =>
   runOne(ordersClient, 'release_hold', { id, version }, { input: { to }, reason })
+/** Compare the 945s: the second one counts (what the first left, or more than ordered). */
+export const applyLater945 = (id: number, version: number, kind: 'part' | 'more', shipmentId: number, reason: string) =>
+  runOne(ordersClient, kind === 'part' ? 'apply_part_945' : 'apply_more_945', { id, version }, { input: { shipment_id: shipmentId }, reason })
 export const resolveRow = (shipmentId: number, rowId: number, orderLineId: number | null, reason: string | null) =>
   api.post<OrderRead>(`/orders/shipments/${shipmentId}/rows/${rowId}/resolve`, { order_line_id: orderLineId, reason })
 export const fetchOrder = (id: number) => api.get<OrderDetail>(`/orders/${id}`)

@@ -70,6 +70,8 @@ from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.orders import (
     InvoicePricesIn,
+    Later945,
+    Later945Item,
     ReturnedIn,
     LinePreview,
     LineRead,
@@ -98,6 +100,7 @@ from app.services.order_status_sql import (
     ORDER_STATUS_SQL,
     TO_CONFIRM_SQL,
 )
+from app.services.later_part import waiting_for_press
 from app.services.orders import BarcodeLookup, order_ref
 from app.services.return_total import refuse_more_than_shipped
 from app.services.settings import SETTINGS, SHADOW_MODE, automatic_runs_on
@@ -148,6 +151,7 @@ class OrderRepository(Repository[Order]):
               "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
               "source_name": "Sales channel", "connection_name": "Connection", "tags": "Tags", "original_total": "Original total",
               "total_refunded": "Refunded", "net_amount": "Net", "returned_ea": "Returned EA",
+              "applied_945s": "Shipments", "over_shipped_ea": "Over shipped EA",
               "delivery_due_date": "Delivery due", "manual_reason": "Reason", "parent_order_id": "Reorder of (no.)",
               "parent_reference": "Reorder of", "received_month": "Month", "ordered_ea": "EA",
               "payment_status": "Payment", "settled_on": "Settled on", "settled_reference": "Settlement ref",
@@ -165,6 +169,7 @@ class OrderRepository(Repository[Order]):
                    "backordered_ea")
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
                 "connection_name": Order.connection_name_sql, "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
+                "applied_945s": Order.applied_945s_sql, "over_shipped_ea": Order.over_shipped_ea_sql,
                 "delivery_due_date": Order.delivery_due_sql, "received_month": Order.received_month_sql,
                 "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql,
                 "payment_status": Order.payment_status_sql}
@@ -176,6 +181,8 @@ class OrderRepository(Repository[Order]):
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
                   "backordered_ea": FilterRule(BACKORDERED_SQL, kind="number", cast=int),
                   "returned_ea": FilterRule(Order.returned_ea_sql, kind="number", cast=int),
+                  "applied_945s": FilterRule(Order.applied_945s_sql, kind="number", cast=int),
+                  "over_shipped_ea": FilterRule(Order.over_shipped_ea_sql, kind="number", cast=int),
                   "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true"),
                   "received_month": FilterRule(Order.received_month_sql, kind="date"),
                   "ordered_ea": FilterRule(Order.ordered_ea_sql, kind="number", cast=int),
@@ -370,12 +377,23 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             hold_exits=hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold,
                                   cancelled_at_source=o.source_cancelled_at is not None,
                                   applied_945=any(x.applied for x in shipments)),
+            later_945=await self._later_945(o),
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
             **await self._payments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
             timeline=sorted(await timeline_of(s, "order", id) + await self._reorders(id),
                             key=lambda e: e.at, reverse=True),
         )
+
+    async def _later_945(self, o: Order) -> Later945 | None:
+        """The second 945 of a held order, with what the rule says of adding it."""
+        found = None if o.shadow else await waiting_for_press(self.uow.session, o)
+        if found is None:
+            return None
+        sh, _, j = found
+        return Later945(shipment_id=sh.id, kind=j.answer.kind, refused=j.answer.refused, items=[
+            Later945Item(item_code=i.item_code, carried_ea=i.carried, earlier_ea=i.earlier, this_ea=i.this, above_ea=i.above)
+            for i in j.answer.items])
 
     async def _reorders(self, id: int) -> list[TimelineEntry]:
         """The orders made as a reorder of this one, in its Activity: "Reorder MAN-1043 (Gift)" (user 2026-11-19)."""

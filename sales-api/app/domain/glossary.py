@@ -39,7 +39,8 @@ TERMS: dict[str, Help] = {
                           ("Edit invoice prices", "Edit invoice")),
     "SSCC": Help("The pallet's 18-digit label, from the 945."),
     "Lot / Expiry": Help("The production lot and its expiry date, from the 945."),
-    "Backordered": Help("Ordered − shipped (EA). The rest is not sent later (one 945 per order)."),
+    "Backordered": Help("Ordered − shipped (EA). No second 940 asks for the rest; a later 945 of a Shopify order that brings "
+                        "it is added."),
     # inventory
     "On hand": Help("At the warehouse now: received + returned − shipped ± adjustments."),
     "On hold": Help("Held by the warehouse, as its latest stock report says."),

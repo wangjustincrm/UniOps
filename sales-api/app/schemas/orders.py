@@ -58,6 +58,8 @@ class OrderRead(BaseModel):
     on_hold_reason: str | None = None
     order_status_label: str = ""
     short_shipped: bool = False
+    applied_945s: int = 0        # the 945s that count: "2 shipments" beside the Status, from 2
+    over_shipped_ea: int = 0     # EA shipped above what the 940 carried: Over shipped beside the Status
     status_detail: str | None = None
     status_detail_at: datetime | date | None = None
     status_detail_kind: str | None = None  # "countdown": a time that is coming, late once it passes
@@ -320,6 +322,22 @@ class RefundRead(BaseModel):
     adjustments: list[RefundAdjustmentRead] = []
 
 
+class Later945Item(BaseModel):
+    item_code: str
+    carried_ea: int   # on the 940
+    earlier_ea: int   # by the 945s that count already
+    this_ea: int      # in this 945
+    above_ea: int     # above the 940 once it counts
+
+
+class Later945(BaseModel):
+    """The 945 a person decides about in Compare the 945s (app/domain/later_part.py)."""
+    shipment_id: int
+    kind: str | None            # "part": what the first left; "more": more than the 940 carried; neither: refused
+    refused: str | None = None  # why it cannot be added
+    items: list[Later945Item] = []
+
+
 class OrderDetail(OrderRead):
     bill_to: dict[str, Any] | None = None
     contact: dict[str, Any] | None = None
@@ -338,6 +356,7 @@ class OrderDetail(OrderRead):
     cancellable: bool = False                # Cancel order is offered
     send_940: str | None = None              # Send 940 offers "send" / "replace"; nothing once it shipped
     hold_exits: list[str] = []               # where Release hold can take it (none: not On Hold, or a shadow order)
+    later_945: Later945 | None = None        # the second 945 that waits for a decision
     # Shopify finance (sales17): gateways, discount codes, the order's tax lines,
     # its transactions and refunds
     payment_gateways: list[str] | None = None

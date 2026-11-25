@@ -23,6 +23,8 @@ from app.domain.status import Invoice as Inv
 
 MAX_BODY = 320  # a popover, read on a phone: a few lines, never an article
 SHORT_SHIPPED = "Short shipped"
+OVER_SHIPPED = "Over shipped"
+SHIPMENTS = "Shipments"  # the "2 shipments" mark
 
 
 @dataclass(frozen=True)
@@ -69,8 +71,10 @@ HOLD_HELP: dict[str, Help] = {
         "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then "
         "Release hold: Cancel the order, Mark as shipped (if a 945 came), or Back to the status it held.",
         ("Release hold", "Cancel the order", "Mark as shipped", "Back to")),
-    CONFLICT_945: Help("Two 945s for this order. Compare the 945s: Keep the applied 945, or Cancel the order.",
-                       ("Compare the 945s", "Keep the applied 945", "Cancel the order")),
+    CONFLICT_945: Help("Two 945s for this order. Compare the 945s: add the second (Apply the missing part, or Apply, more than "
+                       "ordered), Keep the applied 945, or Cancel the order. Its task says why it was not added.",
+                       ("Compare the 945s", "Apply the missing part", "Apply, more than ordered", "Keep the applied 945",
+                        "Cancel the order")),
     SHOPIFY_FAILED: Help("Writing to Shopify failed. Retry it on the shipment: Shipments & lots → Retry in Shopify.",
                          ("Retry in Shopify",)),
     INVOICE_FAILED: Help("Sending the invoice failed. Open the invoice; fix it with Edit invoice if needed, then Send.",
@@ -100,8 +104,11 @@ DETAIL_HELP: dict[str, Help] = {
     SENDS: Help("When the 940 goes to the warehouse by itself, after the partner's delay."),
     DELIVERY_DUE: Help("The requested delivery date (for DC-routed partners, the do-not-deliver-after date). Confirm "
                        "delivery once it has been delivered; past this date it shows as late.", ("Confirm delivery",)),
-    SHORT_SHIPPED: Help("The 945 shipped less than ordered. Backordered = ordered − shipped (EA); the rest is not sent "
-                        "later (one 945 per order)."),
+    SHORT_SHIPPED: Help("The 945 shipped less than ordered. Backordered = ordered − shipped (EA); no second 940 asks for the "
+                        "rest. A later 945 of a Shopify order that brings it is added by itself."),
+    OVER_SHIPPED: Help("The 945s shipped more than the 940 carried: how many EA more, over the order's lines."),
+    SHIPMENTS: Help("How many 945s of this order count: what they shipped is added up. A resend, or one that was kept and not "
+                    "applied, is not counted."),
 }
 
 

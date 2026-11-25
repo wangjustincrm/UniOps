@@ -49,7 +49,7 @@ from app.services.problems import (
     ORDER_REVIEW,
     SECOND_945,
 )
-from app.services.shipments import CLOSE, FULFILL, OUTBOX
+from app.services.shipments import queue_stopped
 
 OPERATE = "sales.order.operate"
 STEP = "order"
@@ -122,11 +122,8 @@ class OrderActions(Service):
             FULFILLMENT.transition(o, F(to), actor=self.uow.actor, events=self.uow.events, reason=reason)
             await self._resolve(o)
             await oplog.write(self.s, "INFO", STEP, f"order {o.label} released to {to}: {reason}", order_id=o.id)
-            if to == F.SHIPPED and o.source_type == "SHOPIFY":
-                for sh in applied:  # what the hold stopped: the write goes now, once
-                    if sh.shopify_status in ("Not needed", "Suppressed"):
-                        sh.shopify_status = "Pending"
-                        OUTBOX.add(self.s, CLOSE if sh.shopify_fulfillment_id else FULFILL, {"shipment_id": sh.id}, entity=sh)
+            if to == F.SHIPPED:
+                queue_stopped(self.s, o, applied)
         await self.s.flush()
 
     @requires(OPERATE)

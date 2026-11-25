@@ -12,6 +12,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.later_part import MORE, PART, above_words
 from app.domain.order_rules import hold_exits
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -19,6 +20,7 @@ from app.models.orders import Order
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
+from app.services import later_part
 from app.services.generated import came_to
 from app.services.invoice_views import MANAGE as INVOICE_MANAGE
 from app.services.invoice_views import InvoiceService
@@ -34,6 +36,37 @@ async def cancel_check(uow, o: Order) -> BusinessError | None:  # noqa: ARG001
 
 async def cancel_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
     await OrderActions(uow, ctx.runtime.tasks)._run_cancel(o, ctx.reason)
+
+
+LATER_SENDS = "the Shopify write of the first 945, if its hold stopped it"
+
+
+class Later945In(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shipment_id: int  # the 945 the person compared
+
+
+def _later_945(kind: str):
+    """Compare the 945s: the 945 that waits on a held order is added (app/services/later_part.py), as the rule says it is."""
+    async def check(uow, o: Order) -> BusinessError | None:
+        if no := shadow_refusal(o):
+            return no
+        found = await later_part.waiting_for_press(uow.session, o)
+        if found is None:
+            return BusinessError("order.later_945", "no 945 of this order waits for a decision")
+        a = found[2].answer
+        if a.kind == kind:
+            return None
+        return BusinessError("order.later_945", f"this 945 cannot be added: {a.refused}" if a.kind is None else
+                             "this 945 is not more than ordered" if a.kind == PART else "this 945 is more than ordered: " + above_words(a.over))
+
+    async def run(uow, o: Order, data: Later945In, ctx) -> None:
+        await later_part.press(uow, ctx.runtime.tasks, o, data.shipment_id, kind, ctx.reason)
+    return check, run
+
+
+part_check, part_run = _later_945(PART)
+more_check, more_run = _later_945(MORE)
 
 
 class ReleaseTo(BaseModel):
@@ -153,6 +186,13 @@ ORDER_ACTIONS = ActionRegistry(OrderRepository, [
            confirm="It is Sales' own record: nothing is written to Shopify, the warehouse or a partner."),
     Action("release_hold", label="Release hold", permission=OPERATE, input=ReleaseTo, check=release_check, run=release_run, context=True, bulk=False,
            reason="required", sends="the Shopify write its hold stopped, when released to Shipped"),
+    # A second 945 (user 2026-11-25): nothing goes to Shopify for it and nobody is emailed. Two actions: the words differ.
+    Action("apply_part_945", label="Apply the missing part", permission=OPERATE, input=Later945In, check=part_check, run=part_run, context=True,
+           bulk=False, reason="required", sends=LATER_SENDS, confirm="Its quantities are added to what the first 945 shipped, and the order goes back to Shipped. "
+           "Nothing is written to Shopify for it and nobody is emailed about it."),
+    Action("apply_more_945", label="Apply, more than ordered", permission=OPERATE, input=Later945In, check=more_check, run=more_run, context=True,
+           bulk=False, reason="required", sends=LATER_SENDS, confirm="Only for goods that left beside the first 945. A corrected 945 of the same goods must not be "
+           "applied: the stock would be taken twice. Nothing is written to Shopify for it and nobody is emailed about it."),
     Action("fulfil_in_shopify", label="Fulfil in Shopify now", permission=OPERATE, check=fulfil_check, check_context=True, run=fulfil_run, context=True, bulk=False,
            sends="the fulfilment (or the archiving) of the order in Shopify"),
     Action("send_940", label="Send 940 now", permission=OPERATE, check=send_940_check, check_context=True, run=send_940_run, context=True, bulk=False,

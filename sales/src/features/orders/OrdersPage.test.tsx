@@ -740,6 +740,8 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     const row = (await screen.findByText('SHOP-9303')).closest('tr')!
     expect(row).toHaveTextContent('Short shipped')
     expect(row).toHaveTextContent('Shipped')
+    expect(row).not.toHaveTextContent('shipments')  // one 945: no mark
+    expect(row).not.toHaveTextContent('Over shipped')
     expect(row).not.toHaveTextContent('Confirm delivery')
     fireEvent.click(within(row).getByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
@@ -747,6 +749,16 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     expect(within(lines).getByText('Returned EA')).toBeInTheDocument()
     expect(within(lines).queryByText('Not shipped EA')).toBeNull()  // user 2026-11-12: EA and Shipped say it
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('150.00 CAD /CASE')  // the PO price, per order unit
+  })
+
+  it('two 945s that count and more than the 940 carried: their marks beside Short shipped', async () => {
+    api.list.mockResolvedValue({ items: [{ ...shipped, applied_945s: 2, over_shipped_ea: 3 }, { ...shipped, id: 6, source_reference: 'SHOP-9304', applied_945s: 1, over_shipped_ea: 0 }], total: 2 })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('SHOP-9303')).closest('tr')!
+    expect(row).toHaveTextContent('Short shipped')
+    expect(row).toHaveTextContent('2 shipments')
+    expect(row).toHaveTextContent('Over shipped 3 EA')
+    expect(screen.getByText('SHOP-9304').closest('tr')!).not.toHaveTextContent(/shipments|Over shipped/)
   })
 
   it('the invoice price is edited before the invoice: a price other than the PO needs a reason; it is saved per line', async () => {

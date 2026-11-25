@@ -67,7 +67,17 @@ export interface ShipmentRead {
   ack_sent?: string | null
 }
 
+/** The second 945 of a held order, and what the server's rule says of adding it. */
+export interface Later945 {
+  shipment_id: number
+  /** What the first 945 left, more than the 940 carried, or neither (`refused` says why). */
+  kind: 'part' | 'more' | null
+  refused?: string | null
+  items: { item_code: string; carried_ea: number; earlier_ea: number; this_ea: number; above_ea: number }[]
+}
+
 export interface OrderDetail extends OrderRead {
+  later_945?: Later945 | null
   /** Cancel order is open (the server's rule; never for a shadow order). */
   cancellable?: boolean
   /** What Send 940 offers (sales-api decides): nothing once the goods have left. */

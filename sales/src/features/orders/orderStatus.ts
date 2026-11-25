@@ -1,5 +1,5 @@
 import { formatDate, formatDateTime } from '@/platform-ui'
-import type { OrderRead, ShipmentRead } from './ordersApi'
+import type { Later945, OrderRead, ShipmentRead } from './ordersApi'
 
 type Tone = 'neutral' | 'info' | 'success' | 'warning'
 
@@ -37,6 +37,30 @@ export function shopifyBadges(o: ShopifyFacts): { label: string; tone: Tone }[] 
     ...(o.archived_in_shopify_at ? [{ label: 'Archived', tone: 'neutral' as Tone }] : []),
     ...(o.source_cancelled_at ? [{ label: 'Cancelled', tone: 'warning' as Tone }] : []),
   ]
+}
+
+/** What adding the second 945 does, in words: the two are different decisions (Compare the 945s). */
+export function laterChoice(x: Later945): { label: string; text: string; confirm: string } | null {
+  if (x.kind === 'part') {
+    const what = x.items.map((i) => `${i.item_code}: ${i.this_ea} EA`).join('; ')
+    return { label: 'Apply the missing part', text: `It brings what the applied 945 left (${what}). The quantities are added up and the order goes back to Shipped.`,
+      confirm: `${what} is added to what the applied 945 shipped, and the order goes back to Shipped. Nothing is written to Shopify for it and nobody is emailed about it.` }
+  }
+  if (x.kind === 'more') {
+    const above = x.items.filter((i) => i.above_ea > 0)
+      .map((i) => `${i.item_code}: ${i.above_ea} EA above the ${i.carried_ea} EA on the 940 (${i.earlier_ea + i.this_ea} EA in all)`).join('; ')
+    return { label: 'Apply, more than ordered', text: `It is more than the 940 carried. ${above}.`,
+      confirm: `${above}. Only for goods that left beside the applied 945: a corrected 945 of the same goods (another lot or date) must not be applied, the stock `
+        + 'would be taken twice. The order goes back to Shipped. Nothing is written to Shopify for it and nobody is emailed about it.' }
+  }
+  return null
+}
+
+/** The 945s that count, as one: what the second is compared with (two once a later part was added). */
+export function applied945(shipments: ShipmentRead[]): ShipmentRead | null {
+  const all = shipments.filter((s) => s.applied)
+  if (all.length < 2) return all[0] ?? null
+  return { ...all[0], ship_date: [...new Set(all.map((s) => s.ship_date ?? '—'))].join(', '), tracking: all.flatMap((s) => s.tracking ?? []), rows: all.flatMap((s) => s.rows) }
 }
 
 /** The two 945s of a conflict, side by side: what the applied one says against the second. */

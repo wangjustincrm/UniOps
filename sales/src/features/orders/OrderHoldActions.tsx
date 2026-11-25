@@ -4,8 +4,8 @@ import { useState } from 'react'
 import {
   ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, Stack, useActionSends,
 } from '@/platform-ui'
-import { cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
-import { compare945 } from './orderStatus'
+import { applyLater945, cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
+import { applied945, compare945, laterChoice } from './orderStatus'
 
 const OPERATE = 'sales.order.operate'
 const NOTHING_WRITTEN = 'This changes Sales only: nothing is written to Shopify, the warehouse or any partner. Tell them yourself if they need to know.'
@@ -32,12 +32,16 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
   const [cancelling, setCancelling] = useState(false)
   const [sheet, setSheet] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
   const releaseSends = useActionSends(ordersClient, 'release_hold')
+  const addSends = useActionSends(ordersClient, 'apply_part_945')  // the same for both
   const name = o.source_reference ?? o.order_number
   const exits = o.hold_exits ?? []
   const conflict = o.on_hold_reason === '945 Conflict'
-  const applied = o.shipments.find((s) => s.applied)
-  const second = [...o.shipments].reverse().find((s) => !s.applied && !s.shadow)
+  const applied = applied945(o.shipments)
+  const later = conflict ? o.later_945 ?? null : null  // the server's: which 945 waits, and what adding it would be
+  const second = o.shipments.find((s) => s.id === later?.shipment_id) ?? [...o.shipments].reverse().find((s) => !s.applied && !s.shadow)
+  const add = later && laterChoice(later)
   const picked = choice ? exitOf(choice, conflict) : null
   return (
     <>
@@ -55,9 +59,16 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
           : 'This order was cancelled at source after its 940. Decide where it goes.'}>
         <Stack gap={3}>
           {conflict && applied && second && (
-            <DiffTable ariaLabel="The two 945s" leftLabel={`Applied: 945 #${applied.document_id}`} rightLabel={`Second: 945 #${second.document_id}`}
+            <DiffTable ariaLabel="The two 945s" leftLabel={`Applied: 945 ${o.shipments.filter((s) => s.applied).map((s) => `#${s.document_id}`).join(', ')}`} rightLabel={`Second: 945 #${second.document_id}`}
               rows={compare945(applied, second)} />
           )}
+          {add && (
+            <Stack gap={1} align="start">
+              <ActionButton size="sm" permission={OPERATE} onAction={() => setAdding(true)}>{add.label}</ActionButton>
+              <Hint as="p">{add.text}</Hint>
+            </Stack>
+          )}
+          {later?.refused && <Hint as="p">The second 945 cannot be added here: {later.refused}.</Hint>}
           {exits.map((to) => {
             const e = exitOf(to, conflict)
             return (
@@ -69,6 +80,12 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
           })}
         </Stack>
       </FormSheet>
+      {add && later && (
+        <ConfirmAction open={adding} onOpenChange={setAdding} title={`${add.label}?`} description={add.confirm} confirmLabel={add.label}
+          reason={{ label: 'Why' }} errorMessages={errorMessages} done={{ key: `later945:${o.id}`, tone: 'success', text: `Order ${name}: the second 945 was added.` }}
+          invalidates={orderMoved(o.id)} record={o} sends={addSends} toStatusRow={isTestRunRefusal} after={() => setSheet(false)}
+          onConfirm={(why) => applyLater945(o.id, o.version, later.kind!, later.shipment_id, why)} />
+      )}
       <ConfirmAction open={choice !== null} onOpenChange={(v) => { if (!v) setChoice(null) }} title={picked ? `${picked.label}?` : ''} description={picked?.text}
         destructive={picked?.destructive} confirmLabel={picked?.label} reason={{ label: 'Why' }} errorMessages={errorMessages}
         done={{ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${choice}.` }} invalidates={orderMoved(o.id)}
