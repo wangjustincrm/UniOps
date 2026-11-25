@@ -264,9 +264,9 @@ class Transfers:
         doc = await self.generate(uow, t, reason=f"amended: {reason}")
         if live is not None:
             live.replaced_by_id = doc.id
-        for event in (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED):
-            await self.tasks.resolve_problem(s, event, t.id, by=uow.actor.user_id)
         problem = came_to(doc)[1]
+        for event in (EDI_943_TIMEOUT, EDI_943_REJECTED) if problem else (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED):
+            await self.tasks.resolve_problem(s, event, t.id, by=uow.actor.user_id)  # the new file's own failure stays open (T1)
         await oplog.write(s, "INFO", STEP, f"transfer {t.transfer_number} amended, {problem or 'a new 943 goes'}: {reason}", document_id=doc.id,
                           transfer_id=t.id, context={"before": before, "after": [(x["item_code"], int(x["qty_ea"])) for x in lines]})
         await s.flush()

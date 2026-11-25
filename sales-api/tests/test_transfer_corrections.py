@@ -8,6 +8,7 @@ from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.query import QuerySpec
 from app.schemas.transfers import AmendIn, ResolveIn
+from app.services.problems import EDI_943_REJECTED, EDI_943_TIMEOUT, TRANSFER_FAILED, problem
 from app.services.stock import StockItemService, sync
 from app.services.transfer_views import TransferService
 from tests.domain.test_transfers_edi import real_944
@@ -61,6 +62,49 @@ async def test_a_sent_943_is_amended_and_sent_again_and_the_real_944_then_matche
         with pytest.raises(BusinessError) as e:
             await TransferService(u).amend(p7.tr, x.id, AmendIn(lines=[{"item_code": "CF0092", "qty_ea": 1}], reason="again"), ANY_VERSION)
     assert e.value.code == "transfer.not_amendable"
+
+
+TASKS = (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED)
+
+
+async def _open(t):
+    return {r["type"].removeprefix("sales_"): r["description"] for r in await t.q("SELECT type, description FROM tasks WHERE NOT is_completed AND type = ANY(:t)",
+                                                                                  t=[f"sales_{x}" for x in TASKS])}
+
+
+async def _raise_old(t, x):
+    async with t.factory(SYSTEM_ACTOR) as u:
+        for e in TASKS:
+            await t.tr.tasks.raise_problem(u.session, e, x.id, problem(e, f"the old {e}", "what was wrong before"))
+        await u.commit()
+    assert set(await _open(t)) == set(TASKS)
+
+
+async def _amend(t, x, code, n):
+    async with t.factory(OP) as u:
+        out = await TransferService(u).amend(t.tr, x.id, AmendIn(lines=[{"item_code": code, "qty_ea": n}], reason=f"only {code}"), ANY_VERSION)
+        await u.commit()
+    return out
+
+
+async def test_a_failing_943_keeps_its_task_open_and_a_good_one_closes_the_old_ones(p7):  # noqa: F811
+    x = await sent_transfer(p7)
+    await _raise_old(p7, x)
+    await no_weight(p7)
+    assert (await _amend(p7, x, "CF0093", 12)).status == "Failed"
+    left = await _open(p7)  # only its own, saying what is wrong now
+    assert set(left) == {"transfer_failed"} and "failed its checks and was not sent" in left["transfer_failed"] and "CF0093" in left["transfer_failed"]
+    assert (await _amend(p7, x, "CF0093", 24)).status == "Failed" and set(await _open(p7)) == {"transfer_failed"}  # again: the same task
+    assert len(await p7.q("SELECT 1 FROM tasks WHERE type = 'sales_transfer_failed'")) == 1
+    assert (await _amend(p7, x, "CF0092", 600)).status == "943 Generated"
+    assert await _open(p7) == {}
+
+
+async def test_a_good_943_closes_every_old_task(p7):  # noqa: F811
+    x = await sent_transfer(p7)
+    await _raise_old(p7, x)
+    assert (await _amend(p7, x, "CF0092", 600)).problem is None
+    assert await _open(p7) == {}
 
 
 async def test_an_amendment_whose_new_943_fails_its_checks_says_so(p7):  # noqa: F811
