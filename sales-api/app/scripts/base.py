@@ -54,7 +54,7 @@ class ScriptArgs:
 
 
 def quiet_sql() -> None:
-    """The engine echoes statements when DEBUG is on, parameters included: never here."""
+    """No statement, and no parameter, from a script: also if the engine's echo or a Log levels override were on."""
     from app.db.session import engine
     engine.sync_engine.echo = False
     engine.sync_engine.hide_parameters = True  # nor in an error's text

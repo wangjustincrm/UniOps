@@ -12,7 +12,9 @@ CONNECT_ARGS = {"ssl": False, "server_settings": {"jit": "off"}}
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    # No SQL echo, also with DEBUG (user 2026-11-26: dev2 wrote ~1.4 GB a day of it to its container log, parameters
+    # included). To see the statements for a while: Health → Log levels, "sqlalchemy.engine" at INFO (it expires).
+    echo=False,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,

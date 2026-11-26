@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 
 def create_app() -> FastAPI:
     # One logging setup (user 2026-11-23): JSON lines on stdout at LOG_LEVEL; loud third-party loggers quiet;
-    # Health → Log levels raises one for a while (platform/log_levels.py). DEBUG's SQL echo keeps its own output.
+    # Health → Log levels raises one for a while (platform/log_levels.py), "sqlalchemy.engine" for the SQL (no echo, db/session.py).
     # The platform's options, once (the composition root ≈ ABP's Configure<…Options>): ABP's defaults except where a
     # user rule says otherwise (platform/options.py). The audit logs' store is set at startup (lifespan:
     # SqlAuditingStore on sales_audit_logs); before that, and in tests, nothing is saved (NullAuditingStore).
@@ -68,8 +68,6 @@ def create_app() -> FastAPI:
         LoggingOptions(level=str(settings.LOG_LEVEL).upper(), request_logger="sales.request"))
     from app.platform.log_levels import configure
     configure(str(settings.LOG_LEVEL).upper())
-    if settings.DEBUG:
-        logging.getLogger("sqlalchemy.engine.Engine").propagate = False  # echo prints it already: no second copy
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,

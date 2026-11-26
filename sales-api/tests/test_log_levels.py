@@ -31,6 +31,47 @@ def test_an_override_raises_a_logger_and_expires_back_to_its_own_level():
     levels.apply([], NOW)
 
 
+def test_no_sql_echo_and_the_override_is_what_prints_statements():
+    """User 2026-11-26: the engine never echoes, also with DEBUG; Health → Log levels "sqlalchemy.engine" at INFO prints the
+    statements for a while, and they stop when it expires; a script never prints one or its parameters."""
+    from app.db.session import engine
+    from app.scripts.base import quiet_sql
+    assert engine.sync_engine.echo is False
+    assert "propagate" not in pathlib.Path(__file__).parents[1].joinpath("app", "main.py").read_text()  # no echo-only workaround
+    seen: list[logging.LogRecord] = []
+
+    class Catch(logging.Handler):
+        def emit(self, record):
+            seen.append(record)
+    lg = logging.getLogger("sqlalchemy.engine")
+    catch = Catch()
+    lg.addHandler(catch)
+    try:
+        local = sa.create_engine("sqlite://", echo=False)
+
+        def run():
+            with local.connect() as c:
+                c.execute(sa.text("SELECT :secret AS x"), {"secret": "s3cr3t"}).scalar()
+        run()
+        assert not [r for r in seen if "SELECT" in r.getMessage()]                     # off by default
+        o = levels.override("sqlalchemy.engine", "INFO", 30, NOW, "Op", "a slow list")
+        levels.apply([o], NOW)
+        run()
+        assert any("SELECT ? AS x" in r.getMessage() for r in seen)                  # the override prints them
+        seen.clear()
+        levels.apply([o], NOW + timedelta(minutes=31))
+        run()
+        assert not [r for r in seen if "SELECT" in r.getMessage()]                     # expired: off again
+        levels.apply([o], NOW)
+        seen.clear()
+        quiet_sql()                                                                    # a script: nothing, also with an override set
+        run()
+        assert not seen and engine.sync_engine.echo is False and engine.sync_engine.hide_parameters is True
+    finally:
+        lg.removeHandler(catch)
+        levels.apply([], NOW + timedelta(days=2))
+
+
 def test_the_limits_and_a_bad_stored_value():
     assert levels.check("app.services", "DEBUG", 60) is None
     assert "always expires" in levels.check("app.services", "DEBUG", 24 * 60 + 1)
