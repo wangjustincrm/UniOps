@@ -7,7 +7,7 @@ import { groupKey } from '../primitives/groupKey'
 import { formatMoney } from '../primitives/format'
 import { columnMismatch, useListMeta, type FieldMeta, type ListMeta } from '../resource/listMeta'
 import {
-  MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
+  MAX_GROUP_KEYS, clampPageSize, groupBy, setFieldFilters, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
 } from '../resource/querySpec'
 import { MAX_LOCKED, normalizeView, viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
@@ -18,6 +18,9 @@ import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
 import { FilterChips } from './FilterChips'
 import { SearchPanel } from './SearchPanel'
+import { FieldSearch } from './FieldSearch'
+import { filterText } from './listView'
+import { Filter as FilterIcon } from 'lucide-react'
 import { specFromSorting } from './sorting'
 
 export interface QueryTableProps<T> {
@@ -151,6 +154,8 @@ function QueryTableView<T>({
   const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
   const layout = layoutProp ?? ownLayout
   const [panel, setPanel] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null })
+  // One field's search, at its column or at one of its Search chips (#32 a / c): which field, and where.
+  const [fieldSearch, setFieldSearch] = useState<{ field: string; at: string } | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)  // a header's column being dragged (grouping by drop)
 
   // The page's columns, then every other field /meta describes (hidden at first).
@@ -335,10 +340,11 @@ function QueryTableView<T>({
         leading={picker ? <TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark> : undefined}
         headerAddon={(id) => {
           const f = fields.get(id)
-          return f ? (
+          const searched = (spec.filters ?? []).filter((x) => x.field === id)
+          const menu = f ? (
             <ColumnMenu
               field={f}
-              onSearch={() => setPanel({ open: true, focus: id })}
+              onSearch={() => (panelFields.some((p) => p.name === id) ? setFieldSearch({ field: id, at: 'column' }) : setPanel({ open: true, focus: id }))}
               onSort={(desc) => change(sortBy(spec, id, desc))}
               onGroup={(desc) => change(groupBy(spec, id, desc))}
               canGroup={(spec.group ?? []).length < MAX_GROUP_KEYS || (spec.group ?? []).some((g) => g.field === id)}
@@ -346,6 +352,23 @@ function QueryTableView<T>({
               lock={{ locked: lockedIds.includes(id), full: lockedCount >= MAX_LOCKED, max: MAX_LOCKED, onToggle: () => toggleLock(id) }}
             />
           ) : null
+          // A searched column says so in its header: an icon with its words, never a colour alone (#32 A).
+          const mark = f && searched.length > 0 ? (
+            <span role="img" aria-label={`Searched: ${searched.map((x) => filterText(x, f)).join('; ')}`}
+              title={searched.map((x) => filterText(x, f)).join('; ')} className="inline-flex text-primary-700">
+              <FilterIcon aria-hidden className="h-3 w-3" />
+            </span>
+          ) : null
+          if (!f || !panelFields.some((p) => p.name === id)) return menu
+          return (
+            <FieldSearch field={f} filters={searched} suggest={suggest}
+              open={fieldSearch?.field === id && fieldSearch.at === 'column'}
+              onOpenChange={(open) => setFieldSearch(open ? { field: id, at: 'column' } : null)}
+              onApply={(next) => change(setFieldFilters(spec, id, next))}
+              onAllFields={() => { setFieldSearch(null); setPanel({ open: true, focus: id }) }}>
+              {menu}{mark}
+            </FieldSearch>
+          )
         }}
         leadingHeader={meta ? (
           <ColumnChooser
@@ -361,6 +384,20 @@ function QueryTableView<T>({
         ) : undefined}
         chips={meta ? (
           <FilterChips spec={spec} onSpecChange={change} fields={fields} locked={locked}
+            editor={(field, at, chip) => {
+              const f = fields.get(field)
+              if (!f || !panelFields.some((p) => p.name === field)) return chip
+              return (
+                <FieldSearch key={at} field={f} filters={(spec.filters ?? []).filter((x) => x.field === field)} suggest={suggest}
+                  open={fieldSearch?.field === field && fieldSearch.at === at}
+                  onOpenChange={(open) => setFieldSearch(open ? { field, at } : null)}
+                  onApply={(next) => change(setFieldFilters(spec, field, next))}
+                  onAllFields={() => { setFieldSearch(null); setPanel({ open: true, focus: field }) }}>
+                  {chip}
+                </FieldSearch>
+              )
+            }}
+            onEdit={(field, at) => setFieldSearch({ field, at })}
             groupDrop={{
               dragging,
               // The same rules as the column menu's Group by (MAX_GROUP_KEYS, the field's own groupable).

@@ -131,9 +131,10 @@ describe('QueryTable with /meta', () => {
 
   it('the search panel builds the query: values of a field OR, fields AND', async () => {
     const t = renderTable({ locked: ['status'] })
-    fireEvent.click(within(await openMenu('Item code')).getByText('Search'))  // opens on that field, ticked
+    fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
     expect(within(panel).queryByText('Status')).toBeNull()  // locked by the page
+    fireEvent.click(within(panel).getByLabelText('Item code'))
     await chooseOption(within(panel).getByLabelText('Item code: how to compare'), 'starts with')
     const code = within(panel).getByLabelText('Item code: value')
     fireEvent.change(code, { target: { value: 'CF' } })
@@ -292,5 +293,65 @@ describe('the search panel, by keyboard', () => {
     fireEvent.keyDown(price, { key: 'Enter' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull())
     expect(t.request().getAll('filter')).toContain('price:eq:5')
+  })
+})
+
+describe("a column's search and a Search chip (#32 a, c, A, E)", () => {
+  const openColumnSearch = async (label: string) => {
+    fireEvent.click(within(await openMenu(label)).getByText('Search'))
+    return screen.findByRole('dialog', { name: `Search ${label}` })
+  }
+
+  it('opens at the column with that field only; Enter adds, Enter again searches; focus back to the column; the header says it', async () => {
+    const t = renderTable({})
+    const pop = await openColumnSearch('Item code')
+    expect(within(pop).queryByLabelText('Price')).toBeNull()                       // only its own field
+    expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull()
+    expect(pop).toHaveTextContent('Enter adds · Enter again searches')
+    const code = within(pop).getByLabelText('Item code: value')
+    fireEvent.change(code, { target: { value: 'CF' } })
+    fireEvent.keyDown(code, { key: 'Enter' })
+    expect(screen.getByRole('dialog', { name: 'Search Item code' })).toBeInTheDocument()  // added, not searched
+    fireEvent.keyDown(code, { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search Item code' })).toBeNull())
+    expect(t.request().getAll('filter')).toEqual(['code:contains:CF'])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Item code column menu' })).toHaveFocus())
+    expect(screen.getByRole('img', { name: 'Searched: Item code contains "CF"' })).toBeInTheDocument()  // a mark with words, not a colour
+    expect(screen.queryByRole('img', { name: /Searched: Price/ })).toBeNull()
+    const again = await openColumnSearch('Item code')                                 // again: it starts from its search
+    expect(within(again).getByText('CF')).toBeInTheDocument()
+    fireEvent.click(within(again).getByRole('button', { name: 'Remove CF' }))
+    fireEvent.change(within(again).getByLabelText('Item code: value'), { target: { value: 'MK' } })
+    fireEvent.keyDown(within(again).getByLabelText('Item code: value'), { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(t.request().getAll('filter')).toEqual(['code:contains:MK']))  // replaced, not added
+  })
+
+  it('a Search chip opens its field there with its value; Clear then Search removes it; Escape changes nothing', async () => {
+    const t = renderTable({ initial: { page: 1, pageSize: 50, filters: [{ field: 'price', op: 'gte', value: '5' }, { field: 'code', op: 'contains', value: 'CF' }] } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Price ≥ "5"' }))
+    let pop = await screen.findByRole('dialog', { name: 'Search Price' })
+    expect(within(pop).getByLabelText('Price: value')).toHaveValue(5)
+    fireEvent.keyDown(pop, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search Price' })).toBeNull())
+    expect(screen.getByRole('button', { name: 'Price ≥ "5"' })).toHaveFocus()          // back to the chip
+    fireEvent.click(screen.getByRole('button', { name: 'Price ≥ "5"' }))
+    pop = await screen.findByRole('dialog', { name: 'Search Price' })
+    fireEvent.change(within(pop).getByLabelText('Price: value'), { target: { value: '7' } })
+    fireEvent.click(within(pop).getByRole('button', { name: 'Search' }))
+    await waitFor(() => expect(t.request().getAll('filter')).toEqual(['code:contains:CF', 'price:gte:7']))  // replaced, not added
+    fireEvent.click(await screen.findByRole('button', { name: 'Price ≥ "7"' }))
+    pop = await screen.findByRole('dialog', { name: 'Search Price' })
+    fireEvent.click(within(pop).getByRole('button', { name: 'Clear' }))
+    fireEvent.click(within(pop).getByRole('button', { name: 'Search' }))
+    await waitFor(() => expect(t.request().getAll('filter')).toEqual(['code:contains:CF']))  // the other field stays
+  })
+
+  it('All fields… opens the whole panel on that field', async () => {
+    renderTable({})
+    const pop = await openColumnSearch('Price')
+    fireEvent.click(within(pop).getByRole('button', { name: 'All fields…' }))
+    const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
+    expect(within(panel).getByLabelText('Price')).toBeChecked()
+    expect(screen.queryByRole('dialog', { name: 'Search Price' })).toBeNull()
   })
 })

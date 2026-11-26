@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { Chip } from '../primitives/Chip'
@@ -20,6 +20,10 @@ export interface FilterChipsProps {
    *  Its chips can be dragged to another level, or onto "Drop here to remove" to stop grouping by them
    *  (a drag that ends anywhere else changes nothing). */
   groupDrop?: { dragging: string | null; refuse: (field: string) => string | null; onGroup: (field: string) => void }
+  /** A Search chip's click (#32 c): edit that field's search where the chip is (`at` names the chip). */
+  onEdit?: (field: string, at: string) => void
+  /** What wraps a Search chip (the field's popover, anchored at it). */
+  editor?: (field: string, at: string, chip: ReactNode) => ReactNode
 }
 
 const GROUP_CHIP = 'text/x-group'
@@ -38,7 +42,7 @@ function useDropHover() {
  *  the priority; click flips the direction), GROUPING (chip order is the
  *  nesting), SEARCH (one chip per filter, and
  *  the quick search). Nothing active → nothing rendered. */
-export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, groupDrop }: FilterChipsProps) {
+export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, groupDrop, onEdit, editor }: FilterChipsProps) {
   const hover = useDropHover()
   const [movingGroup, setMovingGroup] = useState<string | null>(null)
   const label = (f: string) => fields.get(f)?.label ?? labelOf?.(f) ?? f
@@ -165,9 +169,13 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
           )}
           {filters.map(({ f, i }) => {
             const text = f.label ?? filterText(f, fields.get(f.field) ?? { name: f.field, label: label(f.field), type: 'text', enum_values: [], filterable: true, sortable: false, groupable: false, operators: [] })
-            return locked.includes(f.field)
-              ? <Chip key={i}>{text}</Chip>
-              : <Chip key={i} onRemove={() => onSpecChange(removeFilterAt(spec, i))} removeLabel={`Remove ${text}`}>{text}</Chip>
+            if (locked.includes(f.field)) return <Chip key={i}>{text}</Chip>
+            const at = `chip:${i}`
+            const chip = (
+              <Chip key={i} onClick={onEdit ? () => onEdit(f.field, at) : undefined} onRemove={() => onSpecChange(removeFilterAt(spec, i))}
+                removeLabel={`Remove ${text}`}>{text}</Chip>
+            )
+            return editor ? <span key={i} className="inline-flex">{editor(f.field, at, chip)}</span> : chip
           })}
         </div>
       )}
