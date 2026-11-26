@@ -63,6 +63,11 @@ describe('MultiSelect and the Enter rule', () => {
     expect(screen.queryByRole('button', { name: 'Remove To Fulfill' })).toBeNull()
   })
 
+  it('starts from a kept draft: what was typed and not added shows again', () => {
+    render(<MultiSelect label="Status" options={OPTIONS} values={[]} onChange={() => {}} draft="Kept" />)
+    expect(box()).toHaveValue('Kept')
+  })
+
   it('what matches nothing says so', async () => {
     render(<Form onSearch={vi.fn()} />)
     fireEvent.change(box(), { target: { value: 'zzz' } })

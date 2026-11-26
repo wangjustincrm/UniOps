@@ -21,6 +21,8 @@ export interface MultiSelectProps {
   freeText?: boolean
   /** The text typed and not yet added, for an owner that adds it on submit. */
   onDraftChange?: (draft: string) => void
+  /** The text typed and not added that it starts with (a draft kept while it was closed). */
+  draft?: string
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -31,10 +33,10 @@ export interface MultiSelectProps {
  *  chooses and closes (Enter on the closed box goes to the form), Backspace removes the last tag, Escape
  *  closes. A click chooses and leaves the list open for the next one. */
 export function MultiSelect({
-  options, values, onChange, label, loadOptions, freeText, onDraftChange, placeholder = 'Select…', disabled, className,
+  options, values, onChange, label, loadOptions, freeText, onDraftChange, draft, placeholder = 'Select…', disabled, className,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(draft ?? '')
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const box = useRef<HTMLDivElement>(null)

@@ -47,7 +47,7 @@ export function ValueInput({ field, draft, set, autoFocus, suggest }: {
   }
   if (field.suggestable && suggest) {
     return <MultiSelect label={label} options={[]} freeText values={draft.values} onChange={(values) => set({ values })}
-      onDraftChange={(v) => set({ draft: v })} placeholder="Type or choose…"
+      onDraftChange={(v) => set({ draft: v })} draft={draft.draft} placeholder="Type or choose…"
       loadOptions={(q) => suggest(field.name, q).then((found) => found.map((v) => ({ value: v, label: v })))} />
   }
   return (

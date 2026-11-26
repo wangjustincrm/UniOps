@@ -9,10 +9,12 @@ from app.services.payment_list import PaymentRowService
 from app.services.stock import StockItemService, StockLotService
 from app.services.order_views import OrderService
 from app.domain.status_help import payload as status_help
+from app.platform.relative_dates import as_meta as relative_dates
 out = {}
 for k, cls in (("orders", OrderService), ("payments", PaymentRowService), ("inventory/items", StockItemService), ("inventory/lots", StockLotService)):
     repo = cls.repo_cls
     out[k] = {"meta": {"version": cls.META_VERSION, "fields": repo.field_meta(cls.read_schema), "searchable": bool(repo.search_fields),
-              "default_sort": list(repo.default_sort), "client_columns": list(repo.client_columns), "views": [p.as_dict() for p in repo.presets]},
+              "default_sort": list(repo.default_sort), "client_columns": list(repo.client_columns), "views": [p.as_dict() for p in repo.presets],
+              "groups": repo.group_labels(), "relative_dates": relative_dates()},
               }
 print(json.dumps({**{k: v["meta"] for k, v in out.items()}, "help/texts": status_help()}, default=str, indent=1))

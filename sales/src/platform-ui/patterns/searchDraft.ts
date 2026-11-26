@@ -54,3 +54,18 @@ export function filterFrom(field: FieldMeta, d: Draft): Filter | null {
 
 /** The draft emptied, its field still ticked or not as asked. */
 export const cleared = (d: Draft, on = false): Draft => ({ ...d, ...EMPTY, on })
+
+/** What the panel holds while it is open, and while a record sheet has it closed (#32 b): the fields in use, in order, their
+ *  drafts, the Find text and the groups opened. Applied only with Search. */
+export interface PanelDraft {
+  rows: string[]
+  drafts: Record<string, Draft>
+  find: string
+  openGroups: string[]
+}
+
+export function draftOf(fields: FieldMeta[], filters: Filter[]): PanelDraft {
+  const rows = [...new Set(filters.map((f) => f.field))].filter((n) => fields.some((f) => f.name === n))
+  return { rows, drafts: Object.fromEntries(fields.filter((f) => rows.includes(f.name)).map((f) => [f.name, draftFrom(f, filters)])),
+    find: '', openGroups: [] }
+}

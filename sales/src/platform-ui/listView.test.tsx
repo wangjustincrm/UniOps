@@ -134,13 +134,13 @@ describe('QueryTable with /meta', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
     expect(within(panel).queryByText('Status')).toBeNull()  // locked by the page
-    fireEvent.click(within(panel).getByLabelText('Item code'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add Item code' }))
     await chooseOption(within(panel).getByLabelText('Item code: how to compare'), 'starts with')
     const code = within(panel).getByLabelText('Item code: value')
     fireEvent.change(code, { target: { value: 'CF' } })
     fireEvent.keyDown(code, { key: 'Enter' })
     fireEvent.change(code, { target: { value: 'S0' } })  // typed, not yet added: Search adds it
-    fireEvent.click(within(panel).getByLabelText('Price'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add Price' }))
     await chooseOption(within(panel).getByLabelText('Price: how to compare'), 'between')
     fireEvent.change(within(panel).getByLabelText('Price: from'), { target: { value: '1' } })
     fireEvent.change(within(panel).getByLabelText('Price: to'), { target: { value: '10' } })
@@ -153,7 +153,7 @@ describe('QueryTable with /meta', () => {
     const t = renderTable()
     fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
-    fireEvent.click(within(panel).getByLabelText('Status'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add Status' }))
     const values = within(panel).getByRole('combobox', { name: 'Status: value' })
     fireEvent.keyDown(values, { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'Pending' }))
@@ -164,8 +164,9 @@ describe('QueryTable with /meta', () => {
     expect(t.request().getAll('filter')).toEqual(['status:not_in:Pending|Review'])
     fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const again = await screen.findByRole('dialog', { name: 'Search on any field' })
-    expect(within(again).getByLabelText('Status')).toBeChecked()  // starts from the current filters
-    fireEvent.click(within(again).getByText('Clear'))
+    expect(within(again).getByRole('region', { name: 'In use' })).toHaveTextContent('Status')  // starts from the current filters
+    fireEvent.click(within(again).getByRole('button', { name: 'Clear all' }))
+    expect(within(again).getByText('Cleared: Search takes it off the list. ✕ takes the row away.')).toBeInTheDocument()  // struck, still there
     fireEvent.click(within(again).getByRole('button', { name: 'Search' }))
     expect(t.last().filters).toEqual([])
   })
@@ -260,7 +261,7 @@ describe('the search panel, by keyboard', () => {
     const t = renderTable({})
     fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
-    fireEvent.click(within(panel).getByLabelText('Item code'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add Item code' }))
     const code = within(panel).getByLabelText('Item code: value')
     fireEvent.change(code, { target: { value: 'CF' } })
     fireEvent.keyDown(code, { key: 'Enter' })  // adds the value; the panel stays
@@ -275,7 +276,7 @@ describe('the search panel, by keyboard', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
     expect(panel).toHaveTextContent('Enter adds · Enter again searches')
-    fireEvent.click(within(panel).getByLabelText('Item code'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add Item code' }))
     const code = within(panel).getByLabelText('Item code: value')
     fireEvent.change(code, { target: { value: 'CF9' } })
     fireEvent.keyDown(code, { key: 'Enter', ctrlKey: true })  // not added first: searched with it
@@ -287,7 +288,7 @@ describe('the search panel, by keyboard', () => {
     const t = renderTable({})
     fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
-    fireEvent.click(within(panel).getByLabelText('Price'))  // "=", one number
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add Price' }))  // "=", one number
     const price = await within(panel).findByLabelText('Price: value')
     fireEvent.change(price, { target: { value: '5' } })
     fireEvent.keyDown(price, { key: 'Enter' })
@@ -351,7 +352,7 @@ describe("a column's search and a Search chip (#32 a, c, A, E)", () => {
     const pop = await openColumnSearch('Price')
     fireEvent.click(within(pop).getByRole('button', { name: 'All fields…' }))
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
-    expect(within(panel).getByLabelText('Price')).toBeChecked()
+    expect(within(panel).getByRole('region', { name: 'In use' })).toHaveTextContent('Price')
     expect(screen.queryByRole('dialog', { name: 'Search Price' })).toBeNull()
   })
 })

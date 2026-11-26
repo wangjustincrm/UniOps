@@ -26,6 +26,8 @@ export interface FieldMeta {
   /** An amount of money (declared by the list), in the currency of the row's `currency_field`. */
   money?: boolean
   currency_field?: string | null
+  /** Its group in the search panel (the server's declaration; "Other" when the list declares none). */
+  group?: string
 }
 
 /** A system view: declared with the list on the server, not editable. */
@@ -42,6 +44,10 @@ export interface ListMeta {
   searchable: boolean
   default_sort: string[]
   views?: SystemView[]
+  /** The search panel's groups, in order ("Other" last). */
+  groups?: string[]
+  /** The periods a date search may name (the server's words). */
+  relative_dates?: { value: string; label: string; help: string }[]
   /** Columns only the page has (the server's views may name them beside the fields). */
   client_columns?: string[]
   /** What the list offers, and whether this person may use it (the server still checks each use). */

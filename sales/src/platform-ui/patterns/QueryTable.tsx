@@ -18,6 +18,8 @@ import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
 import { FilterChips } from './FilterChips'
 import { SearchPanel } from './SearchPanel'
+import { useNotices } from './notices'
+import type { PanelDraft } from './searchDraft'
 import { FieldSearch } from './FieldSearch'
 import { filterText } from './listView'
 import { Filter as FilterIcon } from 'lucide-react'
@@ -42,7 +44,10 @@ export interface QueryTableProps<T> {
   onSpecChange: (spec: QuerySpec) => void
   /** The resource whose `/meta` drives the column menus, chips and search
    *  panel (a ResourceClient). Without it the table has the page's columns only. */
-  resource?: { basePath: string; meta: () => Promise<ListMeta>; suggest?: (field: string, query: string) => Promise<string[]> }
+  resource?: { basePath: string; meta: () => Promise<ListMeta>; suggest?: (field: string, query: string) => Promise<string[]>
+    count?: (spec: QuerySpec) => Promise<{ total: number }> }
+  /** A record's sheet is open over the list: the search panel closes and keeps its draft. */
+  recordOpen?: boolean
   /** Fields the page filters on itself (not shown in the panel, not removable). */
   locked?: string[]
   /** Column ids the back end accepts as sort keys, beyond what /meta says. */
@@ -143,19 +148,40 @@ type ViewProps<T> = Omit<QueryTableProps<T>, 'resource'>
 
 function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNullable<QueryTableProps<T>['resource']> }) {
   // A failed /meta leaves the plain table (the page's columns, header sort, search).
-  return <QueryTableView {...props} meta={useListMeta(resource).data} suggest={resource.suggest} />
+  return <QueryTableView {...props} meta={useListMeta(resource).data} suggest={resource.suggest} count={resource.count} />
 }
 
 function QueryTableView<T>({
   columns, defaultHidden, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
-  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, onExportColumns, defaultLocked = 1, ...view
-}: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]> }) {
+  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, onExportColumns, defaultLocked = 1, count, recordOpen, ...view
+}: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]>
+  count?: (spec: QuerySpec) => Promise<{ total: number }> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
   const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
   const layout = layoutProp ?? ownLayout
   const [panel, setPanel] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null })
   // One field's search, at its column or at one of its Search chips (#32 a / c): which field, and where.
   const [fieldSearch, setFieldSearch] = useState<{ field: string; at: string } | null>(null)
+  // The panel's draft while a record sheet has it closed (#32 b): kept for the next open, dropped by Search or Esc.
+  const [panelDraft, setPanelDraft] = useState<PanelDraft | null>(null)
+  const kept = useRef<PanelDraft | null>(null)
+  useEffect(() => {
+    if (recordOpen && panel.open) { setPanelDraft(kept.current); setPanel({ open: false, focus: null }) }
+  }, [recordOpen])  // eslint-disable-line react-hooks/exhaustive-deps -- only when a sheet opens
+  // What Search found, said once its rows are here (#32 E): in the list's status row (a live region), else in one of its own.
+  const notices = useNotices()
+  const [said, setSaid] = useState('')
+  const saying = useRef(false)
+  const say = (n: number) => {
+    const text = `${n} ${n === 1 ? 'row matches' : 'rows match'} the search.`
+    if (notices.inScope) notices.notify({ tone: 'info', text, key: 'search' })
+    else setSaid(text)
+  }
+  useEffect(() => {
+    if (!saying.current) return
+    saying.current = false
+    say(total)
+  }, [view.rows])  // eslint-disable-line react-hooks/exhaustive-deps -- the rows of the new search
   const [dragging, setDragging] = useState<string | null>(null)  // a header's column being dragged (grouping by drop)
 
   // The page's columns, then every other field /meta describes (hidden at first).
@@ -421,14 +447,28 @@ function QueryTableView<T>({
             {panelFields.length > 0 && (
               <SearchPanel
                 open={panel.open}
-                onOpenChange={(open) => setPanel((p) => ({ open, focus: open ? p.focus : null }))}
+                onOpenChange={(open, how) => {
+                  if (!open && how !== 'kept') setPanelDraft(null)  // Esc, ✕ or the icon: the draft goes
+                  setPanel((p) => ({ open, focus: open ? p.focus : null }))
+                }}
                 fields={panelFields}
                 filters={(spec.filters ?? []).filter((f) => !locked.includes(f.field))}
+                draft={panelDraft}
+                onDraftChange={(dr) => { kept.current = dr }}
                 focusField={panel.focus}
                 suggest={suggest}
+                groups={meta?.groups}
+                shown={order.filter((id) => !hidden.includes(id))}
+                viewFilters={viewState ? (viewState.filters ?? []).filter((f) => !locked.includes(f.field)) : null}
+                count={count ? (next) => count({ ...spec, page: 1, filters: [...(spec.filters ?? []).filter((f) => locked.includes(f.field)
+                  || !panelFields.some((p) => p.name === f.field)), ...next] }).then((r) => r.total) : undefined}
                 onApply={(next: Filter[]) => {
                   const keep = (spec.filters ?? []).filter((f) => locked.includes(f.field) || !panelFields.some((p) => p.name === f.field))
-                  change({ ...spec, page: 1, filters: [...keep, ...next] })
+                  setPanelDraft(null)
+                  const filters = [...keep, ...next]
+                  if (JSON.stringify(filters) === JSON.stringify(spec.filters ?? [])) say(total)  // nothing changes: no new rows to wait for
+                  else saying.current = true
+                  change({ ...spec, page: 1, filters })
                 }}
               />
             )}
@@ -444,6 +484,7 @@ function QueryTableView<T>({
           onPageSizeChange: (size) => change({ ...latest.current, page: 1, pageSize: clampPageSize(size) }),
         }}
       />
+      {!notices.inScope && said && <div role="status" className="sr-only">{said}</div>}
     </>
   )
 }

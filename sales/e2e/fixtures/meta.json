@@ -11,7 +11,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "order_number",
@@ -34,7 +35,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "partner_code",
@@ -56,7 +58,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Partner"
    },
    {
     "name": "partner_name",
@@ -79,7 +82,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Partner"
    },
    {
     "name": "source_type",
@@ -102,7 +106,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "shipping_method",
@@ -113,7 +118,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "source_order_id",
@@ -135,7 +141,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "source_order_number",
@@ -158,7 +165,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Order"
    },
    {
     "name": "source_reference",
@@ -181,7 +189,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Order"
    },
    {
     "name": "order_date",
@@ -204,7 +213,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "requested_delivery_date",
@@ -227,7 +237,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "cancel_date",
@@ -250,7 +261,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "do_not_deliver_after",
@@ -273,7 +285,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "currency",
@@ -295,7 +308,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Money"
    },
    {
     "name": "total",
@@ -320,7 +334,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "subtotal",
@@ -345,7 +360,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "tax",
@@ -370,7 +386,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "shipping",
@@ -395,7 +412,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "discount",
@@ -420,7 +438,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "order_type",
@@ -442,7 +461,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "department",
@@ -464,7 +484,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "connection_name",
@@ -486,7 +507,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "total_amount",
@@ -512,7 +534,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "delivery_due_date",
@@ -523,7 +546,8 @@
     "sortable": true,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "order_status",
@@ -551,7 +575,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "on_hold_reason",
@@ -581,7 +606,56 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
+   },
+   {
+    "name": "applied_945s",
+    "label": "Shipments",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Shipments"
+   },
+   {
+    "name": "over_shipped_ea",
+    "label": "Over shipped EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Shipments"
    },
    {
     "name": "status_detail_kind",
@@ -592,7 +666,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "review_reason",
@@ -614,7 +689,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "historical",
@@ -630,7 +706,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "first_received_at",
@@ -653,7 +730,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "paid_at",
@@ -676,7 +754,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "archived_in_shopify_at",
@@ -699,7 +778,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "archive_suppressed",
@@ -715,7 +795,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "shopify_financial_status",
@@ -737,7 +818,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "shopify_fulfillment_status",
@@ -759,7 +841,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "shopify_fulfillment_id",
@@ -770,7 +853,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "source_cancelled_at",
@@ -793,7 +877,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "source_name",
@@ -815,7 +900,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "tags",
@@ -837,7 +923,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "original_total",
@@ -862,7 +949,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "total_refunded",
@@ -888,7 +976,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "net_amount",
@@ -914,7 +1003,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Money"
    },
    {
     "name": "returned_ea",
@@ -937,7 +1027,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Shipments"
    },
    {
     "name": "manual_reason",
@@ -959,7 +1050,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "parent_order_id",
@@ -982,7 +1074,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "parent_reference",
@@ -1004,7 +1097,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Order"
    },
    {
     "name": "received_month",
@@ -1027,7 +1121,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Dates"
    },
    {
     "name": "ordered_ea",
@@ -1050,7 +1145,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Shipments"
    },
    {
     "name": "payment_status",
@@ -1075,7 +1171,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Status"
    },
    {
     "name": "settled_on",
@@ -1098,7 +1195,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Settlement"
    },
    {
     "name": "settled_reference",
@@ -1120,7 +1218,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Settlement"
    },
    {
     "name": "settled_amount",
@@ -1146,7 +1245,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Settlement"
    },
    {
     "name": "settled_note",
@@ -1168,7 +1268,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Settlement"
    },
    {
     "name": "settled_at",
@@ -1191,7 +1292,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Settlement"
    },
    {
     "name": "settled_by_name",
@@ -1213,7 +1315,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Settlement"
    },
    {
     "name": "auto_settlement_id",
@@ -1224,7 +1327,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "auto_settlement_label",
@@ -1235,7 +1339,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "auto_settled_on",
@@ -1246,7 +1351,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "source_updated_at",
@@ -1269,7 +1375,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "version",
@@ -1280,7 +1387,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "created_at",
@@ -1303,7 +1411,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "updated_at",
@@ -1326,7 +1435,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    }
   ],
   "searchable": true,
@@ -1673,6 +1783,43 @@
      ]
     }
    }
+  ],
+  "groups": [
+   "Status",
+   "Order",
+   "Partner",
+   "Dates",
+   "Shipments",
+   "Money",
+   "Settlement",
+   "Other"
+  ],
+  "relative_dates": [
+   {
+    "value": "today",
+    "label": "Today",
+    "help": "The business day (Toronto)."
+   },
+   {
+    "value": "last_7_days",
+    "label": "Last 7 days",
+    "help": "Today and the 6 days before."
+   },
+   {
+    "value": "last_30_days",
+    "label": "Last 30 days",
+    "help": "Today and the 29 days before."
+   },
+   {
+    "value": "this_month",
+    "label": "This month",
+    "help": "From the 1st of this month up to today."
+   },
+   {
+    "value": "last_month",
+    "label": "Last month",
+    "help": "The whole month before this one."
+   }
   ]
  },
  "payments": {
@@ -1699,7 +1846,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "payment_row_id",
@@ -1710,7 +1858,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "order_id",
@@ -1733,7 +1882,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "order_ref",
@@ -1756,7 +1906,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Other"
    },
    {
     "name": "customer",
@@ -1778,7 +1929,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "processed_at",
@@ -1801,7 +1953,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "processed_week",
@@ -1824,7 +1977,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "processed_month",
@@ -1847,7 +2001,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "method",
@@ -1870,7 +2025,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "gateway",
@@ -1892,7 +2048,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "kind",
@@ -1917,7 +2074,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "status",
@@ -1940,7 +2098,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "amount",
@@ -1965,7 +2124,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "currency",
@@ -1987,7 +2147,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "sales_amount",
@@ -2013,7 +2174,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "refund_amount",
@@ -2039,7 +2201,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "net_amount",
@@ -2065,7 +2228,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "net_after_fee",
@@ -2091,7 +2255,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "gateway_ref",
@@ -2113,7 +2278,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "shopify_payment_id",
@@ -2135,7 +2301,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "order_source",
@@ -2156,7 +2323,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "financial_status",
@@ -2182,7 +2350,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "order_cancelled",
@@ -2198,7 +2367,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "issue",
@@ -2226,7 +2396,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "discount",
@@ -2251,7 +2422,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "shipping",
@@ -2276,7 +2448,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "order_total",
@@ -2301,7 +2474,8 @@
     ],
     "in_row": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "test",
@@ -2317,7 +2491,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "gateway_status",
@@ -2339,7 +2514,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "card_type",
@@ -2361,7 +2537,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "match_method",
@@ -2384,7 +2561,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "gateway_fee",
@@ -2410,7 +2588,8 @@
     "in_row": true,
     "summable": true,
     "money": true,
-    "currency_field": "currency"
+    "currency_field": "currency",
+    "group": "Other"
    },
    {
     "name": "settlement_id",
@@ -2433,7 +2612,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "settlement_ref",
@@ -2455,7 +2635,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "settled_at",
@@ -2478,7 +2659,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "settled_date",
@@ -2501,7 +2683,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "voided",
@@ -2517,7 +2700,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    }
   ],
   "searchable": true,
@@ -2727,6 +2911,36 @@
      ]
     }
    }
+  ],
+  "groups": [
+   "Other"
+  ],
+  "relative_dates": [
+   {
+    "value": "today",
+    "label": "Today",
+    "help": "The business day (Toronto)."
+   },
+   {
+    "value": "last_7_days",
+    "label": "Last 7 days",
+    "help": "Today and the 6 days before."
+   },
+   {
+    "value": "last_30_days",
+    "label": "Last 30 days",
+    "help": "Today and the 29 days before."
+   },
+   {
+    "value": "this_month",
+    "label": "This month",
+    "help": "From the 1st of this month up to today."
+   },
+   {
+    "value": "last_month",
+    "label": "Last month",
+    "help": "The whole month before this one."
+   }
   ]
  },
  "inventory/items": {
@@ -2741,7 +2955,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "item_code",
@@ -2764,7 +2979,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Other"
    },
    {
     "name": "description",
@@ -2786,7 +3002,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "received_ea",
@@ -2810,7 +3027,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "returned_ea",
@@ -2834,7 +3052,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "shipped_ea",
@@ -2858,7 +3077,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "adjusted_ea",
@@ -2882,7 +3102,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "report_diff_ea",
@@ -2906,7 +3127,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "on_hand_ea",
@@ -2930,7 +3152,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "hold_ea",
@@ -2954,7 +3177,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "allocated_ea",
@@ -2978,7 +3202,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "available_ea",
@@ -3002,7 +3227,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "to_radiant_ea",
@@ -3026,7 +3252,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "to_customer_ea",
@@ -3050,7 +3277,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "returning_ea",
@@ -3074,7 +3302,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "lots",
@@ -3097,7 +3326,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "first_expiry",
@@ -3120,7 +3350,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "days_to_first_expiry",
@@ -3143,7 +3374,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "last_move_at",
@@ -3166,7 +3398,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    }
   ],
   "searchable": true,
@@ -3174,7 +3407,37 @@
    "item_code"
   ],
   "client_columns": [],
-  "views": []
+  "views": [],
+  "groups": [
+   "Other"
+  ],
+  "relative_dates": [
+   {
+    "value": "today",
+    "label": "Today",
+    "help": "The business day (Toronto)."
+   },
+   {
+    "value": "last_7_days",
+    "label": "Last 7 days",
+    "help": "Today and the 6 days before."
+   },
+   {
+    "value": "last_30_days",
+    "label": "Last 30 days",
+    "help": "Today and the 29 days before."
+   },
+   {
+    "value": "this_month",
+    "label": "This month",
+    "help": "From the 1st of this month up to today."
+   },
+   {
+    "value": "last_month",
+    "label": "Last month",
+    "help": "The whole month before this one."
+   }
+  ]
  },
  "inventory/lots": {
   "version": 1,
@@ -3188,7 +3451,8 @@
     "sortable": false,
     "groupable": false,
     "operators": [],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "item_code",
@@ -3211,7 +3475,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Other"
    },
    {
     "name": "lot",
@@ -3234,7 +3499,8 @@
      "not_null"
     ],
     "in_row": true,
-    "suggestable": true
+    "suggestable": true,
+    "group": "Other"
    },
    {
     "name": "expiry",
@@ -3257,7 +3523,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "days_to_expiry",
@@ -3280,7 +3547,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "received_ea",
@@ -3304,7 +3572,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "returned_ea",
@@ -3328,7 +3597,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "shipped_ea",
@@ -3352,7 +3622,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "adjusted_ea",
@@ -3376,7 +3647,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "report_diff_ea",
@@ -3400,7 +3672,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "on_hand_ea",
@@ -3424,7 +3697,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "hold_ea",
@@ -3448,7 +3722,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "in_process_ea",
@@ -3472,7 +3747,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "available_ea",
@@ -3496,7 +3772,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "to_customer_ea",
@@ -3520,7 +3797,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "returning_ea",
@@ -3544,7 +3822,8 @@
      "not_null"
     ],
     "in_row": true,
-    "summable": true
+    "summable": true,
+    "group": "Other"
    },
    {
     "name": "to_radiant_ea",
@@ -3567,7 +3846,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "first_move_at",
@@ -3590,7 +3870,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    },
    {
     "name": "last_move_at",
@@ -3613,7 +3894,8 @@
      "is_null",
      "not_null"
     ],
-    "in_row": true
+    "in_row": true,
+    "group": "Other"
    }
   ],
   "searchable": true,
@@ -3687,6 +3969,36 @@
      "version": 1
     }
    }
+  ],
+  "groups": [
+   "Other"
+  ],
+  "relative_dates": [
+   {
+    "value": "today",
+    "label": "Today",
+    "help": "The business day (Toronto)."
+   },
+   {
+    "value": "last_7_days",
+    "label": "Last 7 days",
+    "help": "Today and the 6 days before."
+   },
+   {
+    "value": "last_30_days",
+    "label": "Last 30 days",
+    "help": "Today and the 29 days before."
+   },
+   {
+    "value": "this_month",
+    "label": "This month",
+    "help": "From the 1st of this month up to today."
+   },
+   {
+    "value": "last_month",
+    "label": "Last month",
+    "help": "The whole month before this one."
+   }
   ]
  },
  "help/texts": {
@@ -3742,7 +4054,7 @@
     "body": "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then Release hold: Cancel the order, Mark as shipped (if a 945 came), or Back to the status it held."
    },
    "945 Conflict": {
-    "body": "Two 945s for this order. Compare the 945s: Keep the applied 945, or Cancel the order."
+    "body": "Two 945s for this order. Compare the 945s: add the second (Apply the missing part, or Apply, more than ordered), Keep the applied 945, or Cancel the order. Its task says why it was not added."
    },
    "Shopify Update Failed": {
     "body": "Writing to Shopify failed. Retry it on the shipment: Shipments & lots \u2192 Retry in Shopify."
@@ -3762,7 +4074,13 @@
     "body": "The requested delivery date (for DC-routed partners, the do-not-deliver-after date). Confirm delivery once it has been delivered; past this date it shows as late."
    },
    "Short shipped": {
-    "body": "The 945 shipped less than ordered. Backordered = ordered \u2212 shipped (EA); the rest is not sent later (one 945 per order)."
+    "body": "The 945 shipped less than ordered. Backordered = ordered \u2212 shipped (EA); no second 940 asks for the rest. A later 945 of a Shopify order that brings it is added by itself."
+   },
+   "Over shipped": {
+    "body": "The 945s shipped more than the 940 carried: how many EA more, over the order's lines."
+   },
+   "Shipments": {
+    "body": "How many 945s of this order count: what they shipped is added up. A resend, or one that was kept and not applied, is not counted."
    }
   },
   "payments": {
@@ -3782,7 +4100,7 @@
     "body": "Shopify order: its payments are with the gateway (Authorize.Net, or in the PayPal balance) but in no settlement yet. It becomes Settled (auto) by itself; nothing to do."
    },
    "Not needed": {
-    "body": "No money is expected: cancelled and never invoiced, a Shopify order with nothing left to receive (fully refunded or free), or historical."
+    "body": "No money is expected: cancelled and never invoiced, a Shopify order with nothing left to receive (fully refunded or free), or an old (historical) order whose gateway does not say Settled."
    }
   },
   "terms": {
@@ -3838,7 +4156,7 @@
     "body": "The production lot and its expiry date, from the 945."
    },
    "Backordered": {
-    "body": "Ordered \u2212 shipped (EA). The rest is not sent later (one 945 per order)."
+    "body": "Ordered \u2212 shipped (EA). No second 940 asks for the rest; a later 945 of a Shopify order that brings it is added."
    },
    "On hand": {
     "body": "At the warehouse now: received + returned \u2212 shipped \u00b1 adjustments."

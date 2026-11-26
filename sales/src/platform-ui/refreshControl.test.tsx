@@ -182,7 +182,7 @@ describe('the toolbar: icons with tooltips, and popovers', () => {
     expect(screen.queryByRole('button', { name: 'Search' })).toBeNull()  // no text button any more
     fireEvent.click(icon)
     const pop = await screen.findByRole('dialog', { name: 'Search on any field' })
-    fireEvent.click(within(pop).getByRole('checkbox', { name: 'Code' }))
+    fireEvent.click(within(pop).getByRole('button', { name: 'Add Code' }))
     fireEvent.change(within(pop).getByLabelText('Code: value'), { target: { value: 'A' } })
     fireEvent.click(within(pop).getByRole('button', { name: 'Search' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Search on any field (1)' })).toBeInTheDocument())

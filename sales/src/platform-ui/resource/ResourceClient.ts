@@ -50,6 +50,8 @@ export interface AuditEntry {
 export interface ResourceClient<TRead, TCreate, TUpdate> {
   basePath: string
   list: (spec: QuerySpec) => Promise<Page<TRead>>
+  /** How many rows the query selects, nothing else (`GET <resource>/count`): the search panel's "Search (42)". */
+  count: (spec: QuerySpec) => Promise<{ total: number }>
   /** The list's fields, labels, types and operators (`GET <resource>/meta`). */
   meta: () => Promise<ListMeta>
   /** The values of a field already in the list, for the search panel. */
@@ -110,6 +112,7 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
   return {
     basePath: base,
     list: (spec) => http.get<Page<TRead>>(`${base}?${toSearchParams(spec)}`),
+    count: (spec) => { const p = toSearchParams(spec); p.delete('page'); p.delete('page_size'); return http.get<{ total: number }>(`${base}/count?${p}`) },
     meta: () => http.get<ListMeta>(`${base}/meta`),
     suggest: (field, query) => http.get<string[]>(`${base}/suggest?${new URLSearchParams({ field, q: query })}`),
     get: (id) => http.get<TRead>(`${base}/${id}`),

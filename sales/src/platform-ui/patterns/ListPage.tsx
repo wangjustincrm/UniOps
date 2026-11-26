@@ -277,6 +277,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         emptyTitle={props.emptyTitle}
         emptyText={props.emptyText}
         toolbar={selection.bar ?? toolbar}
+        recordOpen={!!current}
       />
       {renderDetail && current && (
         <RecordSheetHostContext.Provider value={host}>
