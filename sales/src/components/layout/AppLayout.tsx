@@ -2,6 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
+import { withTabActivity } from './tabRoutes'
+
+// Each page told whether its app tab is the shown one (a kept-alive tab does not auto-refresh).
+const TAB_ROUTES = withTabActivity(moduleRoutes)
 import {
   Home, Building2, Plug, FileText, Activity, ScrollText, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, CreditCard, Landmark, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell, Boxes,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
@@ -426,7 +430,7 @@ export default function AppLayout() {
           <RecoverFailedQueries />
           <div data-shell-tabbar className="contents"><TabBar /></div>
           <main className="relative flex-1 overflow-hidden">
-            <TabHost routes={moduleRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
+            <TabHost routes={TAB_ROUTES} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { hashKey, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { RecordSheetHostContext } from './recordSheetHost'
 import { changed, describeDiff, describeRecordChange, diffRows, type Key } from './refreshDiff'
 import { createNoticeStore, type NoticeStore, type NoticeTone } from './notices'
+import { PAGE_ACTIVITY_OPTIONS, usePageActive } from './pageActivity'
 
 // THE one way to refresh what a user sees (the user, 2026-11-03: one reusable
 // refresh). A click, an auto-refresh tick, a record sheet's refresh, and the
@@ -137,22 +138,32 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
   const refreshRef = useRef(refresh)
   useEffect(() => { refreshRef.current = refresh })
 
-  // Auto-refresh of its own: a tick every N seconds while the tab is shown;
-  // hidden, it waits; shown again, it ticks at once (TanStack's own interval is
-  // not used for this: refetchIntervalInBackground would be false anyway).
-  const seconds = typeof opts.auto === 'number' ? opts.auto : 0
+  // Paused while not seen: the browser tab hidden, or the app tab this page lives in not the active one (user 2026-11-26: a
+  // kept-alive tab never ticks). Coming back, what is older than PAGE_ACTIVITY_OPTIONS.reReadAfterMs is read again at once —
+  // the old rows stay on screen meanwhile, and the status row says what changed, as a Refresh does; fresher, nothing is read.
+  const active = usePageActive()
   const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.visibilityState === 'hidden')
   useEffect(() => {
     const onVis = () => setHidden(document.visibilityState === 'hidden')
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
-  const wasHidden = useRef(false)
+  const paused = hidden || !active
+  const wasPaused = useRef(paused)
+  const updatedAt = useRef(query.dataUpdatedAt)
+  useEffect(() => { updatedAt.current = query.dataUpdatedAt })
   useEffect(() => {
-    if (!seconds) return
-    if (hidden) { wasHidden.current = true; return }
-    const back = wasHidden.current
-    wasHidden.current = false
+    const back = wasPaused.current && !paused
+    wasPaused.current = paused
+    if (back && updatedAt.current && Date.now() - updatedAt.current > PAGE_ACTIVITY_OPTIONS.reReadAfterMs) {
+      void refreshRef.current()  // each page and sheet reads its own (no tick: a sheet does not follow its list here too)
+    }
+  }, [paused])
+
+  // Auto-refresh of its own: a tick every N seconds while it is seen (TanStack's own interval is not used for this).
+  const seconds = typeof opts.auto === 'number' ? opts.auto : 0
+  useEffect(() => {
+    if (!seconds || paused) return
     let t: ReturnType<typeof setTimeout> | undefined
     const plan = (delay: number) => {
       t = setTimeout(async () => {
@@ -161,9 +172,9 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
         plan(seconds * 1000)
       }, delay)
     }
-    plan(back ? 0 : seconds * 1000)
+    plan(seconds * 1000)
     return () => clearTimeout(t)
-  }, [seconds, hidden])
+  }, [seconds, paused])
 
   // A record sheet follows the list that opened it: the same tick, the same refresh.
   const follow = opts.auto === 'follow' ? (host?.autoTick ?? 0) : 0
