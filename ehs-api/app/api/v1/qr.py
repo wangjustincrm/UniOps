@@ -97,7 +97,11 @@ async def resolve(token: str, db: SessionDep, user: CanReportIncident):  # noqa:
             # form still wants the quick dialog.
             actions=(["inspection_form", "report_incident"]
                      if asset.inspection_template_id is not None
-                     else ["record_inspection", "report_incident"]),
+                     else ["record_inspection", "report_incident"])
+                    # ★ UAT 17: a fourth, "Report usage", where using the item
+                    # takes it out of service and it is still in service.
+                    + (["report_usage"] if asset_crud.reports_usage(asset)
+                       and asset.status == "in_service" else []),
         )
 
     document = await document_crud.by_qr_token(db, token)

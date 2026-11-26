@@ -14,6 +14,7 @@ the asset rather than a note on the inspection.
 """
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -517,6 +518,39 @@ async def back_in_service_if_done(db: AsyncSession, action, *, user_id: uuid.UUI
     await return_to_service(
         db, asset, user_id=user_id, action_id=action.id,
         reason=f"Corrective action {action.action_no} verified")
+
+
+# ★ UAT 17: "Report usage … will be used for fire extinguishers, and eye wash
+# stations". Matched on the kind of item as HSE named it on the register, so a
+# ladder or a harness is never put out of service by somebody saying it was used.
+_USED_UP_KINDS = re.compile(r"extinguisher|eye\s*-?\s*wash", re.IGNORECASE)
+
+
+def reports_usage(asset: SafetyAsset) -> bool:
+    """Whether using this item takes it out of service until it is refilled,
+    recharged or flushed."""
+    return bool(_USED_UP_KINDS.search(asset.asset_type_label or ""))
+
+
+async def report_usage(db: AsyncSession, asset: SafetyAsset, *, user_id: uuid.UUID,
+                       note: str | None = None) -> SafetyAsset:
+    """Somebody used it: out of service, and said so in its history. Back in
+    service the way any item is — by hand, from the register or My Actions."""
+    if not reports_usage(asset):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Only fire extinguishers and eye wash stations are reported as used")
+    if asset.status == "retired":
+        raise HTTPException(status.HTTP_409_CONFLICT, "This item has been retired")
+    if asset.status == "out_of_service":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This item is already out of service, so nothing more is needed")
+    asset.status = "out_of_service"
+    await status_event(db, asset, "out_of_service", by_id=user_id,
+                       reason="Used" + (f": {note}" if note else ""))
+    await db.flush()
+    return asset
 
 
 async def return_to_service(db: AsyncSession, asset: SafetyAsset, *,

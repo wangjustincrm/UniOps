@@ -229,6 +229,23 @@ async def return_to_service(
                                         user_id=_user_id(user), reason=payload.reason.strip())
 
 
+class UsageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/{asset_id}/report-usage", response_model=AssetOut)
+async def report_usage(
+    asset_id: uuid.UUID, payload: UsageIn, db: SessionDep, user: CanReportIncident,
+):
+    """★ UAT 17: the red "Report usage" button on a scanned fire extinguisher or
+    eye wash station. Whoever is standing in front of it — the same key as the
+    code itself — because the person who used it is who knows."""
+    return await crud.report_usage(db, await crud.get_asset(db, asset_id),
+                                   user_id=_user_id(user),
+                                   note=(payload.note or "").strip() or None)
+
+
 class RetireIn(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 

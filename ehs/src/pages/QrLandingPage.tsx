@@ -17,7 +17,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, ClipboardCheck, FileText, MapPin, TriangleAlert, Wrench } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
-import { Card, ErrorNote, primaryButton, secondaryButton } from '@/components/ui'
+import { Card, dangerButton, ErrorNote, inputClass, primaryButton, secondaryButton } from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 import { SignaturePad } from '@/components/SignaturePad'
 
@@ -180,6 +180,9 @@ export default function QrLandingPage() {
             Report an incident
           </button>
         )}
+        {t.actions.includes('report_usage') && (
+          <ReportUsage assetId={t.id} label={t.label} />
+        )}
       </div>
     </div>
   )
@@ -238,6 +241,65 @@ function AcknowledgeHere({ documentId, label }: { documentId: string; label: str
   )
 }
 
+
+/**
+ * ★ UAT 17: "Create a 4th option titled 'Report usage' … used for fire
+ * extinguishers, and eye wash stations to automatically flag the equipment as
+ * out of service and record it as such on the safety equipment registry. the
+ * button colour should be red."
+ *
+ * Asked once more before it is done: one tap in a pocket would otherwise take
+ * an eye wash station off the list of working ones.
+ */
+function ReportUsage({ assetId, label }: { assetId: string; label: string }) {
+  const [asking, setAsking] = useState(false)
+  const [note, setNote] = useState('')
+  const used = useMutation({
+    mutationFn: () => api.post(`/api/v1/safety-assets/${assetId}/report-usage`,
+                               { note: note.trim() || null }),
+  })
+  const name = label.split(' · ').slice(-1)[0]
+  if (used.isSuccess) {
+    return (
+      <p className="rounded-xl border border-danger-300 bg-danger-50 px-3.5 py-3 text-sm text-danger-800">
+        {name} is now out of service on the safety equipment register. It goes back in
+        service once it has been refilled or checked.
+      </p>
+    )
+  }
+  if (!asking) {
+    return (
+      <button type="button" className={dangerButton} onClick={() => setAsking(true)}>
+        <TriangleAlert className="h-4 w-4" aria-hidden />
+        Report usage
+      </button>
+    )
+  }
+  return (
+    <div className="rounded-xl border border-danger-300 bg-white p-3.5">
+      <p className="text-sm font-semibold text-neutral-900">Was {name} used?</p>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        It is marked out of service until it is refilled or checked.
+      </p>
+      <label className="mt-2 block text-xs font-medium text-neutral-700">
+        What happened (optional)
+        <input className={`${inputClass} mt-1`} value={note} maxLength={500}
+               onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <ErrorNote error={used.error} />
+      <div className="mt-3 flex gap-2">
+        <button type="button" className={`${secondaryButton} flex-1`} disabled={used.isPending}
+                onClick={() => setAsking(false)}>
+          Cancel
+        </button>
+        <button type="button" className={`${dangerButton} flex-1`} disabled={used.isPending}
+                onClick={() => { if (!used.isPending) used.mutate() }}>
+          {used.isPending ? 'Saving…' : 'Yes, it was used'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Opening the form a piece of equipment is checked on.
