@@ -227,6 +227,9 @@ async def test_ac73_a_second_different_945_is_stored_not_applied_and_holds_the_o
     assert (await p5.q("SELECT shipped_ea FROM sales_order_lines"))[0]["shipped_ea"] == 12  # unchanged
     [t] = await tasks(p5, "second_945")
     assert "first.edi" in t and "second.edi" in t
+    [c] = (await p5.q("SELECT checks FROM sales_shipments ORDER BY id DESC LIMIT 1"))[0]["checks"]
+    assert c["message"].startswith("a later, different 945 of an order already shipped: not added — ")  # and why (D24)
+    assert c["expected"] == "a Shopify order's part that its 940 still carried (D24)"
 
 
 async def test_the_same_945_sent_again_is_kept_with_the_order_and_changes_nothing(p5):  # Zoho archive: 55 resends, 2026-11-10

@@ -287,8 +287,8 @@ class Shipments:
         if earlier := [n or "?" for n, _, _, applied in stored if applied]:
             p.second_of = earlier
             p.status_to = F.ON_HOLD.value if FULFILLMENT.can(F(order.fulfillment_status), F.ON_HOLD) else None
-            p.checks.append(_check("order state", "a second, different 945 for an order already shipped: not applied",
-                                   found=sh.order_key_raw, expected="one 945 per order"))
+            p.checks.append(_check("order state", "a later, different 945 of an order already shipped: not added",
+                                   found=sh.order_key_raw, expected="a Shopify order's part that its 940 still carried (D24)"))
             p.rows = [RowPlan(r.lx_index, r.w12_index, None) for r in sh.rows]
             return p
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id,

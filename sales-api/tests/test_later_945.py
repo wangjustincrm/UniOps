@@ -170,7 +170,8 @@ async def test_more_than_the_940_is_held_by_the_job_with_why(p5):  # noqa: F811
     [x] = await tasks(p5, "second_945")
     assert "CF0010: 1 EA above the 4 on the 940 (5 with this 945)" in x and "On Hold" in x
     [c] = (await p5.q("SELECT checks FROM sales_shipments WHERE id = 2"))[0]["checks"]
-    assert "above the 4 on the 940" in c["message"]
+    assert c["message"].startswith("a later, different 945 of an order already shipped: not added — ") and "above the 4 on the 940" in c["message"]
+    assert c["expected"] == "a Shopify order's part that its 940 still carried (D24)" and "one 945 per order" not in str(c)
     d = await read(p5, oid)
     assert (d.applied_945s, d.over_shipped_ea, d.later_945.kind) == (1, 0, "more")
     await no_write(p5)
