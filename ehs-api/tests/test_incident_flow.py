@@ -921,10 +921,12 @@ class TestWhichTypesAskHowBadlySomebodyWasHurt:
         # injured it is no longer a near miss".
         assert types["near_miss"]["asks_injury_class"] is False
         assert types["near_miss_food_safety"]["asks_injury_class"] is False
+        # ★ UAT 17: nor the equipment form — an injury goes on the medical form.
+        assert types["property_damage"]["asks_injury_class"] is False
+        assert types["environmental"]["asks_injury_class"] is False
 
         for code in ("report_only", "first_aid", "medical_aid", "lost_time",
-                     "property_damage", "occupational_illness",
-                     "environmental", "security", "drug_alcohol", "unconscious"):
+                     "occupational_illness", "security", "drug_alcohol", "unconscious"):
             assert types[code]["asks_injury_class"] is True, code
 
     async def test_a_fatality_is_recorded_as_lost_time_without_being_asked(self, hse_manager):
@@ -939,9 +941,11 @@ class TestWhichTypesAskHowBadlySomebodyWasHurt:
         assert made.json()["injury_class"] == "lost_time"
         assert made.json()["mol_reportable"] is True
 
-    async def test_property_damage_can_carry_an_injury_now(self, hse_manager):
-        """A machine can be wrecked and somebody hurt in the same event, and the
-        type used to make the second half unrecordable."""
+    async def test_property_damage_records_no_injury(self, hse_manager):
+        """★ UAT 17 reverses round 5 here: "on the 'equipment was involved'
+        incident form, remove the 'How badly was the person hurt' field. If
+        someone was hurt it would be recorded under the 'someone was hurt'
+        incident form." """
         _, client = hse_manager
         made = await client.post("/api/v1/incidents", json={
             "form_kind": "equipment", "title": "Forklift into the racking",
@@ -950,7 +954,7 @@ class TestWhichTypesAskHowBadlySomebodyWasHurt:
             "injury_class": "medical_aid",
         })
         assert made.status_code in (200, 201), made.text
-        assert made.json()["injury_class"] == "medical_aid"
+        assert made.json()["injury_class"] is None
 
     async def test_nobody_hurt_is_recorded_as_no_injury_class(self, hse_manager):
         """★ The other half, which keeps the injury figures honest.
@@ -1136,13 +1140,13 @@ class TestTheInjuryPickerOpensOnTheRightAnswer:
         assert types["fatality"]["default_injury_class"] is None
 
     async def test_the_types_that_ask_without_a_default_still_ask(self, hse_manager):
-        """A damaged machine usually hurt nobody, but can turn out to have — so
-        the question is asked with nothing pre-chosen. (A near miss is no longer
-        asked: round 12, Q4.)"""
+        """The medical form's types that imply no severity ask with nothing
+        pre-chosen. (A near miss is no longer asked: round 12, Q4; nor the
+        equipment form: UAT 17.)"""
         _, client = hse_manager
         types = {t["code"]: t for t in
                  (await client.get("/api/v1/incidents/types")).json()}
-        for code in ("property_damage", "environmental"):
+        for code in ("occupational_illness", "security", "drug_alcohol"):
             assert types[code]["asks_injury_class"] is True
             assert types[code]["default_injury_class"] is None
 

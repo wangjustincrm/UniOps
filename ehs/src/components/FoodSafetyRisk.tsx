@@ -67,6 +67,11 @@ export function useFoodSafetyAssessments(incidentId: string, enabled = true) {
 export const assessButton =
   'flex min-h-[40px] w-full items-center justify-center rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700'
 
+/** ★ UAT 17: "Make the 'Start the investigation' and the 'edit the
+ * investigation' buttons dark blue" — the risk button's size, in dark blue. */
+export const investigateButton =
+  'flex min-h-[40px] w-full items-center justify-center rounded-lg bg-info-800 px-4 text-sm font-semibold text-white hover:bg-info-900'
+
 /**
  * ★ UAT 14: both assess buttons green, on one line — the page sets this
  * beside the risk assessment. ★ UAT 15: "place the information under the

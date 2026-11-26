@@ -107,13 +107,16 @@ TYPES: tuple[IncidentType, ...] = (
     IncidentType("lost_time", "Lost Time as defined by WSIB", "medical",
                  injury_class="lost_time", injury_detail=True,
                  asks_injury_class=True, default_injury_class="lost_time"),
-    IncidentType("property_damage", "Property / Asset Damage", "equipment",
-                 asks_injury_class=True),
+    # ★ UAT 17: "on the 'equipment was involved' incident form, remove the
+    # 'How badly was the person hurt' field. If someone was hurt it would be
+    # recorded under the 'someone was hurt' incident form." Not asked, and
+    # stored as no injury, as a near miss is.
+    IncidentType("property_damage", "Property / Asset Damage", "equipment"),
     IncidentType("occupational_illness", "Occupational Illness", "medical",
                  category_code="occupational_illness", asks_injury_class=True,
                  injury_detail=True),
     IncidentType("environmental", "Environmental Incident", "equipment",
-                 category_code="environmental_incident", asks_injury_class=True),
+                 category_code="environmental_incident"),
     IncidentType("security", "Security Incident", "medical",
                  category_code="security_incident", asks_injury_class=True),
     IncidentType("drug_alcohol", "Drug / Alcohol Related", "medical",
@@ -132,6 +135,14 @@ TYPES: tuple[IncidentType, ...] = (
 )
 
 BUILTIN = {t.code: t for t in TYPES}
+
+# The forms on which nobody is recorded as hurt: a near miss (round 12, Q4) and
+# the equipment form (UAT 17) — an injury is reported on the medical form.
+NO_INJURY_FORMS = frozenset({"near_miss", "equipment"})
+
+
+def records_no_injury(form_kind: str | None) -> bool:
+    return form_kind in NO_INJURY_FORMS
 CUSTOM_PREFIX = "custom_"
 
 # ★ HSE's own types (Settings → Incident types), read from the database at the
@@ -190,8 +201,9 @@ async def load(db) -> None:
         fresh[r.code] = IncidentType(
             r.code, r.label, r.form_kind,
             # The form asks how badly someone was hurt, as the built-in types
-            # on that form do; a near miss does not (Q4).
-            asks_injury_class=r.form_kind != "near_miss",
+            # on that form do; a near miss (Q4) and the equipment form (UAT 17)
+            # do not.
+            asks_injury_class=not records_no_injury(r.form_kind),
             injury_detail=r.form_kind == "medical",
             pick_permission=r.pick_permission, custom=True,
             category_id=r.category_id, category_label=r.category_label)

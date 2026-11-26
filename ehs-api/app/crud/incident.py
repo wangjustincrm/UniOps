@@ -125,8 +125,9 @@ async def create(
         # ★ Three outcomes, not two: a class the reporter chose, an explicit
         # "nobody was hurt", and no answer at all — which falls back to what the
         # type implies.
-        if payload.injury_class == "none" or t.form_kind == "near_miss":
-            # Round 12, Q4: a near miss hurt nobody, whatever was sent.
+        if payload.injury_class == "none" or incident_type.records_no_injury(t.form_kind):
+            # Round 12, Q4: a near miss hurt nobody, whatever was sent; nor, from
+            # UAT 17, does the equipment form record an injury.
             incident.injury_class = None
         else:
             incident.injury_class = payload.injury_class or t.injury_class
@@ -546,7 +547,8 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
         chosen = new.default_injury_class
     # "none" is how the picker says no injury; it is stored as no class, as
     # `create` does — stored literally it counted as an injury.
-    incident.injury_class = None if chosen == "none" or new.form_kind == "near_miss" else chosen
+    incident.injury_class = (None if chosen == "none"
+                             or incident_type.records_no_injury(new.form_kind) else chosen)
     # A Ministry flag HSE set by classifying, with its reason, stays theirs.
     incident.mol_reportable = new.mol_reportable or bool(incident.mol_reportable_reason)
     if new.category_code:

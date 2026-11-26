@@ -276,7 +276,8 @@ export default function IncidentReportPage() {
           nature_of_injury_label: form.natureOfInjury?.label ?? null,
           treatment: form.treatment || null,
           sent_offsite: form.sentOffsite,
-          follow_up: form.followUp || null,
+          // ★ UAT 17: "remove the 'Anything owed afterwards' field". Older
+          // reports keep what they recorded.
         }]
         // The department of the person hurt is the department of the incident.
         // HSE asked for this so nobody picks a name and then picks the
@@ -286,10 +287,9 @@ export default function IncidentReportPage() {
       // ★ A row of its own rather than a column on the injured person: more than
       // one responder is normal, and the register answers "who treated this"
       // with all of them.
-      // ★ Review (uniops-8b): only while somebody is named as hurt — the
-      // treatment block, first aider included, is hidden once the injured
-      // person is cleared, and a hidden answer is not one the reporter gave.
-      if (form.kind === 'medical' && namedInjured && form.firstAider.name.trim()) {
+      // ★ UAT 17: asked above "Who was hurt" and always shown on the medical
+      // form, so sent whenever it is answered there.
+      if (form.kind === 'medical' && form.firstAider.name.trim()) {
         body.persons = [...((body.persons as unknown[]) ?? []), {
           role: 'first_aider',
           person_name: form.firstAider.name.trim(),
@@ -467,7 +467,11 @@ export default function IncidentReportPage() {
       {/* Round 12 (defaults box): "make the date and time fields smaller and
           fit in the batch code text field on the same line." On a phone the
           batch code takes its own line under them. */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[11rem_8rem_minmax(0,1fr)]">
+      {/* ★ UAT 17: on the medical form "move the 'How badly was the person
+          hurt' field to be beside the 'Product batch code' field". */}
+      <div className={`grid grid-cols-2 gap-2 ${asksInjuryClass
+        ? 'sm:grid-cols-[11rem_8rem_minmax(0,1fr)_minmax(0,1fr)]'
+        : 'sm:grid-cols-[11rem_8rem_minmax(0,1fr)]'}`}>
         <Field label="Date" required>
           <input type="date" className={inputClass} value={form.date}
                  max={todayForInput()}
@@ -484,6 +488,33 @@ export default function IncidentReportPage() {
                    placeholder="If a product was involved" />
           </Field>
         </div>
+        {/* Fatality and Unconscious tell us the Ministry must be told; they say
+            nothing about lost time, and a death is nearly always — but not
+            always — a lost-time injury. Asked rather than assumed. */}
+        {/* ★ Asked on the medical form's types except Fatality. Round 4: "add
+            'how bad was the person hurt' to all 'what kind of incident was this'
+            to allow for dashboard reporting, except report only/no injury and
+            fatality selections"; not on a near miss (round 12, Q4) nor, from
+            UAT 17, on the equipment form.
+
+            "Nobody was hurt" is an option rather than leaving the field blank:
+            blank cannot tell that apart from not answered — on the field that
+            drives LTIFR that difference matters. */}
+        {asksInjuryClass && (
+          <div className="col-span-2 sm:col-span-1">
+            <Field label="How badly was the person hurt?" required
+                   help="On the dashboard this is what the injury figures count.">
+              <select className={inputClass} value={form.injuryClass}
+                      onChange={(e) => set('injuryClass', e.target.value)}>
+                <option value="">Select</option>
+                <option value="none">Nobody was hurt</option>
+                <option value="first_aid">First aid</option>
+                <option value="medical_aid">Medical aid</option>
+                <option value="lost_time">Lost time</option>
+              </select>
+            </Field>
+          </div>
+        )}
       </div>
       {inTheFuture && (
         <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
@@ -544,7 +575,22 @@ export default function IncidentReportPage() {
       {/* ★ Round 10 (open box): "add this equipment as a picker on all forms so
           that we can identify what piece of equipment contributed to the
           incidents." Optional: plenty of incidents involve none. */}
-      <div className={form.kind === 'medical' ? 'grid gap-x-3 sm:grid-cols-2' : ''}>
+      {/* ★ UAT 17: "move the 'Who gave the treatment' field to above the
+          'Who was hurt' field". Asked whenever the medical form is open now, so
+          it is sent whenever it is answered. Regulation 1101 asks for the name;
+          a written-in one is accepted, because the person who treated a cut may
+          be a visiting nurse. */}
+      {form.kind === 'medical' && (
+        <div className="grid gap-x-3 sm:grid-cols-2">
+          <Field label="Who gave the treatment?"
+                 help="The first aider who treated them. Regulation 1101 asks for the name.">
+            <PersonPicker value={form.firstAider} onChange={(v) => set('firstAider', v)} />
+          </Field>
+        </div>
+      )}
+      {/* ★ UAT 17: on the equipment and near miss forms the equipment picker is
+          half the width, under "What kind of incident was this". */}
+      <div className="grid gap-x-3 sm:grid-cols-2">
         {form.kind === 'medical' && (
           <Field
           label="Who was hurt?"
@@ -564,33 +610,6 @@ export default function IncidentReportPage() {
       </div>
 
 
-      {/* Fatality and Unconscious tell us the Ministry must be told; they say
-          nothing about lost time, and a death is nearly always — but not
-          always — a lost-time injury. Asked rather than assumed. */}
-      {/* ★ Asked on every type except Report Only and Fatality. Round 4: "add
-          'how bad was the person hurt' to all 'what kind of incident was this'
-          to allow for dashboard reporting, except report only/no injury and
-          fatality selections."
-
-          "Nobody was hurt" is an option rather than leaving the field blank. A
-          near miss or a damaged machine usually did hurt nobody, and blank
-          cannot tell that apart from not answered — on the field that drives
-          LTIFR that difference matters. A fatality is not asked and is recorded
-          as lost time regardless, because it is: leaving it empty would drop it
-          out of the one figure where it most needs to appear. */}
-      {asksInjuryClass && (
-        <Field label="How badly was the person hurt?" required
-               help="On the dashboard this is what the injury figures count.">
-          <select className={inputClass} value={form.injuryClass}
-                  onChange={(e) => set('injuryClass', e.target.value)}>
-            <option value="">Select</option>
-            <option value="none">Nobody was hurt</option>
-            <option value="first_aid">First aid</option>
-            <option value="medical_aid">Medical aid</option>
-            <option value="lost_time">Lost time</option>
-          </select>
-        </Field>
-      )}
       {/* ★ HSE's own test for lost time, where the choice is made. Nothing in
           the system classifies an injury — the reporter picks it — so whether
           it is picked right depends on whether they know the test, and the
@@ -651,21 +670,6 @@ export default function IncidentReportPage() {
                    onChange={(e) => set('sentOffsite', e.target.checked)} />
             They were sent off site for treatment
           </label>
-
-          <Field label="Anything owed afterwards?" help="A dressing to check, a follow-up call.">
-            <input className={inputClass} value={form.followUp}
-                   onChange={(e) => set('followUp', e.target.value)} />
-          </Field>
-
-          {/* ★ Who gave the treatment. Regulation 1101 asks for it by name, and
-              the register printed nothing in that column for everything
-              reported on this form — the role existed on the record and nothing
-              ever filled it in. A written-in name is accepted, because the
-              person who treated a cut may be a visiting nurse. */}
-          <Field label="Who gave the treatment?"
-                 help="The first aider who treated them. Regulation 1101 asks for the name.">
-            <PersonPicker value={form.firstAider} onChange={(v) => set('firstAider', v)} />
-          </Field>
         </>
       )}
 

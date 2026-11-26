@@ -158,6 +158,11 @@ export default function NotifyGroupsPage() {
   const nameOf = (id: string) =>
     (people.data?.items ?? []).find((p) => p.id === id)?.full_name ?? id
 
+  const shortLabel = (label: string) => label.split(/\s+[—–]\s+/)[0]
+  const shortCount = new Map<string, number>()
+  for (const t of types.data ?? []) {
+    shortCount.set(shortLabel(t.label), (shortCount.get(shortLabel(t.label)) ?? 0) + 1)
+  }
   const rows: { key: string; label: string; hint: string }[] = [
     {
       key: ANY,
@@ -167,8 +172,10 @@ export default function NotifyGroupsPage() {
     ...(types.data ?? []).map((t) => ({
       key: t.code,
       // The full option text is a sentence on the form; the first clause is the
-      // name of the thing.
-      label: t.label.split(/\s+[—–]\s+/)[0],
+      // name of the thing — unless two share it. ★ UAT 17: "there are 2 near
+      // miss items and there should only be one": Near Miss and Near Miss —
+      // Food Safety both read "Near Miss". Each is its own list.
+      label: shortCount.get(shortLabel(t.label))! > 1 ? t.label : shortLabel(t.label),
       hint: 'Told instead of the list above, when an incident is this kind.',
     })),
   ]

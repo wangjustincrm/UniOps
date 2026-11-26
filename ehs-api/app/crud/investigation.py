@@ -103,9 +103,9 @@ async def upsert_investigation(
 FIVE_WHYS = 5
 
 
-async def needs_five_whys(db: AsyncSession, incident: Incident) -> bool:
-    """Round 12, Q8: a food-safety incident is investigated by the 5 Whys —
-    the food-safety near miss, or anything in the Food Safety category."""
+async def is_food_safety(db: AsyncSession, incident: Incident) -> bool:
+    """Round 12, Q8: a food-safety incident — the food-safety near miss, or
+    anything in the Food Safety category."""
     if (incident.extra or {}).get("incident_type") == "near_miss_food_safety":
         return True
     if incident.category_id is None:
@@ -115,6 +115,14 @@ async def needs_five_whys(db: AsyncSession, incident: Incident) -> bool:
         "select code from ehs_vocabulary_items where id = :id"),
         {"id": incident.category_id})).scalar()
     return code == "FOOD"
+
+
+async def needs_five_whys(db: AsyncSession, incident: Incident) -> bool:
+    """Whether the 5 Whys must all be answered before sign-off: a food-safety
+    incident (round 12, Q8) — except a near miss. ★ UAT 17: "remove the
+    mandatory 5 why questions from a food safety near miss. make it optional."
+    """
+    return incident.form_kind != "near_miss" and await is_food_safety(db, incident)
 
 
 async def sign_investigation(

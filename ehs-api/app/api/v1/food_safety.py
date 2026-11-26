@@ -30,7 +30,7 @@ router = APIRouter()
 async def is_food_safety_near_miss(db, incident: Incident) -> bool:
     """A near miss in food safety: the Near Miss — Food Safety type, or any
     near miss in the Food Safety category."""
-    return incident.form_kind == "near_miss" and await inv_crud.needs_five_whys(db, incident)
+    return incident.form_kind == "near_miss" and await inv_crud.is_food_safety(db, incident)
 
 
 class Scale(BaseModel):

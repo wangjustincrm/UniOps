@@ -115,8 +115,10 @@ async def test_an_investigation_is_outstanding_until_it_is_signed_off(hse_manage
     assert edited.status_code == 200 and edited.json()["batch_code"] == "LOT-2611-B"
 
 
-async def test_a_food_safety_investigation_is_signed_off_with_all_five_whys(hse_manager, db_session):
-    """★ Round 12, Q8. Other incidents may use them; none must."""
+async def test_a_food_safety_near_miss_is_signed_off_without_all_five_whys(hse_manager, db_session):
+    """★ Round 12, Q8 made the whys required on food safety; UAT 17: "remove the
+    mandatory 5 why questions from a food safety near miss. make it optional."
+    What is answered is still kept."""
     _, hse = hse_manager
     await _food(db_session)
     sig = {"signature": "data:image/png;base64,iVBORw0KGgo="}
@@ -131,9 +133,9 @@ async def test_a_food_safety_investigation_is_signed_off_with_all_five_whys(hse_
         return iid, (await hse.get(f"/api/v1/incidents/{iid}")).json()
 
     iid, inc = await investigate("near_miss_food_safety", ["Lid off", "Rushed", "", "", ""])
-    assert inc["needs_five_whys"] is True
-    refused = await hse.post(f"/api/v1/incidents/{iid}/investigation/sign", json=sig)
-    assert refused.status_code == 422 and "2 of 5" in refused.text, refused.text
+    assert inc["needs_five_whys"] is False
+    # Still a food-safety near miss: its own risk assessment and layout.
+    assert inc["food_safety_near_miss"] is True
     await hse.put(f"/api/v1/incidents/{iid}/investigation", json={
         "investigator_id": None, "five_whys": ["a", "b", "c", "d", "e"]})
     assert (await hse.post(f"/api/v1/incidents/{iid}/investigation/sign", json=sig)).status_code == 200

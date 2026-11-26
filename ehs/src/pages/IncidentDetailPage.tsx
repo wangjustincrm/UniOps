@@ -28,7 +28,7 @@ import { InjurySummary } from '@/components/InjurySummary'
 import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
-import { FoodSafetyRisk } from '@/components/FoodSafetyRisk'
+import { FoodSafetyRisk, investigateButton } from '@/components/FoodSafetyRisk'
 import RiskAssessmentSection from '@/components/RiskAssessmentSection'
 import { LocationSelect } from '@/components/LocationSelect'
 import { useTabTitle } from '@uniops/shell'
@@ -410,21 +410,33 @@ export default function IncidentDetailPage() {
         {/* ★ UAT 15: each assessment's results under its own button, as the
             incident form has them — on a food-safety near miss the two side by
             side, both buttons green on one line (UAT 14). */}
-        <div className={`px-4 pb-4 ${inc.food_safety_near_miss ? 'grid gap-4 sm:grid-cols-2' : ''}`}>
+        {/* ★ UAT 17: "on all incident forms except the near miss food safety
+            form, make the 'assess the risk' button and the 'edit the
+            investigation' buttons the same size and side by side". */}
+        <div className={`px-4 pb-4 ${inc.food_safety_near_miss || canInvestigate
+          ? 'grid gap-4 sm:grid-cols-2' : ''}`}>
           <RiskAssessmentSection sourceType="incident" sourceId={id} mayAssess={canInvestigate} showHazard
             emptyNote={canInvestigate
               ? 'Not scored against the matrix yet. Scoring an incident is how a one-off becomes a ranked hazard.'
               : 'Not scored against the matrix yet.'} />
-          {inc.food_safety_near_miss && <FoodSafetyRisk incidentId={id} mayAssess={canInvestigate} />}
+          {inc.food_safety_near_miss
+            ? <FoodSafetyRisk incidentId={id} mayAssess={canInvestigate} />
+            : canInvestigate && (
+              <section aria-label="Investigation">
+                <div className="mb-2.5 flex items-center justify-between gap-3">
+                  <SectionTitle className="mb-0">Investigation</SectionTitle>
+                </div>
+                <Link to={`/incidents/${id}/investigate`} className={investigateButton}>
+                  {hasInvestigation ? 'Edit the investigation' : 'Start the investigation'}
+                </Link>
+              </section>
+            )}
         </div>
 
         {/* ── Causes and what is being done ─────────────────────────────── */}
         <section className="p-4">
-          {canInvestigate && (
-            <Link
-              to={`/incidents/${id}/investigate`}
-              className="mb-3 flex min-h-[40px] w-full items-center justify-center rounded-lg border border-primary-200 bg-primary-50 px-4 text-sm font-medium text-primary-700 hover:bg-primary-100"
-            >
+          {canInvestigate && inc.food_safety_near_miss && (
+            <Link to={`/incidents/${id}/investigate`} className={`${investigateButton} mb-3`}>
               {hasInvestigation ? 'Edit the investigation' : 'Start the investigation'}
             </Link>
           )}

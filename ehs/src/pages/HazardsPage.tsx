@@ -525,18 +525,16 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
           <input type="date" className={inputClass} value={reviewOn}
                  onChange={(e) => setReviewOn(e.target.value)} />
         </Field>
-        <div className="sm:col-span-2">
-          <Field label="Also took part" hint="Staff who helped with this assessment">
-            <PeopleList value={helpers} onChange={setHelpers} />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="What is the hazard">
-            <input ref={titleRef} className={inputClass} value={title}
-                   onChange={(e) => { setTitle(e.target.value); setAssessBlocked(null) }}
-                   placeholder="Pinch point at the case sealer infeed" />
-          </Field>
-        </div>
+        {/* ★ UAT 17: "place the 'also took part' picklist on the same line
+            as the 'what is the hazard'". */}
+        <Field label="Also took part" hint="Staff who helped with this assessment">
+          <PeopleList value={helpers} onChange={setHelpers} />
+        </Field>
+        <Field label="What is the hazard">
+          <input ref={titleRef} className={inputClass} value={title}
+                 onChange={(e) => { setTitle(e.target.value); setAssessBlocked(null) }}
+                 placeholder="Pinch point at the case sealer infeed" />
+        </Field>
         <Field label="Kind" hint="Pick every kind that applies">
           <VocabularyMultiSelect vocabulary="hazard" value={kindIds} onChange={(ids) => setKindIds(ids)}
                                  known={existing?.hazard_types}

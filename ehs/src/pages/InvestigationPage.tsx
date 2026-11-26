@@ -442,7 +442,7 @@ export default function InvestigationPage() {
           that, fixed, stops it happening again.{' '}
           {needsWhys
             ? <b className="text-neutral-800">Required for food safety: all five are answered before it is signed off.</b>
-            : 'Optional here; required for food safety.'}
+            : 'Optional here.'}
         </p>
         {/* ★ UAT 13, TC-06: "add a field under the why question to allow for
             the answer to be entered." Each step is the question asked, and the
@@ -470,14 +470,16 @@ export default function InvestigationPage() {
       {!foodSafety && immediateCauses}
 
       <Section title="Root causes">
-        {causeRows('root', 'root_cause',
-                   'Why those conditions existed. Each root cause should end up with a corrective action against it.')}
-        <div className="mt-3">
+        {/* ★ UAT 17: "move the 'Root cause narrative' up to the top of the
+            'Root causes' section". */}
+        <div className="mb-3">
           <Field label="Root cause narrative">
             <textarea rows={4} value={narrative} onChange={(e) => setNarrative(e.target.value)}
                       className={`${inputClass} py-2`} />
           </Field>
         </div>
+        {causeRows('root', 'root_cause',
+                   'Why those conditions existed. Each root cause should end up with a corrective action against it.')}
         {rootCount === 0 && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             No root cause recorded. An auditor reads an investigation without one as unfinished.

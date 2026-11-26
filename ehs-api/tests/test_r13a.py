@@ -41,11 +41,23 @@ async def test_sending_an_answered_recommendation_opens_no_reply_task(
 
 async def test_each_why_is_a_question_and_its_answer(hse_manager, db_session):
     """TC-06: "add a field under the why question to allow for the answer to be
-    entered." A food-safety investigation counts the answers, not the questions."""
-    from tests.test_incident_types_r12 import _food, _near_miss
+    entered." A food-safety investigation counts the answers, not the questions.
+
+    ★ Since UAT 17 the whys are optional on a food-safety near miss, so this is
+    a food-safety incident on the medical form, where they are still required."""
+    from datetime import datetime, timezone
+    from tests.test_incident_types_r12 import _food
     _, hse = hse_manager
-    await _food(db_session)
-    made = (await hse.post("/api/v1/incidents", json=_near_miss("near_miss_food_safety"))).json()
+    food = await _food(db_session)
+    kind = await hse.post("/api/v1/settings/incident-types", json={
+        "label": f"Foreign body in product {uuid.uuid4().hex[:6]}", "form_kind": "medical",
+        "category_id": str(food), "restricted": False})
+    assert kind.status_code == 201, kind.text
+    made = (await hse.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Glass in the hopper",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "incident_type": kind.json()["code"], "injury_class": "none"})).json()
+    assert (await hse.get(f"/api/v1/incidents/{made['id']}")).json()["needs_five_whys"] is True
     await hse.post(f"/api/v1/incidents/{made['id']}/submit")
     whys = [{"question": f"Why {n}?", "answer": f"Because {n}"} for n in range(1, 5)]
     whys.append({"question": "Why was the lid left off?", "answer": ""})
