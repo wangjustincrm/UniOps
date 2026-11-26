@@ -65,6 +65,40 @@ def _described(description: str | None, src: dict | None) -> tuple[str, str] | s
     return (description or "", extra) if extra else (description or "")
 
 
+# ── file names (user 2026-11-26) ────────────────────────────────────────────
+# Every PDF of an order, downloaded or attached to the invoice email, as the EDI files are named (outbound.file_name):
+# <Doc>-<partner abbrev>-<our order number>-<PO>.pdf, no date. The PO is the customer's (a retailer PO, a Shopify order
+# number, a manual order's customer reference) and left out when there is none. A packing list of one 945 among several:
+# its place among the order's 945s (as Shipments & lots lists them, oldest first) at the end.
+INVOICE, PO, PACKING_LIST = "Invoice", "PO", "PackingList"
+
+
+def doc_name(doc: str, abbrev: str | None, order: Order, part: int | None = None) -> str:
+    """"Invoice-JC-1008728-599091.pdf"; "PackingList-SHP-1018786-9649-2.pdf"; "Invoice-MAN-1018828.pdf"."""
+    po = _name_part(order.source_order_number or "")
+    bits = [doc, _name_part((abbrev or "").strip() or order.partner_code), str(order.order_number), po, str(part) if part else ""]
+    return "-".join(b for b in bits if b) + ".pdf"
+
+
+def _name_part(text: str) -> str:
+    """As _safe, but a customer's own letters stay (user 2026-11-24: a PO "PO-订单-é" keeps them; platform/files.py writes the
+    header): anything but a letter, digit, ".", "_" or "-" becomes "_"; nothing left: left out."""
+    return re.sub(r"[^\w.-]+", "_", text).strip("_")
+
+
+async def file_name(s, doc: str, order: Order, part: int | None = None) -> str:
+    """doc_name with the order's partner abbreviation (the one the 940 and 810 file names carry)."""
+    from app.models.config import Partner
+    abbrev = (await s.execute(select(Partner.abbrev).where(Partner.code == order.partner_code))).scalar_one_or_none()
+    return doc_name(doc, abbrev, order, part)
+
+
+async def shipment_part(s, order: Order, shipment_id: int) -> int | None:
+    """The 945's place among the order's 945s, oldest first; none when it is the only one."""
+    ids = list((await s.execute(select(Shipment.id).where(Shipment.order_id == order.id).order_by(Shipment.id))).scalars())
+    return ids.index(shipment_id) + 1 if len(ids) > 1 and shipment_id in ids else None
+
+
 def _po_number(order: Order) -> str:
     return order.source_order_number or str(order.order_number)
 
@@ -437,8 +471,8 @@ async def settlements_report_pdf(rows, *, period: str, truncated: bool) -> bytes
 
 # ── Audit packet ────────────────────────────────────────────────────────────
 
-def _safe(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_") or "file"
+def _safe(name: str, *, empty: str = "file") -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_") or empty
 
 
 async def packet(s, order: Order) -> bytes:
@@ -451,10 +485,10 @@ async def packet(s, order: Order) -> bytes:
             content = (await s.execute(select(Document.content).where(Document.id == d.id))).scalar_one()
             if content is not None:
                 z.writestr(f"files/{d.id}-{_safe(d.remote_name or d.kind)}", bytes(content))
-        z.writestr(f"PO-{_safe(_po_number(order))}.pdf", await po_pdf(s, order))
+        z.writestr(await file_name(s, PO, order), await po_pdf(s, order))
         inv = (await s.execute(select(Invoice).where(Invoice.order_id == order.id))).scalar_one_or_none()
         if inv is not None:
-            z.writestr(f"{_safe(inv.invoice_number)}.pdf", await invoice_pdf(s, inv, order))
+            z.writestr(await file_name(s, INVOICE, order), await invoice_pdf(s, inv, order))
         if (await s.execute(select(Shipment.id).where(Shipment.order_id == order.id, Shipment.applied.is_(True)).limit(1))).first():
-            z.writestr(f"PackingList-{order.order_number}.pdf", await shipped_pdf(s, order, None))
+            z.writestr(await file_name(s, PACKING_LIST, order), await shipped_pdf(s, order, None))
     return buf.getvalue()

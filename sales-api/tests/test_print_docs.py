@@ -18,11 +18,12 @@ async def test_the_po_the_invoice_and_the_packet_of_an_order(p6):  # noqa: F811
         name, po = await OrderService(u).po_pdf(o.id)
         iname, ipdf = await InvoiceService(u).pdf(inv.id)
         zname, data = await OrderService(u).packet(o.id)
-    assert name == "PO-PO-P.pdf" and po.startswith(b"%PDF")
-    assert iname == f"{inv.invoice_number}.pdf" and ipdf.startswith(b"%PDF")
+    base = f"LBL-{o.order_number}-PO-P"  # user 2026-11-26: <Doc>-<abbrev>-<order number>-<PO>.pdf
+    assert name == f"PO-{base}.pdf" and po.startswith(b"%PDF")
+    assert iname == f"Invoice-{base}.pdf" and ipdf.startswith(b"%PDF")
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
-    assert zname.endswith(".zip") and "PO-PO-P.pdf" in names and f"{inv.invoice_number}.pdf" in names
-    assert f"PackingList-{o.order_number}.pdf" in names
+    assert zname.endswith(".zip") and f"PO-{base}.pdf" in names and f"Invoice-{base}.pdf" in names
+    assert f"PackingList-{base}.pdf" in names
     assert any(n.startswith("files/") and "945" in n for n in names) and any(n.startswith("files/") for n in names)
 
 

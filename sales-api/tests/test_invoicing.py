@@ -362,6 +362,7 @@ async def test_ac45_the_invoice_email_goes_to_the_retailer_with_the_internal_cop
     await email_partner(p6)
     o = await shipped_850(p6, "<script>9", partner="SOB")
     async with p6.factory(SYSTEM_ACTOR) as u:
+        (await u.session.execute(sa.select(Partner).where(Partner.code == "SOB"))).scalar_one().abbrev = "SBX"  # not its code
         order = await u.session.get(Order, o.id)
         order.ship_to = {**(order.ship_to or {}), "name": "皇家奶粉 DC"}
         await u.commit()
@@ -375,7 +376,7 @@ async def test_ac45_the_invoice_email_goes_to_the_retailer_with_the_internal_cop
     assert m.subject == f"Order Documents | Sobeys <b>&</b> | {o.order_number} | <script>9"   # A.12 (a plain-text header)
     assert "&lt;script&gt;9" in m.body_html and "<script>" not in m.body_html                 # escaped (FR-OB-32)
     names = [n for n, _, _ in m.attachments]
-    assert names == [f"IN-{o.order_number}.pdf", "PO-<script>9.pdf", f"PackingList-{o.order_number}.pdf"]
+    assert names == [f"{d}-SBX-{o.order_number}-script_9.pdf" for d in ("Invoice", "PO", "PackingList")]  # user 2026-11-26
     assert all(d.startswith(b"%PDF") for _, d, _ in m.attachments)
     assert b"WenQuanYi" in m.attachments[0][1]  # the Chinese ship-to name: the embedded TrueType subset
 
@@ -486,7 +487,7 @@ async def test_the_company_gets_every_document_of_an_810_also_when_the_partner_s
     await worker.run_once()
     [m] = p6.mail.sent                               # only the company's copy: external email is off
     assert m.to == ("ar@crm.example", "sales@crm.example") and m.subject.startswith("Invoice sent (copy)")
-    assert [a[0].split("-")[0] for a in m.attachments] == ["IN", "PO", "PackingList", "810"]
+    assert [a[0].split("-")[0] for a in m.attachments] == ["Invoice", "PO", "PackingList", "810"]
     data = m.attachments[3][1]
     assert data.startswith(b"{") and b"PO-1" in data  # the 810 as built for TrueCommerce
 

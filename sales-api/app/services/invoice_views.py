@@ -85,7 +85,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     async def pdf(self, invoice_id: int) -> tuple[str, bytes]:
         inv = await self.repo.get(invoice_id)
         order = await self.uow.session.get(Order, inv.order_id)
-        return f"{inv.invoice_number}.pdf", await print_docs.invoice_pdf(self.uow.session, inv, order)
+        return await print_docs.file_name(self.uow.session, print_docs.INVOICE, order), await print_docs.invoice_pdf(self.uow.session, inv, order)
 
     async def enrich(self, items: list[InvoiceRead], entities) -> None:
         """The order's number, partner, PO and invoice status."""

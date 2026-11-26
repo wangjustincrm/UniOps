@@ -665,7 +665,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     @requires(READ)
     async def po_pdf(self, order_id: int) -> tuple[str, bytes]:
         o = await self.repo.get(order_id)
-        return f"PO-{o.source_order_number or o.order_number}.pdf", await print_docs.po_pdf(self.uow.session, o)
+        return await print_docs.file_name(self.uow.session, print_docs.PO, o), await print_docs.po_pdf(self.uow.session, o)
 
     @requires(READ)
     async def packet(self, order_id: int) -> tuple[str, bytes]:
@@ -684,7 +684,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         if sh is None:
             raise NotFound("Shipment", shipment_id)
         pdf = await print_docs.shipment_pdf(s, o, sh)
-        return f"PackingList-{o.ref}-{sh.id}.pdf", pdf
+        return await print_docs.file_name(s, print_docs.PACKING_LIST, o, await print_docs.shipment_part(s, o, sh.id)), pdf
 
     @requires(OPERATE)
     async def retry_shopify(self, shipment_id: int, shipments) -> dict:

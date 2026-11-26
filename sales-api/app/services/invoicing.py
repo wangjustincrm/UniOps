@@ -541,9 +541,10 @@ class Invoicing:
                      f"<p>Total: {esc(inv.currency)} {inv.total:.2f}</p>" + (f"<p>{esc(note)}</p>" if note else ""))
         text += f"{note}\n" if note else ""
         msg = ExternalEmail(to=to, cc=cc, subject=subject, body_text=text, body_html=body_html,
-                            attachments=((f"{inv.invoice_number}.pdf", invoice_pdf, "application/pdf"),
-                                         (f"PO-{po or order.order_number}.pdf", po_pdf, "application/pdf"),
-                                         (f"PackingList-{order.order_number}.pdf", packing_pdf, "application/pdf"), *extra))
+                            attachments=((print_docs.doc_name(print_docs.INVOICE, partner.abbrev, order), invoice_pdf, "application/pdf"),
+                                         (print_docs.doc_name(print_docs.PO, partner.abbrev, order), po_pdf, "application/pdf"),
+                                         (print_docs.doc_name(print_docs.PACKING_LIST, partner.abbrev, order), packing_pdf, "application/pdf"),
+                                         *extra))
         return msg, invoice_pdf
 
     async def _pair(self, row, uow):

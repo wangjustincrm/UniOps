@@ -111,7 +111,7 @@ async def test_the_packing_list_has_pallets_lots_expiry_tracking_and_bol(p6):  #
     [sh] = await p6.q("SELECT id FROM sales_shipments")
     async with p6.factory(OP) as u:
         name, pdf = await OrderService(u).packing_list(o.id, sh["id"])
-    assert name == f"PackingList-LBL-PO-1-{sh['id']}.pdf"
+    assert name == f"PackingList-LBL-{o.order_number}-PO-1.pdf"  # user 2026-11-26; its only 945: no place at the end
     body = pdf_text(pdf)
     for s in (b"PACKING LIST", f"PL-{o.order_number}".encode(), b"LBL-PO-1", b"BOL-778", b"1Z-TRACK", b"00077777770077782891",
               b"LOT-A", b"19-May-2028", b"LOT-B", b"Shipment total", b"SO-00042", b"Ajax", b"Page 1 of 1"):

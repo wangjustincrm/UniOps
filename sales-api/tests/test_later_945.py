@@ -444,6 +444,45 @@ async def test_the_press_over_http(p5):  # noqa: F811
     assert await lines(p5, oid) == {"CF0092": 12, "CF0010": 4}
 
 
+async def test_the_pdfs_are_named_by_the_rule_over_http(p5):  # noqa: F811
+    """User 2026-11-26: <Doc>-<abbrev>-<order number>-<PO>.pdf; a packing list of one 945 among several: its place."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.deps import get_uow_factory
+    from app.main import app
+    from app.runtime import get_runtime
+    from tests.test_orders_api import GRANTS, READER
+    oid = await held_part(p5)  # two 945s
+    async with p5.factory(SYSTEM_ACTOR) as u:  # its abbreviation, not its code
+        await u.session.execute(sa.text("UPDATE sales_partners SET abbrev = 'SHX' WHERE code = (SELECT partner_code FROM sales_orders WHERE id = :o)"), {"o": oid})
+        await u.commit()
+    [o] = await p5.q("SELECT o.order_number n, o.source_order_number po, p.abbrev a FROM sales_orders o JOIN sales_partners p ON p.code = o.partner_code")
+    assert o["a"] == "SHX"
+    base = f"SHX-{o['n']}-{o['po']}"
+
+    async def matrix(session, actor, key):  # noqa: ARG001
+        return key in GRANTS.get(actor.role or "", set())
+    p5.factory.permissions = matrix
+    app.dependency_overrides[get_uow_factory] = lambda: p5.factory
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(tasks=p5.edi.env.tasks)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            async def name(path):
+                r = await c.get(f"/api/v1/orders/{oid}/{path}", headers=READER)
+                assert r.status_code == 200, r.text
+                return r.headers["content-disposition"].split('filename="')[1].split('"')[0]
+            assert await name("po.pdf") == f"PO-{base}.pdf"
+            assert await name("shipments/1/packing-list.pdf") == f"PackingList-{base}-1.pdf"
+            assert await name("shipments/2/packing-list.pdf") == f"PackingList-{base}-2.pdf"
+            r = await c.get(f"/api/v1/orders/{oid}/packet.zip", headers=READER)
+            import io
+            import zipfile
+            names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+            assert f"PO-{base}.pdf" in names and f"PackingList-{base}.pdf" in names  # the order's whole packing list
+    finally:
+        app.dependency_overrides.clear()
+
+
 async def test_a_reason_and_one_record_at_a_time(p5):  # noqa: F811
     oid = await held_part(p5)
     with pytest.raises(BusinessError) as e:
