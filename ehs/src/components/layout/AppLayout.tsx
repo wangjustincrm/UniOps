@@ -6,7 +6,7 @@ import type { TabMeta } from '@uniops/shell'
 import {
   ArrowLeft, BarChart3, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck,
   ClipboardList, FileText, FlaskConical, ShieldAlert, ShieldCheck, Siren, Users, Wrench,
-  GraduationCap, List, LogOut, Map, MapPin, Menu, Settings, TriangleAlert, User,
+  GraduationCap, List, LogOut, Map, Menu, Settings, TriangleAlert, User,
   Mail, MailWarning, MessageSquare,
 } from 'lucide-react'
 import { ehsRoutes } from '@/app/routes'
@@ -176,7 +176,6 @@ const SETTINGS_NAV: NavItem[] = [
   // Under ehs.worker.write, not settings: a supervisor who maintains who does
   // which job is not the same person who edits vocabularies.
   { label: 'Positions',   href: '/settings/positions', icon: Users, permission: 'ehs.worker.read' },
-  { label: 'Area responsibility', href: '/settings/area-owners', icon: MapPin, permission: 'ehs.settings.manage' },
   // The divisor for every injury rate. Without it the dashboard's rate tiles
   // are empty, which is why it sits in the menu rather than inside a report.
   { label: 'Hours Worked', href: '/settings/hours', icon: CalendarClock, permission: 'ehs.settings.manage' },

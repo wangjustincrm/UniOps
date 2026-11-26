@@ -600,7 +600,7 @@ export default function DashboardPage() {
       </div>
 
       {(unowned.data?.count ?? 0) > 0 && (
-        <TabLink to="/settings/area-owners"
+        <TabLink to="/settings/areas"
               className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 transition-colors hover:bg-warning-100">
           <p className="min-w-0 flex-1 text-xs text-warning-800">
             <span className="font-bold tabular-nums">{unowned.data!.count}</span>{' '}

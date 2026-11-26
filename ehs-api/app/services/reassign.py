@@ -136,7 +136,7 @@ async def collect(db: AsyncSession, leaver: uuid.UUID) -> dict[str, list[Item]]:
                        for s in (await db.execute(select(FormSchedule).where(
                            FormSchedule.assigned_user_id == leaver,
                            FormSchedule.is_active.is_(True)))).scalars()]
-    out["area"] = [Item(a.id, None, a.location_path, "/settings/area-owners", a)
+    out["area"] = [Item(a.id, None, a.location_path, "/settings/areas", a)
                    for a in (await db.execute(select(AreaOwner).where(
                        AreaOwner.user_id == leaver))).scalars()]
     return out

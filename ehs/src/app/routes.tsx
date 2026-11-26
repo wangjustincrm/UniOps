@@ -33,6 +33,7 @@ import JsaPage, { JsaDetailPage } from '@/pages/JsaPage'
 import PermitsPage from '@/pages/PermitsPage'
 import QrLandingPage from '@/pages/QrLandingPage'
 import TaskRedirectPage from '@/pages/TaskRedirectPage'
+import MovedTo from '@/components/MovedTo'
 import CurrentSdsPage from '@/pages/CurrentSdsPage'
 import QuizPage, { EditQuizPage, TakeQuizPage } from '@/pages/QuizPage'
 import SafetyEquipmentPage from '@/pages/SafetyEquipmentPage'
@@ -44,7 +45,6 @@ import TrainingPage from '@/pages/TrainingPage'
 import LocationsPage from '@/pages/settings/LocationsPage'
 import PositionsPage from '@/pages/settings/PositionsPage'
 import MyTrainingPage from '@/pages/MyTrainingPage'
-import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
 import DashboardSettingsPage from '@/pages/settings/DashboardSettingsPage'
 import PermitChecksPage from '@/pages/settings/PermitChecksPage'
@@ -318,9 +318,11 @@ export const ehsRoutes: RouteDef[] = [
     tab: { title: 'Lists', icon: 'List', keyStrategy: 'static' },
   },
   {
+    // ★ UAT 17: Area responsibility is part of Plant areas now; an old link or
+    // bookmark lands there rather than on My Actions.
     path: '/settings/area-owners',
-    element: <AreaOwnersPage />,
-    tab: { title: 'Area responsibility', icon: 'MapPin', keyStrategy: 'static' },
+    element: <MovedTo to="/settings/areas" />,
+    tab: { title: 'Plant areas', icon: 'Map', keyStrategy: 'static' },
   },
   {
     path: '/settings/areas',
