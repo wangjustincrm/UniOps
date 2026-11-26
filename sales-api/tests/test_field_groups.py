@@ -147,3 +147,13 @@ def test_count_is_mounted_before_the_record_route_on_every_list_and_needs_its_pe
 async def test_count_needs_the_lists_read_permission(api, path):  # noqa: F811
     assert (await api.get("/api/v1" + path, headers=NOBODY)).status_code == 403
     assert (await api.get("/api/v1" + path, headers=READER)).status_code == 200
+
+
+def test_the_page_names_the_same_periods_in_the_same_words():
+    """sales/src/platform-ui/resource/relativeDates.ts mirrors app/platform/relative_dates.py: tokens, words and help, in order."""
+    import pathlib
+    import re
+    from app.platform.relative_dates import HELP
+    src = (pathlib.Path(__file__).resolve().parents[2] / "sales" / "src" / "platform-ui" / "resource" / "relativeDates.ts").read_text()
+    page = re.findall(r"\{ value: '([a-z_0-9]+)', label: '([^']+)', help: '([^']+)' \}", src)
+    assert page == [(k, v, HELP[k]) for k, v in RELATIVE.items()]

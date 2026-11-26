@@ -3,10 +3,16 @@ import type { KeyboardEvent } from 'react'
 /** Marks an input whose Enter is its own: it chooses from a list, or adds what was typed. */
 export const CHOOSING = { 'data-choosing': '' } as const
 
-/** The Enter rule of a search form (put it on the form's onKeyDownCapture). While a list is open Enter
+/** The Enter rule of a search form (put it on the form's onKeyDownCapture). Ctrl+Enter (⌘+Enter) searches at once. While a list is open Enter
  *  chooses; once nothing is left to choose, Enter confirms and searches. So a select does not reopen, a
  *  checkbox does not swallow it, and a real button still does what it says. */
 export function submitOnEnter(e: KeyboardEvent<HTMLFormElement>): void {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {  // Ctrl+Enter: search now, what is typed included
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.requestSubmit()
+    return
+  }
   if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
   const el = e.target as HTMLElement
   if (el.closest('[data-choosing],[role="listbox"],[role="option"]')) return

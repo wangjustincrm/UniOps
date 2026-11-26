@@ -12,11 +12,14 @@ export interface TagInputProps {
   label: string
   type?: 'text' | 'number' | 'date' | 'datetime-local'
   autoFocus?: boolean
+  /** False (a number, a date: one value): Enter is the form's at once, what is typed counts. True (text): Enter adds a value,
+   *  Enter again (nothing typed) goes to the form. */
+  addOnEnter?: boolean
 }
 
 /** Several values as tags: Enter (or a comma, for text) adds the typed value, and with nothing typed goes to the form;
  *  Backspace in an empty box removes the last one. */
-export function TagInput({ values, onChange, draft, onDraftChange, label, type = 'text', autoFocus }: TagInputProps) {
+export function TagInput({ values, onChange, draft, onDraftChange, label, type = 'text', autoFocus, addOnEnter = true }: TagInputProps) {
   const [focused, setFocused] = useState(false)
   // What is added is passed in: a value pasted with commas ("a@x.com, b@y.com,") is added at once,
   // never through a draft that is still the previous render's.
@@ -33,12 +36,12 @@ export function TagInput({ values, onChange, draft, onDraftChange, label, type =
         <Chip key={v} onRemove={() => onChange(values.filter((x) => x !== v))} removeLabel={`Remove ${v}`}>{v}</Chip>
       ))}
       <Input
-        {...(draft.trim() ? CHOOSING : {})}
+        {...(draft.trim() && addOnEnter ? CHOOSING : {})}
         aria-label={label}
         type={type}
         value={draft}
         autoFocus={autoFocus}
-        placeholder={values.length ? 'or…' : 'Value — Enter adds another'}
+        placeholder={values.length ? 'or…' : addOnEnter ? 'Value — Enter adds another' : 'Value'}
         className="h-7 min-w-[8rem] flex-1 border-0 px-1 shadow-none focus-visible:ring-0"
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -51,7 +54,7 @@ export function TagInput({ values, onChange, draft, onDraftChange, label, type =
           } else onDraftChange(v)
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && draft.trim()) {  // an empty box: Enter belongs to the form
+          if (e.key === 'Enter' && draft.trim() && addOnEnter) {  // an empty box: Enter belongs to the form
             e.preventDefault()
             add()
           } else if (e.key === 'Backspace' && draft === '' && values.length) onChange(values.slice(0, -1))

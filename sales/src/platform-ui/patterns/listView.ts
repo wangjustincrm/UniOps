@@ -1,5 +1,7 @@
 import type { FieldMeta, FieldKind } from '../resource/listMeta'
 import type { Filter, FilterOp } from '../resource/querySpec'
+import { relativeDate } from '../resource/relativeDates'
+import type { DraftOp } from './searchDraft'
 
 // What the search panel offers per field type, how each operator reads, and
 // how an active filter reads as a chip. The server lists what a field allows
@@ -20,7 +22,8 @@ const TEXT: Partial<Record<FilterOp, string>> = {
   eq: 'equals', ne: 'not equals', in: 'is any of', not_in: 'is none of',
 }
 
-export function opLabel(op: FilterOp, type: FieldKind): string {
+export function opLabel(op: DraftOp, type: FieldKind): string {
+  if (op === 'within') return 'is within'
   if (op === 'is_null') return 'is empty'
   if (op === 'not_null') return 'is not empty'
   if (op === 'between' || op === 'range') return 'between'
@@ -29,9 +32,11 @@ export function opLabel(op: FilterOp, type: FieldKind): string {
   return TEXT[op] ?? ORDERED[op] ?? op
 }
 
-export function panelOps(field: FieldMeta): FilterOp[] {
+export function panelOps(field: FieldMeta): DraftOp[] {
   const allowed = new Set(field.operators)
-  return PANEL_OPS[field.type].filter((op) => allowed.has(op))
+  const ops: DraftOp[] = PANEL_OPS[field.type].filter((op) => allowed.has(op))
+  // A date field searched by a period first (#32): "within" Today, Last 7 days… (eq with the period's token on the wire).
+  return (field.type === 'date' || field.type === 'datetime') && allowed.has('eq') ? ['within', ...ops] : ops
 }
 
 const quote = (v: string) => `"${v}"`
@@ -41,6 +46,8 @@ export function filterText(f: Filter, field: FieldMeta | undefined): string {
   const label = field?.label ?? f.field
   const op = opLabel(f.op, field?.type ?? 'text')
   if (f.op === 'is_null' || f.op === 'not_null') return `${label} ${op}`
+  const period = f.op === 'eq' && (field?.type === 'date' || field?.type === 'datetime') ? relativeDate(f.value) : undefined
+  if (period) return `${label}: ${period.label.toLowerCase()}`  // "Order date: last 7 days", never the token
   if (f.op === 'between' || f.op === 'range') {
     const [low, high] = (f.value ?? [null, null]) as [string | null, string | null]
     if (low && high) return `${label} between ${low} and ${high}`

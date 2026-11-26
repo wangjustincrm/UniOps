@@ -268,4 +268,29 @@ describe('the search panel, by keyboard', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull())
     expect(t.request().getAll('filter').join()).toContain('CF')
   })
+
+  it('Ctrl+Enter searches at once, what is typed included; the footer says the keys', async () => {
+    const t = renderTable({})
+    fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
+    expect(panel).toHaveTextContent('Enter adds · Enter again searches')
+    fireEvent.click(within(panel).getByLabelText('Item code'))
+    const code = within(panel).getByLabelText('Item code: value')
+    fireEvent.change(code, { target: { value: 'CF9' } })
+    fireEvent.keyDown(code, { key: 'Enter', ctrlKey: true })  // not added first: searched with it
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull())
+    expect(t.request().getAll('filter')).toContain('code:contains:CF9')
+  })
+
+  it('a one-value field searches on the first Enter', async () => {
+    const t = renderTable({})
+    fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
+    fireEvent.click(within(panel).getByLabelText('Price'))  // "=", one number
+    const price = await within(panel).findByLabelText('Price: value')
+    fireEvent.change(price, { target: { value: '5' } })
+    fireEvent.keyDown(price, { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull())
+    expect(t.request().getAll('filter')).toContain('price:eq:5')
+  })
 })
