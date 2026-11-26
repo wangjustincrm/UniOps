@@ -24,8 +24,10 @@ export const GROUPS: Record<string, { label: string; shared?: boolean }> = {
 export const DEFAULT_SLOTS: Record<string, SlotDef> = {
   // a page with a list: the view, then finding, then the table, then refreshing and exporting
   'list.views': { order: 10, group: 'lists' }, 'list.defaultView': { order: 12, group: 'lists' }, 'list.saveView': { order: 15, group: 'lists' },
-  'list.search': { order: 20, group: 'lists' }, 'list.statusFind': { order: 22, group: 'lists' }, 'list.phone': { order: 25, group: 'lists' },
-  'list.searchPanel': { order: 30, group: 'lists', tour: false }, 'list.chips': { order: 32, group: 'lists', tour: false },
+  'list.search': { order: 20, group: 'lists' }, 'list.statusFind': { order: 22, group: 'lists', v: 2 }, 'list.phone': { order: 25, group: 'lists' },
+  // #32 (2026-11-26): the search on the right, a column's own search: new again for everyone (v 2)
+  'list.searchPanel': { order: 30, group: 'lists', tour: false, v: 2 }, 'list.columnSearch': { order: 31, group: 'lists', tour: false },
+  'list.chips': { order: 32, group: 'lists', tour: false, v: 2 },
   'row.status': { order: 35, group: 'page' }, 'list.columns': { order: 38, group: 'lists', tour: false },
   'list.rowOpen': { order: 40, group: 'lists' }, 'list.sortGroup': { order: 45, group: 'lists' },
   'list.rowDetails': { order: 50, group: 'lists', tour: false }, 'list.groups': { order: 52, group: 'lists', tour: false },

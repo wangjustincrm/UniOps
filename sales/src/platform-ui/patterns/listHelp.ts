@@ -13,7 +13,10 @@ declare module '../help/types' {
 
 export const PLATFORM_HELP: Record<string, HelpEntry> = {
   'list.search': { title: 'Search', body: 'Type in Search and press Enter.' },
-  'list.searchPanel': { title: 'Search on any field', body: 'The sliders button (Search on any field) finds by one column: a date range, a status, a partner.', buttons: ['Search on any field'] },
+  'list.searchPanel': { title: 'Search on any field', body: "The sliders button (Search on any field) opens Search on the right; the table stays in sight. In use is on top (✕ takes a field away); the other fields are below in groups, the table's columns first, and Find a field narrows them. A date can be a period: Today, Last 7 days (today and the 6 days before), This month. Nothing changes until Search: it says how many rows it will find. Back to the view returns to the view's own search; Clear all empties every field. Enter adds a value, Enter again searches, Esc closes.",
+    buttons: ['Search on any field', 'Back to the view', 'Clear all'] },
+  'list.columnSearch': { title: "A column's search", body: "A header's arrow menu → Search: that field alone, at its column (All fields… opens the whole search). A click on a Search chip edits it in the same way. A searched column's header shows a small filter mark.",
+    buttons: ['Search', 'All fields…'] },
   'list.views': { title: 'Views', body: 'The View button (beside Search) switches between saved filters and columns. System views come with the page; My views are yours.' },
   'list.defaultView': { title: 'Default view', body: 'In the View list, a view of yours → Set as default: the page opens on it.', buttons: ['Set as default'] },
   'list.saveView': { title: 'Save a view', body: 'Change filters, sort or columns, then Save view (keeps it) or Save as a new view. Reset to the saved view drops your changes.',
@@ -21,11 +24,11 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
   'list.columns': { title: 'Columns', body: "The eye button (the column chooser): show, hide or move columns. Under More fields is every other field of the rows: tick one to add it as a column; Find a field narrows the list. The box at the top (and each group's) shows or hides them all; a dash means some are shown. Drag a header's grip to move it. Save the view to keep your columns." },
   'list.sortGroup': { title: 'Column menu', body: "A header's arrow menu: Search (that column), Sort ascending / descending, Group ascending / descending, Lock column (it joins the locked columns at the left, which stay in place while the table scrolls sideways; at most 3, saved with the view) or Unlock column — the eye's list has the same lock per column, Hide column. Click a header to sort by it.",
     buttons: ['Search', 'Sort ascending', 'Group ascending', 'Hide column'] },
-  'list.statusFind': { title: 'Find by status', body: "To see only some statuses: Search on any field → Status, tick the ones you want; or a status column's arrow menu → Search. A view (e.g. Open, On hold) already does this for you.",
+  'list.statusFind': { title: 'Find by status', body: "To see only some statuses: Search on any field → Status, choose the ones you want; or a status column's arrow menu → Search. A view (e.g. Open, On hold) already does this for you.",
     buttons: ['Search on any field', 'Search'] },
   'list.select': { title: 'Act on several rows', body: "Tick rows (the box in the header ticks this page; then Select all N matching takes every row of the view, up to 500). The bar shows what you can do and how many each action fits. Before it runs you see which are left out and why; after, the result per row. Esc or Clear unticks. A row's ⋯ menu does the same for one row.",
     buttons: ['Clear'] },
-  'list.chips': { title: 'Active filters', body: 'The chips show everything that narrows the list (filters, search, sort, grouping). × removes one; Reset to the saved view removes your changes.',
+  'list.chips': { title: 'Active filters', body: 'The chips show everything that narrows the list (filters, search, sort, grouping). A click on a Search chip edits it; × removes one; Reset to the saved view removes your changes.',
     buttons: ['Reset to the saved view'] },
   'list.rowOpen': { title: 'Open a row', body: 'Click a row (or press Enter) to open it. In the record, J / K (or Alt+↑ / Alt+↓) move to the next or previous one.' },
   'list.rowDetails': { title: 'Row details', body: "▸ opens a row's details under it (e.g. an item's lots) without leaving the list." },
@@ -51,7 +54,7 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
 export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean; select?: boolean }): string[] {
   return [
     ...(has.search ? ['list.search'] : []),
-    ...(has.panel ? ['list.statusFind', 'list.searchPanel'] : []),
+    ...(has.panel ? ['list.statusFind', 'list.searchPanel', 'list.columnSearch'] : []),
     ...(has.views ? ['list.views', 'list.defaultView', 'list.saveView'] : []),
     ...(has.select ? ['list.select'] : []),
     'list.columns', 'list.sortGroup', 'list.refresh',

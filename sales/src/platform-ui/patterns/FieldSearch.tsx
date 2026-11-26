@@ -9,6 +9,7 @@ import type { Filter } from '../resource/querySpec'
 import { opLabel, panelOps } from './listView'
 import { cleared, draftFrom, filterFrom, type Draft, type DraftOp } from './searchDraft'
 import { ValueInput } from './ValueInput'
+import { TourMark } from '../help'
 
 export interface FieldSearchProps {
   field: FieldMeta
@@ -57,7 +58,7 @@ function FieldSearchForm({ field, filters, onApply, onAllFields, suggest }: Pick
   const apply = () => { const f = filterFrom(field, d); onApply(f ? [f] : []) }
   return (
     <form className="flex flex-col gap-2" onKeyDownCapture={submitOnEnter} onSubmit={(e) => { e.preventDefault(); apply() }}>
-      <h3 className="text-sm font-semibold text-neutral-800">{field.label}</h3>
+      <TourMark help="list.columnSearch" slot="list.columnSearch"><h3 className="text-sm font-semibold text-neutral-800">{field.label}</h3></TourMark>
       {ops.length > 1 && (
         <Select aria-label={`${field.label}: how to compare`} value={d.op}
           onChange={(op) => set({ op: (op ?? ops[0]) as DraftOp, ...(op === 'within' || d.op === 'within' ? { values: [] } : {}) })}
