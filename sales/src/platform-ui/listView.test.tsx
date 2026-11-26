@@ -317,8 +317,8 @@ describe("a column's search and a Search chip (#32 a, c, A, E)", () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search Item code' })).toBeNull())
     expect(t.request().getAll('filter')).toEqual(['code:contains:CF'])
     await waitFor(() => expect(screen.getByRole('button', { name: 'Item code column menu' })).toHaveFocus())
-    expect(screen.getByRole('img', { name: 'Searched: Item code contains "CF"' })).toBeInTheDocument()  // a mark with words, not a colour
-    expect(screen.queryByRole('img', { name: /Searched: Price/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit search: Item code contains "CF"' })).toBeInTheDocument()  // a mark with words, not a colour
+    expect(screen.getByRole('button', { name: 'Search Price' })).toBeInTheDocument()  // not searched: its own faint icon
     const again = await openColumnSearch('Item code')                                 // again: it starts from its search
     expect(within(again).getByText('CF')).toBeInTheDocument()
     fireEvent.click(within(again).getByRole('button', { name: 'Remove CF' }))
@@ -354,5 +354,50 @@ describe("a column's search and a Search chip (#32 a, c, A, E)", () => {
     const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
     expect(within(panel).getByRole('region', { name: 'In use' })).toHaveTextContent('Price')
     expect(screen.queryByRole('dialog', { name: 'Search Price' })).toBeNull()
+  })
+})
+
+describe("the header's filter icon opens the column's own search (user 2026-11-26)", () => {
+  const FAINT = ['opacity-0', 'group-hover/th:opacity-100', 'group-focus-within/th:opacity-100', 'pointer-coarse:opacity-100']
+
+  it('a searched column: always there, solid, named by its search; a click opens it with that search; no sort', async () => {
+    const t = renderTable({ initial: { page: 1, pageSize: 50, filters: [{ field: 'code', op: 'contains', value: 'CF' }] } })
+    const icon = await screen.findByRole('button', { name: 'Edit search: Item code contains "CF"' })
+    for (const c of FAINT) expect(icon).not.toHaveClass(c)                        // not faint: always shown
+    expect(icon.querySelector('svg')).toHaveAttribute('fill', 'currentColor')     // solid
+    const calls = t.onSpec.mock.calls.length
+    fireEvent.click(icon)
+    const pop = await screen.findByRole('dialog', { name: 'Search Item code' })
+    expect(within(pop).getByText('CF')).toBeInTheDocument()
+    expect(t.onSpec.mock.calls.length).toBe(calls)                                 // the click sorted nothing
+    fireEvent.keyDown(pop, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search Item code' })).toBeNull())
+    await waitFor(() => expect(icon).toHaveFocus())                                // back to the icon, not the column menu
+  })
+
+  it('a searchable column not searched: faint, shown on hover / focus / touch; Enter opens it empty; Space too; no drag', async () => {
+    const t = renderTable({})
+    const icon = await screen.findByRole('button', { name: 'Search Price' })
+    for (const c of FAINT) expect(icon).toHaveClass(c)                             // hidden until hover, focus-within or touch
+    expect(icon.closest('th')).toHaveClass('group/th')
+    expect(icon).toHaveAttribute('draggable', 'false')
+    expect(icon.querySelector('svg')).toHaveAttribute('fill', 'none')
+    const calls = t.onSpec.mock.calls.length
+    icon.focus()
+    fireEvent.keyDown(icon, { key: 'Enter' })
+    fireEvent.click(icon)                                                          // a button's Enter / Space is its click
+    const pop = await screen.findByRole('dialog', { name: 'Search Price' })
+    expect(within(pop).getByLabelText('Price: value')).toHaveValue(null)
+    expect(t.onSpec.mock.calls.length).toBe(calls)
+    fireEvent.change(within(pop).getByLabelText('Price: value'), { target: { value: '4' } })
+    fireEvent.keyDown(within(pop).getByLabelText('Price: value'), { key: 'Enter' })
+    await waitFor(() => expect(t.request().getAll('filter')).toEqual(['price:eq:4']))
+    expect(t.last().sort ?? []).toEqual([])                                        // never sorted
+  })
+
+  it('no icon on a column the page locks, nor on one that cannot be searched', async () => {
+    renderTable({ locked: ['status'] })
+    await screen.findByRole('button', { name: 'Search Item code' })
+    expect(screen.queryByRole('button', { name: /^(Search|Edit search:) Status/ })).toBeNull()
   })
 })

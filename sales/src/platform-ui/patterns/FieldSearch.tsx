@@ -1,5 +1,5 @@
 import * as RP from '@radix-ui/react-popover'
-import { useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Select } from '../primitives/Select'
 import { submitOnEnter } from '../primitives/submitOnEnter'
 import { Button } from '../primitives/shell'
@@ -30,6 +30,9 @@ export interface FieldSearchProps {
  *  Clear empties it (Search then removes it), All fields… opens the panel. Escape closes; focus goes back to where it opened. */
 export function FieldSearch({ field, filters, open, onOpenChange, onApply, onAllFields, suggest, children }: FieldSearchProps) {
   const anchor = useRef<HTMLSpanElement>(null)
+  const opener = useRef<HTMLElement | null>(null)  // what opened it (the header's icon, the column menu): focus goes back there
+  // Before the popover takes the focus (a layout effect runs ahead of its own): what had it, opened it.
+  useLayoutEffect(() => { if (open) opener.current = document.activeElement as HTMLElement | null }, [open])
   const elsewhere = useRef(false)  // closed for the whole panel: focus goes there, not back here
   return (
     <RP.Root open={open} onOpenChange={onOpenChange}>
@@ -38,7 +41,9 @@ export function FieldSearch({ field, filters, open, onOpenChange, onApply, onAll
         <RP.Content align="start" sideOffset={6} aria-label={`Search ${field.label}`} role="dialog"
           onCloseAutoFocus={(e) => {
             e.preventDefault()
-            if (!elsewhere.current) anchor.current?.querySelector<HTMLElement>('button')?.focus()
+            const back = opener.current?.isConnected && anchor.current?.contains(opener.current) ? opener.current : anchor.current?.querySelector<HTMLElement>('button')
+            if (!elsewhere.current) back?.focus()
+            opener.current = null
             elsewhere.current = false
           }}
           className="z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg focus:outline-none">

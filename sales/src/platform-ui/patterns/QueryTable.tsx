@@ -19,6 +19,7 @@ import { ColumnMenu } from './ColumnMenu'
 import { FilterChips } from './FilterChips'
 import { SearchPanel } from './SearchPanel'
 import { useNotices } from './notices'
+import { cn } from '../lib/cn'
 import type { PanelDraft } from './searchDraft'
 import { FieldSearch } from './FieldSearch'
 import { filterText } from './listView'
@@ -378,14 +379,22 @@ function QueryTableView<T>({
               lock={{ locked: lockedIds.includes(id), full: lockedCount >= MAX_LOCKED, max: MAX_LOCKED, onToggle: () => toggleLock(id) }}
             />
           ) : null
-          // A searched column says so in its header: an icon with its words, never a colour alone (#32 A).
-          const mark = f && searched.length > 0 ? (
-            <span role="img" aria-label={`Searched: ${searched.map((x) => filterText(x, f)).join('; ')}`}
-              title={searched.map((x) => filterText(x, f)).join('; ')} className="inline-flex text-primary-700">
-              <FilterIcon aria-hidden className="h-3 w-3" />
-            </span>
-          ) : null
           if (!f || !panelFields.some((p) => p.name === id)) return menu
+          // The header's filter icon opens the column's own search (user 2026-11-26). Searched: always there, solid, named by
+          // its search (never a colour alone, #32 A). Not searched: faint, shown on the header's hover or keyboard focus (always
+          // on a touch screen). It never sorts or drags the column: it is a button of its own, and its clicks stop here.
+          const words = searched.map((x) => filterText(x, f)).join('; ')
+          const mark = (
+            <button type="button" data-column-search={id} aria-label={searched.length ? `Edit search: ${words}` : `Search ${f.label}`}
+              title={searched.length ? words : `Search ${f.label}`}
+              onClick={(e) => { e.stopPropagation(); e.currentTarget.focus(); setFieldSearch({ field: id, at: 'column' }) }}  // focused: it gets it back (Safari does not focus a clicked button)
+              onKeyDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} draggable={false}
+              className={cn('ml-1 inline-flex h-6 w-6 items-center justify-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
+                searched.length ? 'text-primary-700'
+                  : 'text-neutral-400 opacity-0 hover:text-neutral-700 group-hover/th:opacity-100 group-focus-within/th:opacity-100 pointer-coarse:opacity-100')}>
+              <FilterIcon aria-hidden className="h-3 w-3" fill={searched.length ? 'currentColor' : 'none'} />
+            </button>
+          )
           return (
             <FieldSearch field={f} filters={searched} suggest={suggest}
               open={fieldSearch?.field === id && fieldSearch.at === 'column'}

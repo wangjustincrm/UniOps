@@ -122,6 +122,56 @@ async function run(name, viewport) {
   })
 
   if (!phone) {
+    await step("the header's filter icon", async () => {
+      const th = page.locator('table thead th').filter({ has: page.locator('[data-column-search="partner_name"]') }).first()
+      const icon = th.locator('[data-column-search="partner_name"]')
+      await page.mouse.move(5, 5)
+      const op = () => icon.evaluate((el) => getComputedStyle(el).opacity)
+      check((await op()) === '0', `${name}: the faint icon is hidden while the header is not hovered (${await op()})`)
+      await th.hover()
+      await page.waitForTimeout(200)
+      check((await op()) === '1', `${name}: hovering the header shows it (${await op()})`)
+      await page.mouse.move(5, 5)
+      await icon.focus()
+      check((await op()) === '1', `${name}: keyboard focus shows it (${await op()})`)
+      check(await icon.getAttribute('aria-label') === 'Search Partner', `${name}: its name is "Search Partner"`)
+      await page.keyboard.press('Enter')
+      const pop = page.getByRole('dialog', { name: 'Search Partner' })
+      await pop.waitFor({ timeout: 5000 })
+      const [pb, hb, ib] = [await pop.boundingBox(), await th.boundingBox(), await icon.boundingBox()]
+      check(!!pb && !!hb && !!ib && pb.y >= ib.y + ib.height && pb.x <= hb.x + hb.width && pb.x + pb.width >= hb.x,
+        `${name}: the popover opens under its column's controls (popover ${Math.round(pb?.x)},${Math.round(pb?.y)}; column ${Math.round(hb?.x)}–${Math.round(hb?.x + hb?.width)}; icon bottom ${Math.round(ib?.y + ib?.height)})`)
+      if (axeReady) {
+        const v = await axeViolations(page, 'table thead')
+        check(v.length === 0, `${name}: the header's accessibility (axe, WCAG A/AA)${v.length ? ': ' + v.join('; ') : ''}`)
+      }
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
+      const focused = await page.evaluate(() => document.activeElement?.getAttribute('data-column-search'))
+      check(focused === 'partner_name', `${name}: focus back on the icon (${focused})`)
+      const sorted = await page.locator('table thead th[aria-sort]').count()
+      check(sorted === 0 || !(await th.getAttribute('aria-sort')), `${name}: opening it sorted nothing`)
+      await shot('header-icon')
+    })
+    await step('touch: the faint icon is always there', async () => {
+      const t = await browser.newContext({ viewport, hasTouch: true })
+      await t.addInitScript((s) => localStorage.setItem('sales-auth', s), JSON.stringify(session))
+      await t.route('**/*', (route) => {
+        const req = route.request()
+        if (!new URL(req.url()).pathname.startsWith('/api/')) return route.continue()
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(answer(req.url(), [])) })
+      })
+      const p2 = await t.newPage()
+      await p2.emulateMedia({ media: 'screen' })
+      const cdp = await t.newCDPSession(p2)
+      await cdp.send('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' })
+      await p2.goto(`${BASE}/orders`, { waitUntil: 'networkidle', timeout: 60000 })
+      await p2.locator('table tbody tr').first().waitFor({ timeout: 15000 })
+      const coarse = await p2.evaluate(() => matchMedia('(pointer: coarse)').matches)
+      const opacity = await p2.locator('[data-column-search="partner_name"]').evaluate((el) => getComputedStyle(el).opacity)
+      check(!coarse || opacity === '1', `${name}: with a coarse pointer the icon shows without hover (coarse=${coarse}, opacity ${opacity})`)
+      await t.close()
+    })
     await step('a record sheet keeps the draft', async () => {
       await icon.click()
       await panel.getByLabel('Find a field').fill('partner')

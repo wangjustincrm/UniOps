@@ -453,7 +453,7 @@ export function DataTable<T>({
                         data-frozen={frozenAt(hi) || undefined}
                         data-locked={hi < want ? (frozenAt(hi) ? 'frozen' : 'unfrozen') : undefined}
                         title={hi < want && !frozenAt(hi) ? `${frozenCount} of ${want} locked columns frozen: the window is too narrow` : undefined}
-                        className={cn(cellPad, 'font-medium', frozenAt(hi) && cn('sticky z-[2] bg-neutral-50', edgeAt(hi) && FROZEN_EDGE),
+                        className={cn(cellPad, 'group/th font-medium', frozenAt(hi) && cn('sticky z-[2] bg-neutral-50', edgeAt(hi) && FROZEN_EDGE),
                           dragging === h.column.id && 'opacity-40', dropOn === h.column.id && dragging !== h.column.id && 'shadow-[inset_2px_0_0_0_var(--color-primary-600,#0a7c7c)]')}
                         aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
                         onDragOver={onColumnMove ? (e) => { if (dragging) { e.preventDefault(); setDropOn(h.column.id) } } : undefined}
