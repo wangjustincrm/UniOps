@@ -92,3 +92,22 @@ describe('a page in an app tab that is not shown', () => {
     expect(screen.getByLabelText('Note')).toHaveValue('typed, not saved')
   })
 })
+
+describe("a page's own polling", () => {
+  it('a lookup polled every minute stops while its tab is not shown and goes on when shown', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { useLookup } = await import('./patterns/useRecord')
+    const read = vi.fn(async () => 'ok')
+    function Dash() { const q = useLookup(['dash'], read, { refetchInterval: 60_000 }); return <p>{q.data ?? '…'}</p> }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><Tab><Dash /></Tab></QueryClientProvider>)
+    await screen.findByText('ok')
+    const first = read.mock.calls.length
+    act(() => held.control(false))
+    await at(130_000)
+    expect(read.mock.calls.length).toBe(first)
+    act(() => held.control(true))
+    await at(61_000)
+    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(first))
+  })
+})

@@ -7,6 +7,7 @@ import type { HelpId } from '../help'
 import { listTools } from './listHelp'
 import { TourMark, TourScope } from '../help'
 import { useListMeta } from '../resource/listMeta'
+import { usePageActive } from './pageActivity'
 import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
@@ -147,6 +148,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     view.setLayout({ ...view.layout, refresh: seconds || undefined })
   }
   const listKey = [...queryKeys.list(resource), spec]
+  const pageActive = usePageActive()
   const list = useQuery({
     queryKey: listKey,
     queryFn: () => resource.list(spec),
@@ -154,7 +156,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     enabled: view.ready,
     // Only the page's own polling (something running) is TanStack's interval — an
     // incidental fetch, quiet unless something changed. Auto-refresh is useRefresh's.
-    refetchInterval: (q) => props.refetchInterval?.(q.state.data?.items ?? []) || false,
+    refetchInterval: (q) => (pageActive && props.refetchInterval?.(q.state.data?.items ?? [])) || false,  // not while its tab is hidden
     refetchIntervalInBackground: false,
     // Back to the window: refetch only rows older than 30 s (or a failed load).
     refetchOnWindowFocus: (q) => q.state.status === 'error' || Date.now() - q.state.dataUpdatedAt > 30_000,

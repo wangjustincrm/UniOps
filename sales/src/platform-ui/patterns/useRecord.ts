@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { hashKey, useQueries, useQuery, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
 import { queryKeys } from '../resource/queryKeys'
 import { errorText } from '../resource/businessError'
+import { usePageActive } from './pageActivity'
 import type { Page, QuerySpec } from '../resource/querySpec'
 import { useNotices } from './notices'
 
@@ -31,8 +32,9 @@ export interface ReadOptions {
   errorMessages?: Record<string, string>
 }
 
-const interval = (i: Interval | undefined) =>
-  typeof i === 'function' ? (q: { state: { data: unknown } }) => i(q.state.data) : i
+// A page's own polling stops while its app tab is not shown (user 2026-11-26); usePageActive is true outside any tab.
+const interval = (i: Interval | undefined, active: boolean) =>
+  !active ? false : typeof i === 'function' ? (q: { state: { data: unknown } }) => i(q.state.data) : i
 
 /** A failed read in the status row, with Retry; cleared once it reads again. */
 function useReadErrors(q: UseQueryResult<unknown>, key: QueryKey, opts: ReadOptions) {
@@ -63,11 +65,12 @@ export function useRecord<T>(resource: Resource & { get?: (id: number) => Promis
   const read = fetch ?? resource.get
   if (!read && import.meta.env.DEV) console.error(`useRecord(${resource.basePath}): no fetch and no get — it would never load`)
   const queryKey = queryKeys.detail(resource, id ?? 'none')
+  const active = usePageActive()
   const q = useQuery({
     queryKey,
     queryFn: () => read!(id as number),
     enabled: id != null && !!read && opts.enabled !== false,
-    refetchInterval: interval(opts.refetchInterval),
+    refetchInterval: interval(opts.refetchInterval, active),
     staleTime: opts.staleTime,
   })
   useReadErrors(q, queryKey, opts)
@@ -81,11 +84,12 @@ export const recordKey = (resource: Resource, id: number | null | undefined): Qu
 export function useRecordList<T>(resource: Resource & { list: (spec: QuerySpec) => Promise<Page<T>> }, spec: QuerySpec | null,
   opts: ReadOptions = {}) {
   const queryKey = [...queryKeys.list(resource), spec]
+  const active = usePageActive()
   const q = useQuery({
     queryKey,
     queryFn: () => resource.list(spec!),
     enabled: spec != null && opts.enabled !== false,
-    refetchInterval: interval(opts.refetchInterval),
+    refetchInterval: interval(opts.refetchInterval, active),
     staleTime: opts.staleTime,
   })
   useReadErrors(q, queryKey, opts)
@@ -96,11 +100,12 @@ export function useRecordList<T>(resource: Resource & { list: (spec: QuerySpec) 
  *  which the page shares with whoever refreshes or sets it. No key (null): nothing is fetched. */
 export function useLookup<T>(key: QueryKey | null, fetch: () => Promise<T>, opts: ReadOptions = {}) {
   const queryKey = key ?? ['platform-lookup', 'none']
+  const active = usePageActive()
   const q = useQuery({
     queryKey,
     queryFn: fetch,
     enabled: key != null && opts.enabled !== false,
-    refetchInterval: interval(opts.refetchInterval),
+    refetchInterval: interval(opts.refetchInterval, active),
     staleTime: opts.staleTime,
     ...(opts.gcTime !== undefined ? { gcTime: opts.gcTime } : {}),
     ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
