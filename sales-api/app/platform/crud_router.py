@@ -62,6 +62,11 @@ def resource_router(
     async def list_(u: UoW, spec: Spec) -> dict:
         return page_body(await service_cls(u).list(spec))
 
+    @r.get("/count")
+    async def count(u: UoW, spec: Spec) -> dict:
+        """The list's count alone, for the same query (#32: the search panel's "Search (42)")."""
+        return {"total": await service_cls(u).count(spec)}
+
     @r.get("/meta")
     async def meta(u: UoW) -> dict:
         return await service_cls(u).meta()

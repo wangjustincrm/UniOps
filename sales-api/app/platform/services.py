@@ -29,6 +29,7 @@ from sqlalchemy import inspect, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 
+from app.platform.relative_dates import as_meta as relative_dates
 from app.platform.actors import Actor
 from app.platform.audit import AuditEntryRead, jsonable
 from app.platform.authorization import authorize, may, note_action
@@ -248,6 +249,11 @@ class ReadOnlyService(Service, Generic[T, R]):
             .order_by(trail.at.desc(), trail.id.desc()).limit(options(ResourceOptions).history_entries))).scalars().all()
         return [AuditEntryRead.model_validate(r) for r in rows]
 
+    async def count(self, spec: QuerySpec) -> int:
+        """The list's count alone (the search panel's "Search (42)"): as `list` counts, nothing else."""
+        await self._authorize(self.read_permission)
+        return await self.repo.count(spec)
+
     async def suggest(self, field: str, text: str = "") -> list[str]:
         await self._authorize(self.read_permission)
         return await self.repo.suggest(field, text)
@@ -264,6 +270,7 @@ class ReadOnlyService(Service, Generic[T, R]):
                 "searchable": bool(repo.search_fields), "default_sort": list(repo.default_sort),
                 "client_columns": list(repo.client_columns),
                 "views": [p.as_dict() for p in repo.presets],
+                "groups": repo.group_labels(), "relative_dates": relative_dates(),
                 "capabilities": await self.capabilities()}
 
     async def capabilities(self) -> dict[str, Any]:

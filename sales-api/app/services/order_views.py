@@ -188,6 +188,21 @@ class OrderRepository(Repository[Order]):
                   "ordered_ea": FilterRule(Order.ordered_ea_sql, kind="number", cast=int),
                   "parent_reference": FilterRule(Order.parent_reference_sql, kind="text"),
                   "payment_status": FilterRule(Order.payment_status_sql, kind="text")}
+    # The search panel's groups (#32): every field it offers, in one of them.
+    field_groups = (
+        ("Status", ("order_status", "on_hold_reason", "payment_status", "review_reason", "historical", "archive_suppressed",
+                    "shopify_financial_status", "shopify_fulfillment_status")),
+        ("Order", ("source_reference", "order_number", "source_order_number", "source_order_id", "source_type", "source_name",
+                   "connection_name", "order_type", "department", "tags", "manual_reason", "parent_reference", "parent_order_id")),
+        ("Partner", ("partner_name", "partner_code")),
+        ("Dates", ("order_date", "first_received_at", "paid_at", "requested_delivery_date", "cancel_date", "do_not_deliver_after",
+                   "received_month", "archived_in_shopify_at", "source_cancelled_at")),
+        ("Shipments", ("applied_945s", "over_shipped_ea", "ordered_ea", "returned_ea")),
+        ("Money", ("total_amount", "currency", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded",
+                   "net_amount")),
+        ("Settlement", ("settled_on", "settled_reference", "settled_amount", "settled_note", "settled_at", "settled_by_name")),
+        ("Other", ("created_at", "updated_at", "source_updated_at")),
+    )
     summable = ("total_amount", "net_amount", "total_refunded", "settled_amount")
     sum_currency = "currency"
     money_fields = ("total_amount", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded", "net_amount",

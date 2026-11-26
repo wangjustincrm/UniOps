@@ -21,7 +21,7 @@ never removed. Models that opt in to SoftDeletable get `soft_delete`.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from types import UnionType
 from typing import Any, ClassVar, Generic, Literal, TypeVar, Union, get_args, get_origin
@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from sqlalchemy import Select, and_, func, not_, or_, select, true
 
 from app.platform.clock import clock
+from app.platform.relative_dates import is_relative, period
 from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
 from app.platform.views import Preset
@@ -40,6 +41,7 @@ from app.platform.query import (  # noqa: F401 — FilterRule, parse_bool re-exp
 
 T = TypeVar("T")
 MAX_SUGGESTIONS = 20
+OTHER = "Other"
 
 
 def _like_escape(s: str) -> str:
@@ -62,6 +64,10 @@ class Repository(Generic[T]):
     # In the read schema but never offered to a client as a column or a field (/meta).
     meta_hidden: ClassVar[tuple[str, ...]] = ()
     labels: ClassVar[Mapping[str, str]] = {}
+    # The search panel's groups (#32, user 2026-11-26): (label, fields), one level, in order. Declared, every field /meta
+    # offers for a filter is in exactly one group — "Other" named on purpose (tests/test_field_groups.py). Not declared:
+    # every field is in "Other".
+    field_groups: ClassVar[tuple[tuple[str, tuple[str, ...]], ...]] = ()
     enums: ClassVar[Mapping[str, Sequence[str]]] = {}
     # Fields the list can be grouped by (sortable or filterable keys): the
     # values that repeat — a status, a partner, a flag — not free text.
@@ -154,6 +160,12 @@ class Repository(Generic[T]):
             q = q.limit(spec.page_size)
         items = list((await self.session.execute(q)).scalars().all())
         return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated, totals=totals)
+
+    async def count(self, spec: QuerySpec) -> int:
+        """How many rows the list's query selects: its filters and search, nothing else (no totals, groups or rows)."""
+        q = self._apply(self.base_query(), spec, open_work=False)
+        pk = self.model.__mapper__.primary_key[0]
+        return (await self.session.execute(select(func.count()).select_from(self._only(q, pk).order_by(None).subquery()))).scalar_one()
 
     async def matching_ids(self, spec: QuerySpec, limit: int) -> list[int]:
         """The ids the list's query selects (its filters and search; no paging), at most `limit`, in its order:
@@ -331,8 +343,18 @@ class Repository(Generic[T]):
                 **({"suggestable": True} if n in cls.suggestable else {}),
                 **({"summable": True} if n in cls.summable else {}),
                 **({"money": True, "currency_field": currency} if n in cls.money_fields else {}),
+                "group": cls.group_of(n),
             })
         return out
+
+    @classmethod
+    def group_of(cls, name: str) -> str:
+        return next((label for label, names in cls.field_groups if name in names), OTHER)
+
+    @classmethod
+    def group_labels(cls) -> list[str]:
+        labels = [label for label, _ in cls.field_groups]
+        return labels if OTHER in labels else [*labels, OTHER]
 
     def _filter(self, f: Filter):
         rule = self.filterable.get(f.field)
@@ -349,6 +371,13 @@ class Repository(Generic[T]):
                 {"field": f.field, "op": f.op, "allowed": list(allowed)},
             )
         col = rule.column
+        if op in NO_VALUE_OPS:
+            return col.is_(None) if op == "is_null" else col.is_not(None)
+        if op == "eq" and is_relative(f.value) and self.field_kind(f.field) in ("date", "datetime"):
+            first, last = period(f.value, clock().today())  # the business day, Toronto
+            if self.field_kind(f.field) == "date":
+                return and_(col >= first, col <= last)
+            return and_(col >= clock().at(first, time(0)), col < clock().at(last + timedelta(days=1), time(0)))
         if op in NO_VALUE_OPS:
             return col.is_(None) if op == "is_null" else col.is_not(None)
         try:
