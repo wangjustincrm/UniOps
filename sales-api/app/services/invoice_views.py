@@ -35,19 +35,23 @@ class InvoiceRepository(Repository[Invoice]):
     search_numbers = ("order_number_sql",)  # the Internal no., matched exactly
     list_fields = ("id", "invoice_number", "order_id", "delivery_number", "method",
                    "invoice_date", "currency", "total", "sent_at", "send_count", "error", "created_at")
-    sortable = {"order_ref": Invoice.order_ref_sql, "order_number": Invoice.order_number_sql, "partner_name": Invoice.partner_name_sql}
-    filterable = {"order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
+    sortable = {"status": Invoice.status_sql, "order_ref": Invoice.order_ref_sql, "order_number": Invoice.order_number_sql, "partner_name": Invoice.partner_name_sql}
+    filterable = {"status": FilterRule(Invoice.status_sql, kind="text"),
+                  "order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
                   "order_number": FilterRule(Invoice.order_number_sql, kind="number", cast=int),
                   "partner_name": FilterRule(Invoice.partner_name_sql, kind="text")}
     labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "po": "PO",
               "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "total": "Amount", "send_count": "Times sent"}
-    enums = {"method": ("810_JSON", "EMAIL", "NONE")}
+    enums = {"method": ("810_JSON", "EMAIL", "NONE"), "status": tuple(s.value for s in Inv)}
     default_sort = ("-invoice_date", "-id")
     groupable = ("partner_name", "method", "currency")
     summable = ("total",)
     sum_currency = "currency"
     money_fields = ("subtotal", "total")
     presets = (Preset("all", "All"),
+               # Ready to send (user 2026-11-26): what a bulk Send takes, oldest first.
+               Preset("ready", "Ready to send", {"filters": [{"field": "status", "op": "eq", "value": "Ready"}],
+                                                 "sort": [{"field": "invoice_date", "desc": False}]}),
                Preset("not_sent", "Not sent", {"filters": [{"field": "sent_at", "op": "null", "value": None}]}),
                Preset("failed", "Failed", {"filters": [{"field": "error", "op": "not_null", "value": None}]}))
 

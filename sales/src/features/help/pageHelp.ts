@@ -40,7 +40,8 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
   'page:invoices': {
     title: 'Invoices',
     body: "One invoice per confirmed order, sent by the partner's method (810 or email with PDFs).",
-    tasks: ['Check and Edit invoice before sending.', 'Send, or Send again.', 'Release an invoice that is on hold.'],
+    tasks: ['Check and Edit invoice before sending.', 'Send, or Send again.', 'Send several at once: the Ready to send view, tick them, Send: it says first which go, how, and which not and why.',
+      'Release an invoice that is on hold.'],
   },
   'page:transfers': {
     title: 'Transfers',

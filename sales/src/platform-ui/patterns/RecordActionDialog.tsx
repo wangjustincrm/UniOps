@@ -51,6 +51,10 @@ export function RecordActionDialog<T extends { id: number; version: number }>({ 
   const toInput = (v: Record<string, unknown>) => (input && 'schema' in input && input.toBody ? input.toBody(v) : v)
   const left = preview ? preview.results.filter((r) => r.status !== 'done') : []
   const will = preview?.counts.done ?? 0
+  // How the ones that fit go, when the server says it (a dry run's note per record): "2 — an 810 file to …".
+  const how = [...(preview?.results ?? []).filter((r) => r.status === 'done' && r.note)
+    .reduce((m, r) => m.set(r.note!, [...(m.get(r.note!) ?? []), r.id]), new Map<string, number[]>())]
+  const sends = host.sends?.(action.id)
   return (
     <FormDialog open={open} onOpenChange={onOpenChange} title={action.title?.(n) ?? `${action.label}: ${n} ${n === 1 ? 'record' : 'records'}`}
       description={action.description}>
@@ -61,6 +65,16 @@ export function RecordActionDialog<T extends { id: number; version: number }>({ 
           {preview && (
             <Stack gap={1}>
               <Text weight="medium">{will ? action.will(will) : 'It applies to none of them.'}</Text>
+              {how.length > 0 && (
+                <Stack as="ul" gap={0.5} aria-label="How each goes">
+                  {how.map(([note, ids]) => (
+                    <Text as="li" key={note} size="xs" tone="secondary">
+                      {ids.length} by {note}{ids.length <= SHOWN ? `: ${ids.map(nameOf).join(', ')}` : ''}
+                    </Text>
+                  ))}
+                </Stack>
+              )}
+              {sends && will > 0 && <Hint as="p">Sends {sends}.</Hint>}
               {left.length > 0 && <Text tone="secondary">{left.length} {left.length === 1 ? 'is' : 'are'} left out:</Text>}
               {left.length > 0 && (
                 <Stack as="ul" gap={0.5}>
@@ -76,7 +90,7 @@ export function RecordActionDialog<T extends { id: number; version: number }>({ 
         {preview && will > 0 && (
           <SchemaForm schema={form.schema} fields={form.fields} defaultValues={form.defaults}
             submitLabel={`${action.label} (${will})`} onCancel={() => onOpenChange(false)}
-            onSubmit={(v) => host.run(action.id, { ...body(), input: toInput(v) })}
+            onSubmit={(v) => host.run(action.id, { ...body(), input: toInput(v) })} invalidates={action.invalidates}
             done={(res) => {
               const out = res as ActionOut
               return { key: `action:${action.id}`, tone: out.counts.failed || out.results.some((r) => r.problem) ? 'warning' : 'success', text: resultText(action, out, nameOf) }

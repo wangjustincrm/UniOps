@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { QueryKey } from '@tanstack/react-query'
 import type { z } from 'zod'
 import type { FieldValues } from 'react-hook-form'
 import type { HelpId } from '../help'
@@ -39,6 +40,8 @@ export interface RecordAction<T> {
   /** What the preview says of the n that will be done, e.g. n => `${n} will be marked settled`. */
   will: (n: number) => string
   help?: HelpId
+  /** What is read again after it ran (default: the list it is in), e.g. the records of another list it changes. */
+  invalidates?: QueryKey[]
 }
 
 export function defineActions<T>(actions: RecordAction<T>[]): RecordAction<T>[] {
@@ -58,6 +61,8 @@ export const fits = <T,>(a: RecordAction<T>, row: T): true | string => a.eligibl
 export interface ActionHost<T> {
   run: (actionId: string, body: ActionRunBody) => Promise<ActionOut>
   name: (row: T) => string
+  /** What the action sends out of the company (the server's words, /meta capabilities), if anything. */
+  sends?: (actionId: string) => string | undefined
 }
 export const ActionHostContext = createContext<ActionHost<unknown> | null>(null)
 export function useActionHost<T>(): ActionHost<T> | null {

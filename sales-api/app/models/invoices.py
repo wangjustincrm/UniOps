@@ -81,6 +81,9 @@ Invoice.order_ref_sql = column_property(
     select(Order.source_reference).where(Order.id == Invoice.order_id).correlate_except(Order).scalar_subquery())
 Invoice.order_number_sql = column_property(
     select(Order.order_number).where(Order.id == Invoice.order_id).correlate_except(Order).scalar_subquery())
+# Its order's invoice status (the list's Status; filtered by the Ready to send view).
+Invoice.status_sql = column_property(
+    select(Order.invoice_status).where(Order.id == Invoice.order_id).correlate_except(Order).scalar_subquery())
 Invoice.partner_name_sql = column_property(
     select(Partner.name).join(Order, Order.partner_code == Partner.code).where(Order.id == Invoice.order_id)
     .correlate_except(Order, Partner).scalar_subquery())

@@ -3,6 +3,7 @@ import { invoicesClient, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { InvoiceSheet } from './InvoiceSheet'
+import { INVOICE_ACTIONS, invoiceName } from './invoiceActions'
 
 const colInvoiceRead = columnsOf<InvoiceRead>()
 const columns: ColumnDef<InvoiceRead, unknown>[] = [
@@ -30,6 +31,8 @@ export default function InvoicesPage() {
       emptyText={EMPTY_TEXT.invoices}
       help="page:invoices"
       renderDetail={(i) => <InvoiceSheet row={i} />}
+      actions={INVOICE_ACTIONS}
+      recordName={invoiceName}
     />
   )
 }

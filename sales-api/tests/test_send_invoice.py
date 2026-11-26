@@ -253,8 +253,10 @@ async def test_each_refusal_stands_and_queues_nothing(p6, monkeypatch):  # noqa:
     assert (await act(p6, "send_again", inv.id, await version(p6, inv.id), reason=WHY)).status == "done"
 
 
-async def test_one_at_a_time(p6):  # noqa: F811
-    for action in INVOICE_ACTIONS.actions:
+async def test_send_again_one_at_a_time(p6):  # noqa: F811
+    """Send may take several (user 2026-11-26, future item 18); Send again stays one at a time: it says why."""
+    assert INVOICE_ACTIONS["send"].bulk and not INVOICE_ACTIONS["send_again"].bulk
+    for action in ("send_again",):
         async with p6.factory(OP) as u:
             with pytest.raises(InvalidInput) as e:
                 await run_action(u, INVOICE_ACTIONS, action, ActionIn(ids={1: 1, 2: 1}, reason=WHY))
@@ -329,3 +331,102 @@ async def test_the_company_s_copy_goes_once_with_each_send(p6):  # noqa: F811
     v = await version(p6, inv.id)
     await twice(p6, OP, lambda u: acting.send_invoice(u, p6.inv, inv.id, v))
     assert [r["kind"] for r in await rows(p6, SEND_INVOICE, INTERNAL_COPY)].count(INTERNAL_COPY) == 1
+
+
+# ── several at once (user 2026-11-26, future item 18) ────────────────────────
+
+async def sending(t) -> list[int]:
+    """The invoices with a send queued (PENDING), in the order queued."""
+    return [r["i"] for r in await t.q("SELECT (payload->>'invoice_id')::int i FROM sales_outbox WHERE kind = :k AND status = 'PENDING' ORDER BY id",
+                                      k=SEND_INVOICE)]
+
+
+async def several(t, ids_versions, dry=False):
+    async with t.factory(OP) as u:
+        out = await run_action(u, INVOICE_ACTIONS, "send", ActionIn(ids=ids_versions, dry_run=dry), SimpleNamespace(invoicing=t.inv))
+        await u.commit()
+    return {r.id: r for r in out.results}, out.counts
+
+
+async def test_several_ready_ones_each_queue_one_send_and_say_how(p6):  # noqa: F811
+    a, ia = await ready(p6, "PO-B1")
+    b, ib = await ready(p6, "PO-B2")
+    got, counts = await several(p6, {ia.id: await version(p6, ia.id), ib.id: await version(p6, ib.id)}, dry=True)
+    assert counts == {"done": 2, "skipped": 0, "failed": 0} and await queued(p6) == []        # a dry run queues nothing
+    assert {r.note for r in got.values()} == {"an 810 file to TrueCommerce"}                    # how each goes, before it goes
+    got, counts = await several(p6, {ia.id: await version(p6, ia.id), ib.id: await version(p6, ib.id)})
+    assert counts["done"] == 2 and got[ia.id].note == "an 810 file to TrueCommerce"
+    assert sorted(await sending(p6)) == sorted([ia.id, ib.id])  # one row each
+    got, counts = await several(p6, {ia.id: await version(p6, ia.id), ib.id: await version(p6, ib.id)})  # again: queued already
+    assert counts == {"done": 0, "skipped": 2, "failed": 0} and len(await queued(p6)) == 2
+
+
+async def test_a_mixed_selection_sends_only_the_ready_ones_and_says_why_for_the_rest(p6):  # noqa: F811
+    from tests.test_invoicing import email_partner
+    await email_partner(p6)
+    r1, i1 = await ready(p6, "PO-M1")
+    s1, i2 = await sent(p6, "PO-M2")
+    c1, i3 = await ready(p6, "PO-M3")
+    o4 = await shipped_850(p6, "PO-M4", partner="SOB")
+    await p6.inv.advance()
+    i4 = await confirm(p6, o4.id, when=date(2026, 11, 5))
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        (await u.session.get(Order, c1.id)).fulfillment_status = F.CANCELLED.value     # cancelled after its invoice was made
+        await u.commit()
+    b = await shipped_850(p6, "PO-M5")                                                # one on hold
+    await p6.inv.advance()
+    i5 = await confirm(p6, b.id, when=date(2026, 11, 5))
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        (await u.session.get(Order, b.id)).invoice_status = "Blocked"
+        await u.commit()
+    ids = {i.id: await version(p6, i.id) for i in (i1, i2, i3, i4, i5)}
+    got, counts = await several(p6, ids)
+    assert (got[i1.id].status, got[i4.id].status) == ("done", "done")
+    assert got[i4.id].note == "an email to ap@sobeys.example"
+    assert (got[i2.id].status, got[i2.id].code) == ("skipped", "invoice.already_sent")
+    assert got[i3.id].status == "skipped" and "cancel" in got[i3.id].reason.lower()
+    assert (got[i5.id].status, got[i5.id].code) == ("skipped", "invoice.not_sendable") and "Blocked" in got[i5.id].reason
+    assert counts == {"done": 2, "skipped": 3, "failed": 0}
+    assert set(await sending(p6)) >= {i1.id, i4.id}
+    assert not set(await sending(p6)) & {i3.id, i5.id}
+
+
+async def test_a_stale_one_fails_alone(p6):  # noqa: F811
+    a, ia = await ready(p6, "PO-V1")
+    b, ib = await ready(p6, "PO-V2")
+    got, counts = await several(p6, {ia.id: await version(p6, ia.id) - 1, ib.id: await version(p6, ib.id)})
+    assert (got[ia.id].status, got[ia.id].code) == ("failed", "entity.stale") and got[ib.id].status == "done"
+    assert await sending(p6) == [ib.id]
+
+
+async def test_two_presses_at_once_queue_each_once(p6):  # noqa: F811
+    a, ia = await ready(p6, "PO-T1")
+    b, ib = await ready(p6, "PO-T2")
+    ids = {ia.id: await version(p6, ia.id), ib.id: await version(p6, ib.id)}
+    one, two = await asyncio.gather(several(p6, ids), several(p6, ids))
+    assert one[1]["done"] + two[1]["done"] == 2
+    assert sorted(await sending(p6)) == sorted([ia.id, ib.id])
+
+
+async def test_sending_several_needs_the_invoice_permission(p6, monkeypatch):  # noqa: F811
+    a, ia = await ready(p6, "PO-P1")
+    b, ib = await ready(p6, "PO-P2")
+
+    async def operator(session, actor, key):  # noqa: ARG001
+        return key in ("sales.read", "sales.order.operate")
+    monkeypatch.setattr(p6.factory, "permissions", operator)
+    with pytest.raises(PermissionDenied):
+        await several(p6, {ia.id: await version(p6, ia.id), ib.id: await version(p6, ib.id)})
+    assert await queued(p6) == []
+
+
+async def test_the_ready_to_send_view_lists_only_the_ready_ones(p6):  # noqa: F811
+    from app.platform.query import Filter, QuerySpec
+    from app.services.invoice_views import InvoiceRepository
+    r, ir = await ready(p6, "PO-R1")
+    s, is_ = await sent(p6, "PO-R2")
+    [view] = [p for p in InvoiceRepository.presets if p.key == "ready"]
+    spec = QuerySpec(filters=[Filter(**f) for f in view.state["filters"]])
+    async with p6.factory(OP) as u:
+        page = await InvoiceService(u).list(spec)
+    assert [i.id for i in page.items] == [ir.id] and page.items[0].status == "Ready"

@@ -14,3 +14,7 @@ export const orderMoved = (id: number): QueryKey[] => [
 export async function readMoved(qc: QueryClient, id: number, { answered = false } = {}): Promise<void> {
   await Promise.all(orderMoved(id).slice(answered ? 1 : 0).map((queryKey) => qc.invalidateQueries({ queryKey })))
 }
+
+/** Every order and invoice the pages hold, lists and open records: after an action on several invoices (or orders) at once. */
+export const ordersAndInvoicesMoved: QueryKey[] = [
+  queryKeys.list(ordersClient), queryKeys.details(ordersClient), queryKeys.list(invoicesClient), queryKeys.details(invoicesClient)]

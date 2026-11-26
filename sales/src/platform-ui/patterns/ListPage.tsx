@@ -203,7 +203,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const actionHost = useMemo<ActionHost<T>>(() => ({
     run: (id, body) => { if (!resource.action) throw new Error('this list has no record actions'); return resource.action(id, body) },
     name: props.recordName ?? ((r: T) => `#${r.id}`),
-  }), [resource, props.recordName])
+    sends: (id) => meta?.capabilities?.actions?.find((a) => a.id === id)?.sends ?? undefined,
+  }), [resource, props.recordName, meta])
   const selection = useRowSelection({ actions: props.actions as RecordAction<T & { version: number }>[] | undefined,
     rows: rows as (T & { version: number })[], spec, total: list.data?.total ?? 0, host: actionHost as ActionHost<T & { version: number }> })
   const ownColumns = [...(selection.lead as ColumnDef<T, unknown>[]), ...columns,
