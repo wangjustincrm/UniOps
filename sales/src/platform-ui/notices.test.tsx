@@ -6,7 +6,7 @@ import { TableStatusBar } from './patterns/TableStatusBar'
 import { createNoticeStore } from './patterns/notices'
 import { type ListMeta } from './resource/listMeta'
 import { type ViewsClient } from './resource/viewsApi'
-import { chooseViewAction, noticeIn } from './testing'
+import { noticeIn } from './testing'
 
 // The status row (the user, 2026-11-03): every list and sheet says what
 // happened in ONE reserved row — a chip tinted by tone, with ×, "+N" for more
@@ -75,7 +75,7 @@ describe('the status row of a list', () => {
     await screen.findByText('A1')
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'x' } })
     fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
-    await chooseViewAction('Save as new view…')
+    fireEvent.click(await screen.findByRole('button', { name: 'Save as a new view' }))
     const pop = await screen.findByRole('dialog', { name: 'Save as a new view' })
     fireEvent.change(within(pop).getByLabelText('View name'), { target: { value: 'Mine' } })
     fireEvent.click(within(pop).getByRole('button', { name: 'Save' }))

@@ -13,7 +13,7 @@ import { MAX_LOCKED, normalizeView, viewStateOf, type Layout, type ViewState } f
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from '../primitives/ColumnChooser'
 import { columnId, startsHidden } from '../primitives/columnMeta'
-import { ViewPicker } from './ViewPicker'
+import { ViewActions, ViewPicker } from './ViewPicker'
 import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
 import { FilterChips } from './FilterChips'
@@ -501,10 +501,12 @@ function QueryTableView<T>({
                 }}
               />
             )}
+            {/* The view, right after Search and its filters, then what its changes can become (the user, 2026-11-27). */}
+            {picker && <TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark>}
+            {picker && <span data-help="list.saveView" className="inline-flex empty:hidden"><ViewActions model={picker} /></span>}
           </>
         ) : undefined}
-        // The view picker at the right end (the user, 2026-11-27): Search and its filters first, the view last.
-        toolbar={picker ? <>{toolbar}<TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark></> : toolbar}
+        toolbar={toolbar}
         pagination={{
           page: spec.page,
           pageSize: clampPageSize(spec.pageSize),

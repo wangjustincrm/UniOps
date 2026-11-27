@@ -1,5 +1,4 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { chooseViewAction, openViewMenu } from './testing'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import { ViewsProvider, type ColumnDef } from './index'
@@ -64,6 +63,18 @@ const moreOf = async (name: string) => {
 }
 
 describe('view picker', () => {
+  it('on the bar: Search, its filters, the View, then Save as new and Reset (the user, 2026-11-27)', async () => {
+    renderList(fakeViews([]))
+    await screen.findByRole('button', { name: 'View: All' })
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'x' } })
+    fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Reset to the saved view' })
+    const order = [screen.getByLabelText('Search'), screen.getByRole('button', { name: /^Search on any field/ }),
+      screen.getByRole('button', { name: 'View: All (unsaved changes)' }), screen.getByRole('button', { name: 'Save as a new view' }),
+      screen.getByRole('button', { name: 'Reset to the saved view' })]
+    for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   const saved: SavedView = { id: 3, resource: 'things', name: 'Cheap', state: { ...base, filters: [{ field: 'price', op: 'contains', value: '1' }] },
     is_default: false, sort: 0, version: 1, stale: false }
 
@@ -75,7 +86,7 @@ describe('view picker', () => {
     expect(await screen.findByRole('button', { name: 'View: Cheap' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'x' } })
     fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
-    await chooseViewAction('Save view')  // in the View button's menu (the user, 2026-11-27)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save view' }))  // an icon now
     await waitFor(() => expect(views.update).toHaveBeenCalledWith(3, { state: expect.objectContaining({ search: 'x' }) }, 1))
     expect(await screen.findByRole('button', { name: 'View: Cheap' })).toBeInTheDocument()  // saved: no longer unsaved
 
@@ -102,8 +113,8 @@ describe('view picker', () => {
 
   it('a view saved by an older version says so', async () => {
     renderList(fakeViews([{ ...saved, is_default: true, stale: true }]))
-    expect(await screen.findByRole('button', { name: 'View: Cheap (saved by an older version)' })).toBeInTheDocument()  // and its dot
-    expect(within(await openViewMenu()).getByRole('status')).toHaveTextContent('Saved by an older version: review it, then Save view.')
+    expect(await screen.findByRole('button', { name: 'View: Cheap' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Saved by an older version: review it, then Save.')
   })
 })
 
@@ -117,7 +128,7 @@ describe('column order', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Move Price up' }))
     await waitFor(() => expect(headers()).toEqual(['Code', 'Price', 'Name']))
     expect(screen.getByRole('button', { name: 'Move Code up' })).toBeDisabled()
-    await chooseViewAction('Save view')
+    fireEvent.click(screen.getByRole('button', { name: 'Save view' }))
     await waitFor(() => expect(views.update).toHaveBeenCalledWith(3, { state: expect.objectContaining({ columns: ['code', 'price', 'name'] }) }, 1))
   })
 

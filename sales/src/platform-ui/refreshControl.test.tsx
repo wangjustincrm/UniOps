@@ -1,5 +1,4 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { openViewMenu } from './testing'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -189,16 +188,14 @@ describe('the toolbar: icons with tooltips, and popovers', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Search on any field (1)' })).toBeInTheDocument())
   })
 
-  it('a changed view: its actions are in the View button\'s menu (none on the bar), Save as new saves; no "Unsaved changes" text', async () => {
+  it('a changed view: Save as new is an icon opening a popover that saves; Reset is an icon; no "Unsaved changes" text', async () => {
     mountList()
     await screen.findByText('A1')
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'x' } })
     fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
-    await screen.findByRole('button', { name: /^View: .* \(unsaved changes\)$/ })
-    expect(screen.queryByRole('button', { name: /^Reset to/ })).toBeNull()  // not on the bar
+    expect(await screen.findByRole('button', { name: 'Reset to the saved view' })).toBeInTheDocument()
     expect(screen.queryByText('Unsaved changes')).toBeNull()
-    expect(within(await openViewMenu()).getByRole('button', { name: /^Reset to/ })).not.toHaveAttribute('aria-disabled')
-    fireEvent.click(within(screen.getByRole('group', { name: 'This view' })).getByRole('button', { name: 'Save as new view…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as a new view' }))
     const pop = await screen.findByRole('dialog', { name: 'Save as a new view' })
     fireEvent.change(within(pop).getByLabelText('View name'), { target: { value: 'Mine' } })
     fireEvent.click(within(pop).getByRole('button', { name: 'Save' }))

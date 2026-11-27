@@ -65,14 +65,3 @@ export async function expectNoMoreAction(label: string | RegExp, scope: HTMLElem
 export async function chooseMoreAction(label: string | RegExp, scope: HTMLElement = document.body) {
   fireEvent.click(within(await openMoreActions(scope)).getByRole('menuitem', { name: label }))
 }
-
-/** Opens a list's View button (at the right end of its toolbar) and gives the view's own actions (Save view, …). */
-export async function openViewMenu() {
-  fireEvent.click(await screen.findByRole('button', { name: /^View:/ }))
-  return screen.findByRole('group', { name: 'This view' })
-}
-
-/** Picks one of the view's actions from the View button's menu. */
-export async function chooseViewAction(name: string | RegExp) {
-  fireEvent.click(within(await openViewMenu()).getByRole('button', { name }))
-}
