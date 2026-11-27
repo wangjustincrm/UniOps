@@ -1075,7 +1075,11 @@
      "not_null"
     ],
     "in_row": true,
-    "group": "Order"
+    "group": "Order",
+    "ref": {
+     "type": "order",
+     "key": "parent_order_id"
+    }
    },
    {
     "name": "parent_reference",
@@ -1820,7 +1824,18 @@
     "label": "Last month",
     "help": "The whole month before this one."
    }
-  ]
+  ],
+  "refs": {
+   "item": {
+    "readable": true
+   },
+   "lot": {
+    "readable": true
+   },
+   "order": {
+    "readable": true
+   }
+  }
  },
  "payments": {
   "version": 1,
@@ -1883,7 +1898,11 @@
      "not_null"
     ],
     "in_row": true,
-    "group": "Other"
+    "group": "Other",
+    "ref": {
+     "type": "order",
+     "key": "order_id"
+    }
    },
    {
     "name": "order_ref",
@@ -1907,7 +1926,11 @@
     ],
     "in_row": true,
     "suggestable": true,
-    "group": "Other"
+    "group": "Other",
+    "ref": {
+     "type": "order",
+     "key": "order_id"
+    }
    },
    {
     "name": "customer",
@@ -2941,7 +2964,12 @@
     "label": "Last month",
     "help": "The whole month before this one."
    }
-  ]
+  ],
+  "refs": {
+   "order": {
+    "readable": true
+   }
+  }
  },
  "inventory/items": {
   "version": 1,
@@ -2980,7 +3008,11 @@
     ],
     "in_row": true,
     "suggestable": true,
-    "group": "Other"
+    "group": "Other",
+    "ref": {
+     "type": "item",
+     "key": "item_code"
+    }
    },
    {
     "name": "description",
@@ -3437,7 +3469,12 @@
     "label": "Last month",
     "help": "The whole month before this one."
    }
-  ]
+  ],
+  "refs": {
+   "item": {
+    "readable": true
+   }
+  }
  },
  "inventory/lots": {
   "version": 1,
@@ -3476,7 +3513,11 @@
     ],
     "in_row": true,
     "suggestable": true,
-    "group": "Other"
+    "group": "Other",
+    "ref": {
+     "type": "item",
+     "key": "item_code"
+    }
    },
    {
     "name": "lot",
@@ -3500,7 +3541,11 @@
     ],
     "in_row": true,
     "suggestable": true,
-    "group": "Other"
+    "group": "Other",
+    "ref": {
+     "type": "lot",
+     "key": "lot"
+    }
    },
    {
     "name": "expiry",
@@ -3999,7 +4044,990 @@
     "label": "Last month",
     "help": "The whole month before this one."
    }
-  ]
+  ],
+  "refs": {
+   "item": {
+    "readable": true
+   },
+   "lot": {
+    "readable": true
+   }
+  }
+ },
+ "lots": {
+  "version": 1,
+  "fields": [
+   {
+    "name": "id",
+    "label": "ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "lot",
+    "label": "Lot",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "suggestable": true,
+    "group": "Other",
+    "ref": {
+     "type": "lot",
+     "key": "lot"
+    }
+   },
+   {
+    "name": "item_code",
+    "label": "Item",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "suggestable": true,
+    "group": "Other",
+    "ref": {
+     "type": "item",
+     "key": "item_code"
+    }
+   },
+   {
+    "name": "expiry",
+    "label": "Expiry",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "days_to_expiry",
+    "label": "Days to expiry",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "qty_shipped_ea",
+    "label": "Qty EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "summable": true,
+    "group": "Other"
+   },
+   {
+    "name": "sscc",
+    "label": "Pallet (SSCC)",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "tracking",
+    "label": "Tracking",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "shipment_id",
+    "label": "Shipment ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "document_id",
+    "label": "945 document",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "ship_date",
+    "label": "Ship date",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "bol",
+    "label": "BOL",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "carrier",
+    "label": "Carrier",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "tracking_url",
+    "label": "Tracking url",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "our_reference",
+    "label": "940 reference (N9*E1)",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "applied",
+    "label": "Applied",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "order_id",
+    "label": "Order ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": false,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other",
+    "ref": {
+     "type": "order",
+     "key": "order_id"
+    }
+   },
+   {
+    "name": "order_ref",
+    "label": "Order ref",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "suggestable": true,
+    "group": "Other",
+    "ref": {
+     "type": "order",
+     "key": "order_id"
+    }
+   },
+   {
+    "name": "order_number",
+    "label": "Internal no.",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other",
+    "ref": {
+     "type": "order",
+     "key": "order_id"
+    }
+   },
+   {
+    "name": "partner_code",
+    "label": "Partner code",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "partner_name",
+    "label": "Partner",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "suggestable": true,
+    "group": "Other"
+   },
+   {
+    "name": "ship_to_city",
+    "label": "Ship-to city",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "ship_to_postal",
+    "label": "Ship-to postal code",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   }
+  ],
+  "searchable": true,
+  "default_sort": [
+   "-ship_date",
+   "lot"
+  ],
+  "client_columns": [],
+  "views": [
+   {
+    "key": "all",
+    "name": "All",
+    "state": {
+     "version": 1
+    }
+   },
+   {
+    "key": "expiring_soon",
+    "name": "Expiring soon (30 days)",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "days_to_expiry",
+       "op": "between",
+       "value": [
+        0,
+        30
+       ]
+      }
+     ],
+     "sort": [
+      {
+       "field": "expiry",
+       "desc": false
+      }
+     ]
+    }
+   },
+   {
+    "key": "by_lot",
+    "name": "By lot",
+    "state": {
+     "version": 1,
+     "group": [
+      {
+       "field": "lot",
+       "desc": false
+      }
+     ],
+     "sort": [
+      {
+       "field": "expiry",
+       "desc": false
+      }
+     ]
+    }
+   }
+  ],
+  "groups": [
+   "Other"
+  ],
+  "relative_dates": [
+   {
+    "value": "today",
+    "label": "Today",
+    "help": "The business day (Toronto)."
+   },
+   {
+    "value": "last_7_days",
+    "label": "Last 7 days",
+    "help": "Today and the 6 days before."
+   },
+   {
+    "value": "last_30_days",
+    "label": "Last 30 days",
+    "help": "Today and the 29 days before."
+   },
+   {
+    "value": "this_month",
+    "label": "This month",
+    "help": "From the 1st of this month up to today."
+   },
+   {
+    "value": "last_month",
+    "label": "Last month",
+    "help": "The whole month before this one."
+   }
+  ],
+  "refs": {
+   "item": {
+    "readable": true
+   },
+   "lot": {
+    "readable": true
+   },
+   "order": {
+    "readable": true
+   }
+  }
+ },
+ "config/items": {
+  "version": 1,
+  "fields": [
+   {
+    "name": "id",
+    "label": "ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "item_code",
+    "label": "Item code",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "suggestable": true,
+    "group": "Other"
+   },
+   {
+    "name": "description",
+    "label": "Description",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "sku",
+    "label": "SKU",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "suggestable": true,
+    "group": "Other"
+   },
+   {
+    "name": "upc",
+    "label": "UPC",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "gtin",
+    "label": "GTIN",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "gross_weight_lb_per_ea",
+    "label": "Gross weight per EA (lb)",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "warehouse_held",
+    "label": "Held in the warehouse",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "active",
+    "label": "Active",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "version",
+    "label": "Version",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "created_at",
+    "label": "Created at",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "created_by_name",
+    "label": "Created by name",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "updated_at",
+    "label": "Updated at",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "group": "Other"
+   },
+   {
+    "name": "updated_by_name",
+    "label": "Updated by name",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true,
+    "group": "Other"
+   }
+  ],
+  "searchable": true,
+  "default_sort": [
+   "item_code"
+  ],
+  "client_columns": [],
+  "views": [
+   {
+    "key": "active",
+    "name": "Active",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "active",
+       "op": "eq",
+       "value": "true"
+      }
+     ]
+    }
+   },
+   {
+    "key": "inactive",
+    "name": "Inactive",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "active",
+       "op": "eq",
+       "value": "false"
+      }
+     ]
+    }
+   },
+   {
+    "key": "all",
+    "name": "All",
+    "state": {
+     "version": 1
+    }
+   }
+  ],
+  "groups": [
+   "Other"
+  ],
+  "relative_dates": [
+   {
+    "value": "today",
+    "label": "Today",
+    "help": "The business day (Toronto)."
+   },
+   {
+    "value": "last_7_days",
+    "label": "Last 7 days",
+    "help": "Today and the 6 days before."
+   },
+   {
+    "value": "last_30_days",
+    "label": "Last 30 days",
+    "help": "Today and the 29 days before."
+   },
+   {
+    "value": "this_month",
+    "label": "This month",
+    "help": "From the 1st of this month up to today."
+   },
+   {
+    "value": "last_month",
+    "label": "Last month",
+    "help": "The whole month before this one."
+   }
+  ],
+  "refs": {}
  },
  "help/texts": {
   "statuses": {

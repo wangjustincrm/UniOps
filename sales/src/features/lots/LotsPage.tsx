@@ -1,32 +1,12 @@
 import { z } from 'zod'
 import { useState } from 'react'
 import {
-  Badge, Button, ListPage, type ColumnDef, type Filter, Callout, columnsOf, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
+  Button, ListPage, type Filter, Callout, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
 } from '@/platform-ui'
-import { PartnerCell } from '@/features/common/PartnerCell'
+import { lotColumns as columns } from './lotColumns'
 import { lotsClient, parseLots, type LotRead } from './lotsApi'
 
-const colLotRead = columnsOf<LotRead>()
-
 const MAX_LOTS = 100  // the list query's limit on one filter's values
-
-const columns: ColumnDef<LotRead, unknown>[] = [
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <Text weight="medium">{row.original.lot ?? '—'}</Text> },
-  colLotRead.text('item_code', 'Item'),
-  colLotRead.date('expiry', 'Expiry'),
-  colLotRead.text('qty_shipped_ea', 'Qty EA'),
-  colLotRead.date('ship_date', 'Ship date'),
-  colLotRead.text('order_ref', 'Order ref'),
-  colLotRead.text('order_number', 'Internal no.'),
-  { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
-  { accessorKey: 'ship_to_city', header: 'Ship to', cell: ({ row }) => [row.original.ship_to_city, row.original.ship_to_postal].filter(Boolean).join(' · ') },
-  colLotRead.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
-  { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
-  { accessorKey: 'document_id', header: '945', cell: ({ row: { original: r } }) => (
-    <Cluster as="span" inline gap={1} align="center">#{r.document_id}
-      {!r.shadow && !r.applied && <Badge variant="warning">Second 945</Badge>}
-    </Cluster>) },
-]
 
 /** How far a recall reaches: the orders and customers its lots went to. */
 function RecallReach({ lots }: { lots: string[] }) {

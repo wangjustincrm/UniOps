@@ -3,6 +3,7 @@ import {
   ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, useOpenRecord, type ColumnDef, Hint, columnsOf, Text, Cluster, Stack, Columns,
 } from '@/platform-ui'
 import { LineNo } from './LineNo'
+import { ItemRef, LotRef } from './refs'
 import { packingListPdf, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 import { ResolveRow } from './ResolveRow'
 
@@ -30,12 +31,12 @@ const colRow = columnsOf<ShipmentRowRead>()
 const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: number, lines: LineRead[]): ColumnDef<ShipmentRowRead, unknown>[] => [
   { id: 'line', header: 'Line', cell: ({ row: { original: r } }) => r.line_no != null
     ? <Text wrap="nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</Text> : '—' },
-  { accessorKey: 'item_code', header: 'Item code', cell: ({ row }) => row.original.item_code ?? '—' },
+  { accessorKey: 'item_code', header: 'Item code', cell: ({ row }) => (row.original.item_code ? <ItemRef code={row.original.item_code} /> : '—') },
   { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <Text nums>{row.original.upc ?? '—'}</Text>, meta: { hidden: true } },
   { accessorKey: 'description', header: 'Description', cell: ({ row }) => row.original.description ?? '—' },
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row: { original: r } }) => (
     <Text nums wrap="nowrap">{r.qty_shipped_ea}{cases(r) && <Hint> ({cases(r)})</Hint>}</Text>) },
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
+  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => (row.original.lot ? <LotRef lot={row.original.lot} /> : '—') },
   colRow.date('expiry', 'Expiry'),
   { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <Text nums>{row.original.sscc ?? '—'}</Text>, meta: { hidden: true } },
   { accessorKey: 'lx_number', header: 'LX no.', cell: ({ row }) => row.original.lx_number ?? row.original.lx_index },

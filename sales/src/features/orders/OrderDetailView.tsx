@@ -2,10 +2,10 @@ import { readMoved } from '@/features/common/moved'
 import { useContext, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ConfirmAction, RecordActionButtons, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useOpenRecord, useRefresh, useRecord, Stack, Cluster,
+  Badge, ConfirmAction, useRecordActionItems, type BarItem, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useOpenRecord, useRefresh, useRecord, Stack, Cluster,
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, reorderOrder, type OrderRead } from './ordersApi'
-import { OrderHoldActions } from './OrderHoldActions'
+import { useOrderHoldItems } from './orderHoldItems'
 import { PaymentBadge, SettlementLink } from './OrderPayment'
 import { ORDER_ACTIONS, ORDER_ACTION_HOST } from './orderActions'
 import { settledFacts } from './orderPaymentFacts'
@@ -15,10 +15,10 @@ import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm } from './InvoicePrices'
 import { ReturnedForm } from './Returned'
 import { AmendForm } from './Amend'
-import { Recheck } from './Recheck'
-import { DraftActions } from './DraftActions'
-import { Send940 } from './Send940'
-import { FulfilInShopify } from './FulfilInShopify'
+import { recheckItems } from './recheckItems'
+import { useDraftItems } from './draftItems'
+import { useSend940Items } from './Send940'
+import { useFulfilInShopifyItems } from './FulfilInShopify'
 import { ActivityTab } from './tabs/ActivityTab'
 import { DocumentsTab } from './tabs/DocumentsTab'
 import { InvoiceTab } from './tabs/InvoiceTab'
@@ -32,18 +32,21 @@ const MANAGE_INVOICE = 'sales.invoice.manage'
 export interface OrderSheetProps {
   o: OrderRead
   close: () => void
-  /** More buttons for the action bar (e.g. Record a return). */
+  /** More buttons, under the facts (e.g. Record a return). */
   extraActions?: ReactNode
   /** Tabs before the order's own (e.g. Confirm delivery). */
   extraTabs?: RecordTab[]
 }
 
-/** One order in the standard record sheet (FR-OB-53): the key numbers, the
- *  actions for its state, and its sections as tabs — Overview, Lines,
+/** One order in the standard record view (FR-OB-53) — in its list's sheet or in its own tab (/orders/:id): the
+ *  key numbers, the actions for its state in the action bar, and its sections as tabs — Overview, Lines,
  *  Shipments & lots, Documents, Invoice, Payments (Shopify) and Activity. */
 export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderSheetProps) {
   const qc = useQueryClient()
   const host = useContext(RecordSheetHostContext)
+  // In its own tab there is no list: the view's tab is chosen here (an action opens its form in Lines).
+  const [ownTab, setOwnTab] = useState<string | undefined>(undefined)
+  const showTab = (id: string) => (host ? host.onTabChange?.(id) : setOwnTab(id))
   const { view, viewer } = useFileViewer()
   const q = useRecord(ordersClient, o.id, fetchOrder, { errors: 'inline' })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(ordersClient, o.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
@@ -127,33 +130,26 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     ...settledFacts(d, <SettlementLink o={d} />),
   ]
 
-  const isDraft = live.source_type === 'MANUAL' && live.fulfillment_status === 'Draft'
-  const actions = d ? (
-    <>
-      {d.fulfillment_status === 'Review' && <Recheck o={d} bare onResolved={close} />}
-      {isDraft && <DraftActions o={d} close={close} />}
-      <Send940 o={d} />
-      <FulfilInShopify o={d} />
-      <OrderHoldActions o={d} />
-      <RecordActionButtons record={d} actions={ORDER_ACTIONS} host={ORDER_ACTION_HOST} />
-      {amendable && !amending && (
-        <ActionButton size="sm" variant="secondary" permission="sales.order.operate"
-          onAction={() => { setReturning(false); setPricing(false); setAmending(true); host?.onTabChange?.('lines') }}>Amend and send again…</ActionButton>
-      )}
-      {returnable && !returning && (
-        <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
-          onAction={() => { setPricing(false); setReturning(true); host?.onTabChange?.('lines') }}>Edit returned</ActionButton>
-      )}
-      {priceable && !pricing && (
-        <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
-          onAction={() => { setReturning(false); setPricing(true); host?.onTabChange?.('lines') }}>Edit invoice prices</ActionButton>
-      )}
-      {d.invoice_status === 'Blocked' && (
-        <ActionButton size="sm" permission={MANAGE_INVOICE} onAction={() => setReleasing(true)}>Release invoice…</ActionButton>
-      )}
-      {extraActions}
-    </>
-  ) : undefined
+  // The action bar (actionBar.ts): every action of the order's state, declared once; the bar shows at most two.
+  const hold = useOrderHoldItems(d)
+  const send = useSend940Items(d)
+  const draft = useDraftItems(d, close)
+  const declared = useRecordActionItems(d, ORDER_ACTIONS, ORDER_ACTION_HOST)
+  const shopify = useFulfilInShopifyItems(d)
+  // An edit that opens its form in Lines.
+  const edit = (item: Pick<BarItem, 'id' | 'label' | 'permission' | 'order'>, start: () => void): BarItem =>
+    ({ ...item, refreshes: false, onSelect: () => { start(); showTab('lines') } })
+  const bar: BarItem[] = !d ? [] : [
+    ...recheckItems(d, close), ...draft.items, ...send.items, ...shopify, ...hold.items, ...declared.items,
+    ...(amendable && !amending ? [edit({ id: 'amend', label: 'Amend and send again…', permission: 'sales.order.operate', order: 10 },
+      () => { setReturning(false); setPricing(false); setAmending(true) })] : []),
+    ...(returnable && !returning ? [edit({ id: 'edit-returned', label: 'Edit returned', permission: MANAGE_INVOICE, order: 12 },
+      () => { setPricing(false); setReturning(true) })] : []),
+    ...(priceable && !pricing ? [edit({ id: 'edit-prices', label: 'Edit invoice prices', permission: MANAGE_INVOICE, order: 14 },
+      () => { setReturning(false); setPricing(true) })] : []),
+    ...(d.invoice_status === 'Blocked' ? [{ id: 'release-invoice', label: 'Release invoice…', permission: MANAGE_INVOICE, primary: 15,
+      opensDialog: true, refreshes: false, onSelect: () => setReleasing(true) }] : []),
+  ]
 
   return (
     <>
@@ -172,8 +168,8 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           {live.historical && <Badge variant="neutral">Historical</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}
-        refresh={sheetRefresh}
-        facts={facts} actions={actions} tabs={tabs}
+        refresh={sheetRefresh} record={{ type: 'order', key: o.id }} {...(host ? {} : { tab: ownTab, onTabChange: setOwnTab })}
+        facts={facts} bar={bar} actions={extraActions} panel={draft.panel} tabs={tabs}
         more={[
           { label: 'Purchase order (PDF)', onSelect: () => view(poPdf(live)), opensDialog: true },
           { label: 'Audit packet: every file and PDF (zip)', onSelect: () => downloadPacket(live), failPrefix: 'Download failed' },
@@ -183,6 +179,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
             onSelect: async () => { const n = await reorderOrder(live.id); openRecord('/orders', n.id) } },
         ]}
       />
+      {hold.node}{send.node}{draft.node}{declared.dialog}
       {d && (
         <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release the invoice of ${live.source_reference ?? live.order_number}?`}
           description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}

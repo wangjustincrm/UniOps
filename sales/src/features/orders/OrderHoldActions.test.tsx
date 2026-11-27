@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
+import { chooseMoreAction } from '@/platform-ui/testing'
 import type { OrderDetail, ShipmentRead } from './ordersApi'
 import { applied945, compare945 } from './orderStatus'
 
@@ -45,12 +46,12 @@ describe('Cancel order and Release hold', () => {
 
   it('needs the permission', () => {
     show({ ...base, cancellable: true }, [])
-    expect(screen.queryByRole('button', { name: 'Cancel order' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
   })
 
   it('Cancel order says it writes nothing outside Sales and needs a reason', async () => {
     show({ ...base, cancellable: true })
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel order' }))
+    await chooseMoreAction(/^Cancel order…/)  // destructive: in "⋯", never a button
     const dialog = await reason('agreed')
     expect(dialog).toHaveTextContent('nothing is written to Shopify, the warehouse or any partner')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel order' }))
@@ -145,7 +146,7 @@ describe('a test-run refusal', () => {
     const qc = new QueryClient()
     render(<QueryClientProvider client={qc}><ToastProvider><PermissionProvider can={() => true}>
       <OrderHoldActions o={{ ...base, cancellable: true }} /></PermissionProvider></ToastProvider></QueryClientProvider>)
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel order' }))
+    await chooseMoreAction(/^Cancel order…/)
     const dialog = await reason('agreed')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel order' }))
     await waitFor(() => expect(cancelOrder).toHaveBeenCalled())

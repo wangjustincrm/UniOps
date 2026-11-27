@@ -1,7 +1,9 @@
 import { DisabledReason } from '../help'
 import { cn } from '../lib/cn'
 import { Button, type ButtonProps } from '../primitives/shell'
+import { useContext } from 'react'
 import { useCan } from './permissions'
+import { ReadOnlyContext } from './recordNav'
 import { useAction, type ActionOptions } from './useAction'
 
 export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
@@ -40,10 +42,13 @@ export function ActionButton({
   permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, invalidates, after, disabledReason, sends, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
+  // A record open read-only here (its own tab is open): what needs more than reading is greyed with where to go.
+  const readOnly = useContext(ReadOnlyContext)
+  const changes = !!permission && !permission.endsWith('.read')
   const { run, pending } = useAction({ done, errorMessages, failPrefix, refreshes, invalidates, after })
   if (!allowed && whenDenied === 'hide') return null
 
-  const reason = !allowed ? "You don't have permission for this action." : disabled && !pending ? disabledReason : null
+  const reason = !allowed ? "You don't have permission for this action." : readOnly && changes ? readOnly : disabled && !pending ? disabledReason : null
   if (reason) {
     // Not natively disabled: a disabled button can't be tapped or focused, so its reason couldn't be read.
     return (

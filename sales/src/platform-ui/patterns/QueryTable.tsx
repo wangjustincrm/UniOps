@@ -22,6 +22,7 @@ import { useNotices } from './notices'
 import { cn } from '../lib/cn'
 import type { PanelDraft } from './searchDraft'
 import { FieldSearch } from './FieldSearch'
+import { RefLink } from './RefLink'
 import { filterText } from './listView'
 import { Filter as FilterIcon } from 'lucide-react'
 import { specFromSorting } from './sorting'
@@ -133,6 +134,23 @@ const formatSum = (v: string, currency: string | null) =>
 const sumText = (totals: ListTotal[], field: string): string =>
   totals.filter((t) => field in t.sums).map((t) => formatSum(t.sums[field], t.currency)).join(' · ')
 
+/** A column whose field names a record (/meta `ref`): its cell, as it is, inside a link to that record — for those
+ *  who may read it (/meta `refs`); the others see the cell only. The column opts out with `meta.ref: false`. */
+function linked<T>(c: ColumnDef<T, unknown>, fields: Map<string, FieldMeta>, meta: ListMeta | undefined): ColumnDef<T, unknown> {
+  const ref = fields.get(columnId(c))?.ref
+  if (!ref || c.meta?.ref === false || !meta?.refs?.[ref.type]?.readable) return c
+  const inner = c.cell
+  return {
+    ...c,
+    cell: (ctx) => {
+      const content = (typeof inner === 'function' ? inner(ctx) : inner ?? ctx.renderValue()) as ReactNode
+      const key = (ctx.row.original as Record<string, unknown>)[ref.key]
+      if (key == null || key === '') return content
+      return <RefLink record={{ type: ref.type, key: key as string | number }}>{content}</RefLink>
+    },
+  }
+}
+
 /** The DataTable view on the back end's list query contract (design §13.19):
  *  column menus (search · sort · hide), chips for what is active, a search
  *  panel over every filterable field, a column chooser, multi-sort, paging
@@ -194,13 +212,13 @@ function QueryTableView<T>({
     for (const m of columnMismatch(meta, [...pageIds])) console.warn(`[QueryTable ${view.ariaLabel ?? ''}] ${m}`)
   }, [meta, pageIds])  // eslint-disable-line react-hooks/exhaustive-deps
   const allColumns = useMemo<ColumnDef<T, unknown>[]>(() => [
-    ...columns,
+    ...columns.map((c) => linked(c, fields, meta)),
     // Only what each row carries (`in_row`): a key the list only filters or sorts on would be an empty column.
     ...(meta?.fields ?? []).filter((f) => !pageIds.has(f.name) && f.in_row !== false).map((f): ColumnDef<T, unknown> => ({
       id: f.name, header: f.label,
       cell: ({ row }) => formatValue(f, (row.original as Record<string, unknown>)[f.name], row.original as Record<string, unknown>),
-    })),
-  ], [columns, meta, pageIds])
+    })).map((c) => linked(c, fields, meta)),
+  ], [columns, meta, pageIds, fields])
   // Layout (resource/viewState.ts): no `columns` = the page's order, its own
   // columns shown, the extra ones hidden; otherwise `columns` is the whole
   // order, and a column it does not name (added later) shows if it is the page's.

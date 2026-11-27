@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useContext, useState, type ReactNode } from 'react'
 import type { FieldValues } from 'react-hook-form'
 import type { z } from 'zod'
 import type { ColumnDef } from '../primitives/DataTable'
@@ -20,6 +20,7 @@ import { useCan } from './permissions'
 import { createNoticeStore } from './notices'
 import { errorText } from '../resource/businessError'
 import { RecordSheet, type RecordFact, type RecordTab } from './RecordSheet'
+import { RecordContainerContext, type RecordKey } from './recordNav'
 import { Badge, Button } from '../primitives/shell'
 
 interface Row {
@@ -57,6 +58,8 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   detailTabs?: (row: T, details: RecordTab) => RecordTab[]
   /** Buttons in the record sheet's header. */
   recordActions?: (row: T) => ReactNode
+  /** The record, when its type has a page of its own (RecordSheet `record`): Open in its tab, Copy link. */
+  recordKey?: (row: T) => RecordKey
   /** The record sheet's size (default md): wider when its facts need the room. */
   detailSize?: 'md' | 'lg' | 'xl'
   /** After New: the new record opens in its sheet on this tab (otherwise the list just shows it). */
@@ -179,12 +182,24 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
 
 /** An existing record in its RecordSheet: the form (read-only without the
  *  write permission) as "Details", the page's own tabs, Deactivate in "More". */
+/** One record of a CrudPage outside its list (its own tab, RecordContainerContext): the same view as the list's
+ *  sheet — the form, the page's tabs, History, Deactivate. */
+export function CrudRecord<T extends Row, TCreate, TUpdate>({ row, close, props }: { row: T; close: () => void; props: CrudPageProps<T, TCreate, TUpdate> }) {
+  const { update, deactivate } = useCrudResource(props.client)
+  const canWrite = useCan(props.writePermission)
+  return (
+    <RecordForm row={row} close={close} canWrite={canWrite} props={props}
+      save={(values, version) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version })}
+      deactivate={() => deactivate.mutateAsync(row.id)} />
+  )
+}
+
 /** The record's edit form, inside its sheet: a save keeps the record open, says "Saved" in the
  *  sheet's status row, and the form stands on what was saved and its new version (SchemaForm),
  *  so what was saved is what it shows — no page refresh, no "discard?" (user 2026-11-12). */
 function SavingForm({ save, onCancel, form }: {
   save: (values: Record<string, unknown>, version: number | undefined) => Promise<unknown>
-  onCancel: () => void
+  onCancel?: () => void
   form: Pick<SchemaFormProps, 'version' | 'schema' | 'fields' | 'defaultValues' | 'readOnly' | 'errorMessages' | 'fieldLabels'>
 }) {
   const notices = useNotices()
@@ -208,12 +223,13 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   deactivate: () => Promise<unknown>
 }) {
   const [confirm, setConfirm] = useState(false)
+  const inTab = useContext(RecordContainerContext) !== null  // its own tab: no Cancel that would close it
   const kept = useListMeta(props.client).data?.capabilities?.history
   const fields = (props.editFields ?? props.fields).map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
   const singular = props.singular ?? props.title
   const details: RecordTab = {
     id: 'details', label: 'Details', render: () => (
-      <SavingForm key={row.id} save={save} onCancel={close}
+      <SavingForm key={row.id} save={save} onCancel={inTab ? undefined : close}
         form={{ version: row.version ?? undefined, schema: props.updateSchema, fields, defaultValues: props.toFormValues(row),
           readOnly: !canWrite, errorMessages: props.errorMessages, fieldLabels: props.fieldLabels }} />
     ),
@@ -231,10 +247,11 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
           {!canWrite && <Badge variant="neutral">Read only</Badge>}
         </>}
         facts={props.recordFacts?.(row)}
+        record={props.recordKey?.(row)}
         actions={props.recordActions?.(row)}
         // Only a record that has `active` can be deactivated: one without it (a buyer part number) offers no Deactivate.
         more={canWrite && row.active === true
-          ? [{ label: 'Deactivate', onSelect: () => setConfirm(true), opensDialog: true }] : undefined}
+          ? [{ label: 'Deactivate…', onSelect: () => setConfirm(true), opensDialog: true, tone: 'destructive', changes: true }] : undefined}
         tabs={[...(props.detailTabs ? props.detailTabs(row, details) : [details]), ...(kept ? [history] : [])]}
       />
       <ConfirmAction

@@ -1,4 +1,4 @@
-import { openTab } from '@/platform-ui/testing'
+import { expectNoMoreAction, openTab } from '@/platform-ui/testing'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -61,7 +61,7 @@ describe('Partners page', () => {
     expect(within(sheet).getAllByText(/read only/i).length).toBeGreaterThan(0)
     expect(within(sheet).getByLabelText(/^Name/)).toBeDisabled()
     expect(within(sheet).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
-    expect(within(sheet).queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()  // no Deactivate
+    await expectNoMoreAction(/^Deactivate/, sheet)
     await openTab(sheet, 'History')
     const history = await within(sheet).findByRole('region', { name: 'History' })
     await waitFor(() => expect(within(history).getByText(/Walmart → Walmart Canada/)).toBeInTheDocument())
@@ -78,7 +78,7 @@ describe('Partners page', () => {
     expect(within(sheet).getByLabelText(/^Code/)).toBeDisabled()  // immutable after creation
     expect(within(sheet).getByRole('button', { name: 'Save' })).toBeInTheDocument()
     fireEvent.keyDown(within(sheet).getByRole('button', { name: 'More actions' }), { key: 'Enter' })  // Deactivate is under More
-    expect(await screen.findByRole('menuitem', { name: 'Deactivate' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: /^Deactivate…/ })).toBeInTheDocument()
   })
 })
 

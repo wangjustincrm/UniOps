@@ -1,8 +1,8 @@
 import { orderMoved } from '@/features/common/moved'
 import { isTestRunRefusal } from '@/features/common/testRun'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
-  ActionButton, ConfirmAction, actionDone, useActionSends, type ActionDone, type ActionResultRow, Stack, Text,
+  ConfirmAction, actionDone, useActionSends, type ActionDone, type ActionResultRow, type BarItem,
 } from '@/platform-ui'
 import { ordersClient, replace940, send940, type OrderDetail } from './ordersApi'
 
@@ -17,14 +17,16 @@ const errorMessages: Record<string, string> = {
   'auth.forbidden': 'You do not have permission to send 940s.',
 }
 
-/** Send 940 now / Replace 940 (FR-OB-03c; sales.order.operate). The 940 is
- *  queued and put by the next outbox pass; its file and 997 status show
- *  under Warehouse 940s. */
-export function Send940({ o }: { o: OrderDetail }) {
+/** Send 940 now / Replace 940 (FR-OB-03c; sales.order.operate), as the order's action bar shows them: Send 940 now
+ *  a button, Replace 940… in "⋯" (it asks first). The 940 is queued and put by the next outbox pass; its file and
+ *  997 status show under Warehouse 940s. sales-api says what is offered (app/domain/order_rules.py send_940_action):
+ *  never once a 945 came. `node`: the replace confirmation. */
+export function useSend940Items(o: OrderDetail | undefined): { items: BarItem[]; node: ReactNode } {
   const [confirming, setConfirming] = useState(false)
   const sends = useActionSends(ordersClient, 'send_940')
   const replaceSends = useActionSends(ordersClient, 'replace_940')
-  // What happened, in the sheet's (or list's) status row: queued, or the checks it failed; the order reads again.
+  if (!o?.send_940) return { items: [], node: null }
+  // What happened, in the sheet's (or page's) status row: queued, or the checks it failed; the order reads again.
   const sent = {
     done: (res: unknown): ActionDone => {
       const r = res as ActionResultRow
@@ -32,32 +34,27 @@ export function Send940({ o }: { o: OrderDetail }) {
     },
     invalidates: orderMoved(o.id),
   }
-  // sales-api says what is offered (app/domain/order_rules.py send_940_action): never once a 945 came.
-  if (!o.send_940) return null
-  const replace = o.send_940 === 'replace'
-  return (
-    <Stack aria-label="Send 940" as="section" gap={2} size="sm">
-      {replace ? (
-        <>
-          <Text as="p" tone="soft">The warehouse has a live 940 for this order. A change is sent only as a confirmed replacement.</Text>
-          <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setConfirming(true)}>Replace 940</ActionButton>
-          <ConfirmAction
-            open={confirming}
-            onOpenChange={setConfirming}
-            title="Replace the live 940?"
-            description="The live 940 is marked Replaced and a new 940 with a new control number is sent. The warehouse then holds two 940s for this order: make sure they cancel the first."
-            confirmLabel="Replace 940"
-            destructive
-            reason={{ label: 'Why it is replaced' }}
-            record={o}
-            sends={replaceSends}
-            errorMessages={errorMessages}
-            toStatusRow={isTestRunRefusal} {...sent} onConfirm={(why) => replace940(o.id, o.version, why)}
-          />
-        </>
-      ) : (
-        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} sends={sends} {...sent} onAction={() => send940(o.id, o.version)}>Send 940 now</ActionButton>
-      )}
-    </Stack>
-  )
+  if (o.send_940 !== 'replace') {
+    return { items: [{ id: 'send-940', label: 'Send 940 now', permission: OPERATE, primary: 10, sends, errorMessages, ...sent,
+      onSelect: () => send940(o.id, o.version) }], node: null }
+  }
+  return {
+    items: [{ id: 'replace-940', label: 'Replace 940…', permission: OPERATE, order: 20, sends: replaceSends, opensDialog: true, refreshes: false,
+      hint: 'The warehouse has a live 940: a change is sent only as a confirmed replacement', onSelect: () => setConfirming(true) }],
+    node: (
+      <ConfirmAction
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Replace the live 940?"
+        description="The live 940 is marked Replaced and a new 940 with a new control number is sent. The warehouse then holds two 940s for this order: make sure they cancel the first."
+        confirmLabel="Replace 940"
+        destructive
+        reason={{ label: 'Why it is replaced' }}
+        record={o}
+        sends={replaceSends}
+        errorMessages={errorMessages}
+        toStatusRow={isTestRunRefusal} {...sent} onConfirm={(why) => replace940(o.id, o.version, why)}
+      />
+    ),
+  }
 }

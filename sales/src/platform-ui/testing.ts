@@ -46,3 +46,22 @@ export async function openTab(container: HTMLElement, label: string) {
 export function noticeIn(root: ParentNode = document): Element {
   return root.querySelector('[data-status-bar] [data-tone]') ?? document.createElement('div')
 }
+
+/** Opens a record's "⋯" (its action bar's More actions, by keyboard) and gives the menu. */
+export async function openMoreActions(scope: HTMLElement = document.body) {
+  fireEvent.keyDown((await within(scope).findAllByRole('button', { name: 'More actions' }))[0], { key: 'Enter' })
+  return screen.findByRole('menu')
+}
+
+/** A record's "⋯" does not offer this action (opened, looked at, closed again). */
+export async function expectNoMoreAction(label: string | RegExp, scope: HTMLElement = document.body) {
+  const menu = await openMoreActions(scope)
+  expect(within(menu).queryByRole('menuitem', { name: label })).toBeNull()
+  fireEvent.keyDown(menu, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+}
+
+/** Picks an action from a record's "⋯". */
+export async function chooseMoreAction(label: string | RegExp, scope: HTMLElement = document.body) {
+  fireEvent.click(within(await openMoreActions(scope)).getByRole('menuitem', { name: label }))
+}

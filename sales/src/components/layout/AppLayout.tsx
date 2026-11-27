@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
+import { ModuleRoutesContext } from '@/app/records/moduleRoutesContext'
+import { RecordNavProvider } from '@/app/records/RecordNavProvider'
 import { withTabActivity } from './tabRoutes'
 
 // Each page told whether its app tab is the shown one (a kept-alive tab does not auto-refresh).
@@ -407,6 +409,7 @@ export default function AppLayout() {
     <TabStoreProvider options={{ initialTabs: [{
       key: visibleNav[0].href, title: visibleNav[0].label, kind: 'page', path: visibleNav[0].href, pinned: true, closable: false,
     }], userId: user?.id }}>
+      <ModuleRoutesContext.Provider value={moduleRoutes}><RecordNavProvider routes={moduleRoutes}>
       <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
         {mobileOpen && (
           <div
@@ -434,6 +437,7 @@ export default function AppLayout() {
           </main>
         </div>
       </div>
+      </RecordNavProvider></ModuleRoutesContext.Provider>
     </TabStoreProvider>
     </RouterOpenRecord>
       </ViewsProvider>

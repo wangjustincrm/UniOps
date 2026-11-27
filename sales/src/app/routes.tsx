@@ -21,9 +21,13 @@ import DcRoutingPage from '@/features/configuration/dc-routing/DcRoutingPage'
 import NotificationRulesPage from '@/features/configuration/notifications/NotificationRulesPage'
 import NotificationHistoryPage from '@/features/configuration/notifications/NotificationHistoryPage'
 import HealthPage from '@/features/health/HealthPage'
+import OrderRecordPage from '@/app/records/OrderRecordPage'
+import ItemRecordPage from '@/app/records/ItemRecordPage'
+import LotRecordPage from '@/app/records/LotRecordPage'
 
-// Module routes. Every route also appears in NAV (components/layout/AppLayout)
-// with the permission key that gates it.
+// Module routes. Every list route also appears in NAV (components/layout/AppLayout)
+// with the permission key that gates it. A record's own route (one tab per record, keyStrategy 'param', as EPMS
+// does; user 2026-11-27) is reached from its references, not from the menu: app/records.
 export const moduleRoutes: RouteDef[] = [
   {
     path: '/home',
@@ -65,6 +69,9 @@ export const moduleRoutes: RouteDef[] = [
   { path: '/config/warehouses', element: <WarehousesPage />, tab: { title: 'Warehouses', icon: 'Warehouse', keyStrategy: 'static' } },
   { path: '/config/carriers', element: <CarriersPage />, tab: { title: 'Carriers', icon: 'Truck', keyStrategy: 'static' } },
   { path: '/health', element: <HealthPage />, tab: { title: 'Health', icon: 'HeartPulse', keyStrategy: 'static' } },
+  { path: '/orders/:id', element: <OrderRecordPage />, tab: { title: (p) => `Order #${p.id}`, icon: 'ShoppingCart', keyStrategy: 'param', paramName: 'id' } },
+  { path: '/items/:code', element: <ItemRecordPage />, tab: { title: (p) => p.code, icon: 'Package', keyStrategy: 'param', paramName: 'code' } },
+  { path: '/lots/:lot', element: <LotRecordPage />, tab: { title: (p) => `Lot ${p.lot}`, icon: 'Boxes', keyStrategy: 'param', paramName: 'lot' } },
   { path: '/notifications', element: <NotificationHistoryPage />, tab: { title: 'Notification history', icon: 'Mail', keyStrategy: 'static' } },
   { path: '/config/notifications', element: <NotificationRulesPage />, tab: { title: 'Notifications', icon: 'Bell', keyStrategy: 'static' } },
 ]

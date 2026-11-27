@@ -1,7 +1,7 @@
 import { useReportUnsaved } from '../primitives/unsaved'
 import { ChangedElsewhere } from './ChangedElsewhere'
 import { useEditVersion, whatChanged } from './editVersion'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useContext, useMemo, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
 import { Autocomplete } from '../primitives/Autocomplete'
@@ -17,6 +17,7 @@ import { TagInput } from '../primitives/TagInput'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
 import { useAfterAction, useReadAgain, type ActionOptions } from './useAction'
+import { ReadOnlyContext } from './recordNav'
 import { applyServerError, emptyToNull, hiddenFields, notShown, prepare, toInputs, withDefaultsWhenHidden } from './formValues'
 import { Section } from './Section'
 import { zodResolver } from './zodResolver'
@@ -119,9 +120,12 @@ export interface SchemaFormProps {
  *  number is null, never 0; a blank optional select is accepted) and a number
  *  input's text becomes a number. */
 export function SchemaForm({
-  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly, version, alsoSubmit,
+  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly: ownReadOnly, version, alsoSubmit,
   done, invalidates, after,
 }: SchemaFormProps) {
+  // The record is open in its own tab: this copy (a list's sheet) shows its form read-only (RecordSheet says where to change it).
+  const readOnlyHere = useContext(ReadOnlyContext) !== null
+  const readOnly = ownReadOnly || readOnlyHere
   const afterAction = useAfterAction()
   const readAgain = useReadAgain()
   const resolver = useMemo<Resolver<FieldValues>>(() => {

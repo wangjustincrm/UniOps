@@ -6,7 +6,7 @@ import { PermissionProvider, ToastProvider, ViewsProvider, requestView } from '@
 import { type ListMeta } from '@/platform-ui/resource/listMeta'
 import { type SavedView, type ViewsClient } from '@/platform-ui/resource/viewsApi'
 import { MemoryRouter } from 'react-router-dom'
-import { chooseOption, noticeIn, openTab, pickSuggestion } from '@/platform-ui/testing'
+import { chooseMoreAction, chooseOption, expectNoMoreAction, noticeIn, openTab, pickSuggestion } from '@/platform-ui/testing'
 import type { OrderDetail, OrderRead } from './ordersApi'
 
 // Orders with its views (the old Review page is the "Needs review" view) and
@@ -254,7 +254,7 @@ describe('Orders: 940s (P4)', () => {
     expect(within(row).getByText('Sent')).toBeInTheDocument()
     expect(within(row).getByText('Waiting')).toBeInTheDocument()  // sent, not accepted
     expect(within(dialog).queryByText('Send 940 now')).toBeNull()
-    fireEvent.click(within(dialog).getByText('Replace 940'))
+    await chooseMoreAction(/^Replace 940…/, dialog)
     const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
     fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))  // nothing without why
     expect(api.replace).not.toHaveBeenCalled()
@@ -271,7 +271,7 @@ describe('Orders: 940s (P4)', () => {
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
     const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
-    fireEvent.click(await within(dialog).findByText('Replace 940'))
+    await chooseMoreAction(/^Replace 940…/, dialog)
     const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
     fireEvent.change(within(confirm).getByLabelText(/^Why it is replaced/), { target: { value: 'wrong quantity' } })
     api.fetchOrder.mockResolvedValue({ ...seen, version: seen.version + 1, fulfillment_status: '940 Accepted' })
@@ -290,7 +290,7 @@ describe('Orders: 940s (P4)', () => {
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
     const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
-    fireEvent.click(await within(dialog).findByText('Replace 940'))
+    await chooseMoreAction(/^Replace 940…/, dialog)
     const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
     fireEvent.change(within(confirm).getByLabelText(/^Why it is replaced/), { target: { value: 'wrong quantity' } })
     fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
@@ -769,7 +769,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     renderAs(['sales.read', 'sales.invoice.manage'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
-    fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit invoice prices' }))
+    await chooseMoreAction(/^Edit invoice prices/, sheet)
     const price = await within(sheet).findByRole('textbox', { name: 'Invoice price line 1' })  // a Shopify line by its position (line_no 2 is its only line)
     expect(price).toHaveValue('150')
     fireEvent.change(price, { target: { value: '145' } })
@@ -790,7 +790,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     await linesOf(sheet)
-    expect(within(sheet).queryByRole('button', { name: 'Edit invoice prices' })).toBeNull()
+    await expectNoMoreAction(/^Edit invoice prices/, sheet)
     expect(within(sheet).getByText(/change its prices on the invoice/)).toBeInTheDocument()
   })
 
@@ -801,8 +801,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     await linesOf(sheet)
-    const edit = within(sheet).queryByRole('button', { name: 'Edit invoice prices' })
-    expect(edit === null || (edit as HTMLButtonElement).disabled).toBe(true)
+    await expectNoMoreAction(/^Edit invoice prices/, sheet)
   })
 })
 
@@ -836,7 +835,7 @@ describe('the order sheet: facts, actions and tabs', () => {
     expect(facts).not.toHaveTextContent('Not shipped')
     expect(within(sheet).getByRole('tab', { name: /^Payments/ })).toBeInTheDocument()
     expect(within(sheet).queryByRole('tab', { name: /^Invoice/ })).toBeNull()  // Not Required, none built
-    expect(within(sheet).queryByRole('button', { name: 'Edit invoice prices' })).toBeNull()  // never invoiced here
+    await expectNoMoreAction(/^Edit invoice prices/, sheet)  // never invoiced here
     expect(within(within(sheet).getByRole('tab', { name: /^Lines/ })).getByRole('img', { name: 'needs attention' })).toBeInTheDocument()
     await openTab(sheet, 'Shipments & lots')
     expect(within(sheet).getAllByRole('button', { name: 'Copy 1Z-TRACK' }).length).toBeGreaterThan(0)
@@ -885,7 +884,7 @@ describe('the order sheet: facts, actions and tabs', () => {
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
-    fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
+    await chooseMoreAction(/^Amend and send again…/, sheet)
     fireEvent.change(await within(sheet).findByRole('textbox', { name: /Quantity line/ }), { target: { value: '12' } })
     fireEvent.change(within(sheet).getByRole('textbox', { name: /What was wrong/ }), { target: { value: '12 cases, not 10' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
@@ -897,7 +896,7 @@ describe('the order sheet: facts, actions and tabs', () => {
     api.amend.mockReset()
     api.amend.mockRejectedValueOnce(Object.assign(new Error('422'), { body: { error: { code: 'file.failed_checks', message: said, details: { problems: [] } } } }))
     api.amend.mockResolvedValueOnce({ order: sent, sent: true, document_id: 79 })
-    fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
+    await chooseMoreAction(/^Amend and send again…/, sheet)
     fireEvent.change(await within(sheet).findByRole('textbox', { name: /Quantity line/ }), { target: { value: '13' } })
     fireEvent.change(within(sheet).getByRole('textbox', { name: /What was wrong/ }), { target: { value: 'thirteen' } })
     const reads = api.fetchOrder.mock.calls.length
@@ -913,7 +912,7 @@ describe('the order sheet: facts, actions and tabs', () => {
     await waitFor(() => expect(within(sheet).queryByRole('button', { name: 'Amend and send again' })).toBeNull())
     // nothing live to keep (a rejected one): saved, and said as an error
     api.amend.mockResolvedValue({ order: sent, sent: false, document_id: 78, problem: 'the 940 failed its checks and was not sent: ship_to.zip is empty' })
-    fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
+    await chooseMoreAction(/^Amend and send again…/, sheet)
     fireEvent.change(await within(sheet).findByRole('textbox', { name: /What was wrong/ }), { target: { value: 'again' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
     await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('The 940 failed its checks and was not sent: ship_to.zip is empty'))

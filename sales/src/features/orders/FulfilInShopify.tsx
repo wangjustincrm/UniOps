@@ -1,5 +1,5 @@
 import { orderMoved } from '@/features/common/moved'
-import { ActionButton, useActionSends } from '@/platform-ui'
+import { useActionSends, type BarItem } from '@/platform-ui'
 import { fulfilInShopify, ordersClient, type OrderDetail } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -14,14 +14,13 @@ const errorMessages: Record<string, string> = {
 /** Fulfil in Shopify now (user 2026-11-16; sales.order.operate): for a Shopify order whose 940 Radiant
  *  accepted — e.g. when the store's Write was off at the 997. The whole order is fulfilled without tracking
  *  (the customer is not told) and archived; its 945 adds the tracking. Never a second fulfillment. */
-export function FulfilInShopify({ o }: { o: OrderDetail }) {
+export function useFulfilInShopifyItems(o: OrderDetail | undefined): BarItem[] {
   const sends = useActionSends(ordersClient, 'fulfil_in_shopify')
-  if (o.source_type !== 'SHOPIFY' || o.fulfillment_status !== '940 Accepted') return null
-  return (
-    <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={errorMessages} sends={sends}
-      done={{ key: `fulfil:${o.id}`, tone: 'success', text: 'Queued: Shopify is fulfilled and the order archived on the next outbox pass.' }}
-      invalidates={orderMoved(o.id)} onAction={() => fulfilInShopify(o.id, o.version)}>
-      {o.shopify_fulfillment_id ? 'Archive in Shopify now' : 'Fulfil in Shopify now'}
-    </ActionButton>
-  )
+  if (!o || o.source_type !== 'SHOPIFY' || o.fulfillment_status !== '940 Accepted') return []
+  return [{
+    id: 'fulfil-in-shopify', label: o.shopify_fulfillment_id ? 'Archive in Shopify now' : 'Fulfil in Shopify now', permission: OPERATE, primary: 30,
+    errorMessages, sends, invalidates: orderMoved(o.id),
+    done: { key: `fulfil:${o.id}`, tone: 'success', text: 'Queued: Shopify is fulfilled and the order archived on the next outbox pass.' },
+    onSelect: () => fulfilInShopify(o.id, o.version),
+  }]
 }

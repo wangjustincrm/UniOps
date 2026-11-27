@@ -30,7 +30,8 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
     buttons: ['Clear'] },
   'list.chips': { title: 'Active filters', body: 'The chips show everything that narrows the list (filters, search, sort, grouping). A click on a Search chip edits it; × removes one; Reset to the saved view removes your changes.',
     buttons: ['Reset to the saved view'] },
-  'list.rowOpen': { title: 'Open a row', body: 'Click a row (or press Enter) to open it. In the record, J / K (or Alt+↑ / Alt+↓) move to the next or previous one.' },
+  'list.rowOpen': { title: 'Open a row', body: 'Click a row (or press Enter) to open it beside the list. In the record, J / K (or Alt+↑ / Alt+↓) move to the next or previous one; Open in its tab moves it to a tab of its own.' },
+  'list.links': { title: 'Links to records', body: "An underlined value (an item, a lot, an order) is a link: a click opens that record in a tab of its own, or goes to its tab if it is open. Ctrl+click (⌘ on a Mac) or a middle click opens it in a new browser tab. Right click (or Shift+F10): Open, Open in a new browser tab, Copy link. In the record's tab, ← Back to … closes it and returns where you were." },
   'list.rowDetails': { title: 'Row details', body: "▸ opens a row's details under it (e.g. an item's lots) without leaving the list." },
   'list.groups': { title: 'Groups', body: "Rows grouped by a field; a group's header folds it, its totals sit beside it. To group, drag a header's grip onto the Grouping row that appears (or use the column menu); drag a Grouping chip onto another to change the order, or onto Drop here to remove (× works too). At most 3." },
   'list.totals': { title: 'Totals', body: 'The totals of the whole result (every page), per currency.' },
@@ -41,23 +42,25 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
   'list.export': { title: 'Export CSV', body: 'Export CSV exports every row the current filters select, not only this page. Visible columns: the columns you see, in their order and with their names (an amount with its currency; times in local time, the zone named in the header). All fields: the list\'s full export. A column shown that a file cannot carry is named in the menu. Who exported what is kept in the audit log.', buttons: ['Export CSV'] },
   'row.status': { title: 'Status', body: "Each row's status: tap it to read what it means and what to do next." },
   // A record's parts (RecordSheet marks them): its own tour, "Show me around" in its header.
-  'record.header': { title: 'The record', body: "Its name, its status and what it is. The arrows go to the list's previous or next record; Refresh reads it again." },
+  'record.header': { title: 'The record', body: "Its name, its status and what it is. Beside a list, the arrows go to its previous or next record; in its own tab, ← Back to … returns where you were. While the record is open in its own tab, the copy beside a list only shows it: Go to its tab to change it." },
   'record.next': { title: 'Next step', body: 'What to do now, and whose turn it is.' },
   'record.facts': { title: 'Key figures', body: 'The figures that matter for this record, at a glance.' },
-  'record.actions': { title: 'Actions', body: 'What you can do with it now; More holds the rest. A greyed button says why when you tap it.' },
+  'record.actions': { title: 'Actions', body: "The buttons (two at most) are what you will most likely do now; ⋯ (More actions) holds the rest: this record's own actions first, then Open in its tab, Copy link and Refresh. One that does not fit now is greyed in ⋯ with why. On a phone everything is in ⋯.", buttons: ['More actions'] },
   'record.tabs': { title: 'Sections', body: 'Its details, one tab each; a dot marks a tab that needs a look.' },
   'list.phone': { title: 'On a phone', body: 'Each row is a card: Sort is a menu, "N more fields" shows the rest of a card, the arrows at the bottom change page.',
     buttons: ['more fields'] },
 }
 
 /** The tools a list has, in the order "Using lists" explains them. */
-export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean; select?: boolean }): string[] {
+export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean; select?: boolean; links?: boolean }): string[] {
   return [
     ...(has.search ? ['list.search'] : []),
     ...(has.panel ? ['list.statusFind', 'list.searchPanel', 'list.columnSearch'] : []),
     ...(has.views ? ['list.views', 'list.defaultView', 'list.saveView'] : []),
     ...(has.select ? ['list.select'] : []),
-    'list.columns', 'list.sortGroup', 'list.refresh',
+    'list.columns', 'list.sortGroup',
+    ...(has.links ? ['list.links'] : []),
+    'list.refresh',
     ...(has.export ? ['list.export'] : []),
     'list.phone',
   ]

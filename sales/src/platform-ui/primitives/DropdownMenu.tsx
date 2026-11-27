@@ -10,6 +10,10 @@ export interface MenuItem {
   disabled?: boolean
   /** Why it is disabled: a second line under its label. */
   disabledReason?: string
+  /** A second line under its label (what it does). */
+  hint?: string
+  /** Red: it destroys or cancels something. */
+  tone?: 'destructive'
   /** A line above this item. */
   separated?: boolean
   /** The item opens a dialog or sheet: the menu does not take the focus back
@@ -23,14 +27,17 @@ export interface DropdownMenuProps {
   /** The menu's accessible name (e.g. "Code column"). */
   label: string
   align?: 'start' | 'center' | 'end'
+  /** Opened from outside (a right-click menu); else by its trigger. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 /** A menu of actions on a trigger (Radix): keyboard, focus and outside click handled. */
-export function DropdownMenu({ trigger, items, label, align = 'start' }: DropdownMenuProps) {
+export function DropdownMenu({ trigger, items, label, align = 'start', open, onOpenChange }: DropdownMenuProps) {
   const handOff = useRef(false)
   return (
     // Not modal: a column menu needs no focus trap or scroll lock.
-    <RM.Root modal={false}>
+    <RM.Root modal={false} open={open} onOpenChange={onOpenChange}>
       <RM.Trigger asChild>{trigger}</RM.Trigger>
       <RM.Portal>
         <RM.Content
@@ -56,12 +63,12 @@ export function DropdownMenu({ trigger, items, label, align = 'start' }: Dropdow
                   'data-[highlighted]:bg-neutral-100 data-[disabled]:cursor-default data-[disabled]:opacity-40')}
               >
                 {it.icon}
-                {it.disabled && it.disabledReason ? (
+                {(it.disabled && it.disabledReason) || it.hint ? (
                   <span className="flex flex-col">
-                    {it.label}
-                    <span className="text-xs text-neutral-500">{it.disabledReason}</span>
+                    <span className={cn(it.tone === 'destructive' && 'text-danger-700')}>{it.label}</span>
+                    <span className="text-xs text-neutral-500">{it.disabled && it.disabledReason ? it.disabledReason : it.hint}</span>
                   </span>
-                ) : it.label}
+                ) : <span className={cn(it.tone === 'destructive' && 'text-danger-700')}>{it.label}</span>}
               </RM.Item>
             </div>
           ))}

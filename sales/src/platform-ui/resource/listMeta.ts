@@ -28,6 +28,8 @@ export interface FieldMeta {
   currency_field?: string | null
   /** Its group in the search panel (the server's declaration; "Other" when the list declares none). */
   group?: string
+  /** It names a record with a page of its own: the record's type and the row's field holding its key. */
+  ref?: { type: string; key: string }
 }
 
 /** A system view: declared with the list on the server, not editable. */
@@ -52,6 +54,8 @@ export interface ListMeta {
   client_columns?: string[]
   /** What the list offers, and whether this person may use it (the server still checks each use). */
   capabilities?: ListCapabilities
+  /** Per record type the fields name: whether this person may read it (a link is offered only then). */
+  refs?: Record<string, { readable: boolean }>
 }
 
 export interface ListCapabilities {

@@ -69,7 +69,7 @@ export interface ListPageProps<T extends { id: number }> {
   /** Per-row buttons in a last column (a click there never opens the row). */
   rowActions?: (row: T) => ReactNode
   /** The list's record actions (defineActions): 'row' in a "⋯" menu, 'bulk' on selected rows (a checkbox column
-   *  only for those who hold a group action), 'sheet' in the record sheet (RecordActionButtons). */
+   *  only for those who hold a group action), 'header' in the record's action bar (useRecordActionItems). */
   actions?: RecordAction<T & { version: number }>[]
   /** How a record is named in an action's results (default "#id"). */
   recordName?: (row: T) => string
@@ -247,7 +247,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     <TourScope id={props.title ?? 'list'}>
     <div className="flex flex-col gap-4">
       {props.title && <PageHeader title={props.title} description={props.description} help={props.help}
-        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: canExport, select: selection.lead.length > 0 }) }]} />}
+        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: canExport, select: selection.lead.length > 0,
+          links: (meta?.fields ?? []).some((f) => f.ref && meta?.refs?.[f.ref.type]?.readable) }) }]} />}
       {props.notice}
       <QueryTable<T>
         ariaLabel={props.title}

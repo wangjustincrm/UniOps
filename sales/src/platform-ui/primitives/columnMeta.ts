@@ -17,6 +17,8 @@ declare module '@tanstack/react-table' {
     chosen?: boolean
     /** A help id: a ? beside the header (and the card's label) that says what the column holds. */
     help?: HelpId
+    /** false: not a link even though its field names a record (/meta `ref`). */
+    ref?: false
   }
 }
 

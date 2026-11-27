@@ -3,6 +3,7 @@ import {
 } from '@/platform-ui'
 import { VsPo } from '../InvoicePrices'
 import { LineNo } from '../LineNo'
+import { ItemRef, LotRef } from '../refs'
 import { lineNumbers, type LineRead, type OrderDetail, type PackingRead } from '../ordersApi'
 
 const colPackingRead = columnsOf<PackingRead>()
@@ -27,7 +28,7 @@ const deliveredOf = (ln: LineRead) => ln.delivered_qty ?? (ln.shipped_ea == null
 
 const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<LineRead, unknown>[] => [
   { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} />, meta: { hidden: true } },
-  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <Text tone="danger">unmatched</Text> },
+  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => (row.original.item_code ? <ItemRef code={row.original.item_code} /> : <Text tone="danger">unmatched</Text>) },
   { id: 'ordered', header: 'Ordered', cell: ({ row }) => `${Number(row.original.ordered_qty)} ${row.original.order_unit ?? '?'}` },
   { accessorKey: 'order_unit', header: 'Unit', cell: ({ row }) => row.original.order_unit ?? '?', meta: { hidden: true } },
   { accessorKey: 'unit_price', header: 'Unit price (PO)', cell: ({ row }) => row.original.unit_price == null ? '—'
@@ -65,7 +66,7 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
 
 const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', meta: { help: 'term:SSCC' }, cell: ({ row }) => row.original.sscc ?? '—' },
-  { accessorKey: 'lot', header: 'Lot', meta: { help: 'term:Lot / Expiry' }, cell: ({ row }) => row.original.lot ?? '—' },
+  { accessorKey: 'lot', header: 'Lot', meta: { help: 'term:Lot / Expiry' }, cell: ({ row }) => (row.original.lot ? <LotRef lot={row.original.lot} /> : '—') },
   colPackingRead.date('expiry', 'Expiry'),
   colPackingRead.text('qty_shipped_ea', 'Qty EA'),
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking ?? '—' },

@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { PermissionProvider, RecordActionButtons, ToastProvider, type ActionOut } from '@/platform-ui'
+import { PermissionProvider, RecordActionBar, ToastProvider, useRecordActionItems, type ActionHost, type ActionOut } from '@/platform-ui'
+import { openMoreActions } from '@/platform-ui/testing'
 import type { OrderRead } from './ordersApi'
 import { ORDER_ACTIONS } from './orderActions'
 import { PaymentBadge } from './OrderPayment'
+
+/** The order's declared actions in its action bar, as its record view shows them. */
+function RecordActionButtons({ record, host }: { record: OrderRead; actions: typeof ORDER_ACTIONS; host: ActionHost<OrderRead> }) {
+  const { items, dialog } = useRecordActionItems(record, ORDER_ACTIONS, host)
+  return <><RecordActionBar items={items} />{dialog}</>
+}
 
 const order = (over: Partial<OrderRead> = {}) => ({
   id: 7, version: 3, order_number: 1018753, source_reference: 'SHP-9617', payment_status: 'Not settled', shadow: false,
@@ -23,7 +30,8 @@ describe('Payment: Mark settled as a record action (user 2026-11-23)', () => {
   it('a finance user marks an order settled: the dry run first, then the run with the date and the reference', async () => {
     const run = vi.fn(async (_id: string, body: { dry_run?: boolean }) => out('done', !!body.dry_run))
     renderAs(['sales.read', 'sales.settle'], <RecordActionButtons record={order()} actions={ORDER_ACTIONS} host={{ run, name: () => 'SHP-9617' }} />)
-    expect(screen.queryByRole('button', { name: 'Undo settled' })).toHaveAttribute('aria-disabled', 'true')  // not settled
+    expect(screen.queryByRole('button', { name: /Undo settled/ })).toBeNull()  // not settled: its pair is not shown at all
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Mark settled' }))
     const dialog = await screen.findByRole('dialog', { name: 'Mark settled' })
     expect(await within(dialog).findByText('1 will be marked settled')).toBeInTheDocument()
@@ -51,14 +59,19 @@ describe('Payment: Mark settled as a record action (user 2026-11-23)', () => {
     expect(screen.queryByRole('button', { name: /settled/i })).toBeNull()
   })
 
-  it('settled by the gateway: the badge says (auto); Mark settled names the settlement; Undo has nothing to undo', () => {
+  it('settled by the gateway: the badge says (auto); neither Mark settled nor Undo settled is offered', () => {
     const auto = order({ payment_status: 'Settled', settled_on: null, auto_settlement_id: 12, auto_settlement_label: 'PayPal settlement 4X1', auto_settled_on: '2026-11-20' })
     renderAs(['sales.read', 'sales.settle'], <>
       <PaymentBadge o={auto} /><RecordActionButtons record={auto} actions={ORDER_ACTIONS} host={{ run: vi.fn(), name: () => '' }} /></>)
     expect(screen.getByText('Settled (auto)')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mark settled' })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByRole('button', { name: 'Mark settled' })).toHaveAccessibleDescription('Unavailable: Already settled by PayPal settlement 4X1')
-    expect(screen.getByRole('button', { name: 'Undo settled' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByRole('button', { name: /settled/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+  })
+
+  it('settled by hand: Undo settled… only, in "⋯" (a destructive action is never a button)', async () => {
+    renderAs(['sales.read', 'sales.settle'], <RecordActionButtons record={order({ payment_status: 'Settled', settled_on: '2026-11-20' })} actions={ORDER_ACTIONS} host={{ run: vi.fn(), name: () => '' }} />)
+    expect(screen.queryByRole('button', { name: 'Mark settled' })).toBeNull()
+    expect(within(await openMoreActions()).getByRole('menuitem', { name: /Undo settled…/ })).toBeInTheDocument()
   })
 })
 

@@ -7,8 +7,9 @@ import type { ActionRunBody, ActionOut } from '../resource/ResourceClient'
 import { PermissionContext } from './permissions'
 import type { FieldSpec } from './SchemaForm'
 
-/** Where an action shows: the row's "⋯" menu, the selection bar, the record sheet's header. */
-export type ActionPlacement = 'row' | 'bulk' | 'sheet'
+/** Where an action shows: the row's "⋯" menu, the selection bar, the record's header (its sheet and its tab: the
+ *  action bar, actionBar.ts). */
+export type ActionPlacement = 'row' | 'bulk' | 'header'
 
 /** What the person gives an action: a form (SchemaForm fields), or only a reason. None: a plain confirm. */
 export type ActionInput =
@@ -31,6 +32,13 @@ export interface RecordAction<T> {
   tone?: 'default' | 'destructive'
   /** true, or why it does not fit this record (the greyed item's reason). */
   eligible?: (row: T) => true | string
+  /** Not fitting a record: greyed with why (default) where the person would expect it, or hidden (e.g. one of a pair
+   *  like Mark settled / Undo settled: only the one for the record's state shows). */
+  whenNotFit?: 'greyed' | 'hidden'
+  /** A button in the record's header when it fits: the lower, the more important (at most two show). None: in "⋯". */
+  primary?: number
+  /** Its place in the header's "⋯" (default: as declared). */
+  order?: number
   input?: ActionInput
   /** The dialog's title for n records (default: the label and the count). */
   title?: (n: number) => string
@@ -56,6 +64,9 @@ export function useActionsFor<T>(actions: RecordAction<T>[] | undefined, placeme
 }
 
 export const fits = <T,>(a: RecordAction<T>, row: T): true | string => a.eligible?.(row) ?? true
+
+/** Whether it shows for this record at all: a hidden-when-not-fitting action that does not fit, does not. */
+export const showsFor = <T,>(a: RecordAction<T>, row: T): boolean => a.whenNotFit !== 'hidden' || fits(a, row) === true
 
 /** Who runs an action: the list or sheet it is in (its resource) and how a record is named in a result. */
 export interface ActionHost<T> {

@@ -37,7 +37,8 @@ export const ORDER_ACTIONS = defineActions<OrderRead>([
     will: (n) => `${n} will be re-checked`, done: (n) => `${n} re-checked`,
   },
   {
-    id: 'settle', label: 'Mark settled', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'sheet'],
+    // Mark settled / Undo settled: only the one for the order's state shows (not fitting: hidden, not greyed).
+    id: 'settle', label: 'Mark settled', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'header'], primary: 40, whenNotFit: 'hidden',
     eligible: (o) => (o.shadow ? 'A test-run order'
       : o.settled_on ? `Already settled on ${o.settled_on}`
         : o.auto_settlement_id != null ? `Already settled by ${o.auto_settlement_label}`
@@ -49,7 +50,7 @@ export const ORDER_ACTIONS = defineActions<OrderRead>([
     will: (n) => `${n} will be marked settled`, done: (n) => `${n} marked settled`,
   },
   {
-    id: 'unsettle', label: 'Undo settled', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'sheet'], tone: 'destructive',
+    id: 'unsettle', label: 'Undo settled…', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'header'], tone: 'destructive', whenNotFit: 'hidden',
     eligible: (o) => (o.settled_on ? true : o.auto_settlement_id != null ? 'Settled by the gateway, not by hand: nothing to undo' : 'Not settled'),
     input: { reason: { label: 'Why it is undone' } },
     title: (n) => (n === 1 ? 'Undo settled' : `Undo settled on ${n} orders`),
