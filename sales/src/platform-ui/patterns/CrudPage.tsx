@@ -71,6 +71,9 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   rowActions?: (row: T) => ReactNode
   /** Shown between the header and the list (e.g. a related setting). */
   notice?: ReactNode
+  /** The New and Export buttons' icons: default the platform's (actionIcons.ts); a list's own only by these. */
+  createIcon?: ReactNode | false
+  exportIcon?: ReactNode
 }
 
 /** List + create/edit form + deactivate + CSV import with a dry-run preview,
@@ -107,6 +110,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       errorMessages={props.errorMessages}
       notice={props.notice}
       notices={notices}
+      exportIcon={props.exportIcon}
       detailSize={props.detailSize ?? 'md'}
       renderDetail={(row, close) => props.renderRecord ? props.renderRecord(row, close) : (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
@@ -121,7 +125,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
         </>
       )}
       create={{
-        label: 'New', permission: writePermission, title: `New ${singular}`,
+        label: 'New', permission: writePermission, title: `New ${singular}`, icon: props.createIcon,
         render: (done, cancel) => (
           <SchemaForm
             key="new"

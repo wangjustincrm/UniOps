@@ -23,6 +23,7 @@ import { errorText } from '../resource/businessError'
 import { storeAutoRefresh, storedAutoRefresh } from './autoRefresh'
 import { QueryTable, type ExportColumns } from './QueryTable'
 import { ExportMenu } from './ExportMenu'
+import { actionIcon } from '../primitives/actionIcons'
 import { RecordSheetHostContext, type RecordSheetHost, type RecordSheetSize } from './recordSheetHost'
 import { useListView } from './views'
 import type { ResourceClient } from '../resource/ResourceClient'
@@ -97,6 +98,8 @@ export interface ListPageProps<T extends { id: number }> {
   /** How many first columns stay in place while the table scrolls sideways when the view does not say
    *  (default 1; 0 none). The user changes it from a column's menu ("Lock column" / "Unlock column") or the chooser. */
   defaultLocked?: number
+  /** The Export button's icon: default the platform's (actionIcons.ts). */
+  exportIcon?: ReactNode
   /** Export CSV in the toolbar: every row as filtered and sorted now. Shown when the server offers it to this person
    *  (/meta capabilities) on a list that is a page (it has a title). False: never; true: in a part of a page too. */
   exportable?: boolean
@@ -128,6 +131,8 @@ export interface ListScope {
 
 export interface ListCreate<T> {
   label: string
+  /** Its icon before the label: default the platform's New icon (actionIcons.ts); another, or false for none. */
+  icon?: ReactNode | false
   permission: string
   /** The sheet's title (default: the label). */
   title?: string
@@ -258,9 +263,9 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const toolbar = (
     <>
       <TourMark help="list.refresh" slot="list.refresh" className="inline-flex"><RefreshControl state={refresh} /></TourMark>
-      {canExport && <ExportMenu columns={exportCols} run={(columns) => resource.exportCsv!(spec, columns)} notices={notices} errorMessages={props.errorMessages} />}
+      {canExport && <ExportMenu columns={exportCols} run={(columns) => resource.exportCsv!(spec, columns)} notices={notices} errorMessages={props.errorMessages} icon={props.exportIcon} />}
       {props.toolbar?.(ctx)}
-      {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
+      {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{actionIcon('create', create.icon)}{create.label}</ActionButton>}
     </>
   )
 

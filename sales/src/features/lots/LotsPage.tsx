@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { useState } from 'react'
 import {
-  ActionButton, Button, ListPage, useListMeta, type Filter, Callout, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
+  ActionButton, Button, ListPage, actionIcon, useListMeta, type Filter, Callout, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
 } from '@/platform-ui'
 import { lotColumns as columns } from './lotColumns'
 import { RECALL_FILE, downloadRecall, lotsClient, parseLots, shippedClient, type LotRead } from './lotsApi'
@@ -64,7 +64,7 @@ export default function LotsPage() {
               <span>—</span><RecallReach lots={recall} />
               {recallAllowed && (
                 <ActionButton size="sm" className="ml-auto" done="Recall exported" failPrefix="Export failed" refreshes={false}
-                  onAction={() => downloadRecall(recall)}>Export for a recall (CSV)</ActionButton>
+                  onAction={() => downloadRecall(recall)}>{actionIcon('export')}Export for a recall (CSV)</ActionButton>
               )}
               <Button size="sm" variant="secondary" className={recallAllowed ? undefined : 'ml-auto'} onClick={() => setRecall(null)}>Clear recall</Button>
             </Cluster>

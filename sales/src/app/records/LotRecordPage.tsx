@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom'
 import {
-  ListPage, RecordSheet, RefLink, formatDate, formatNumber, useListCount, useListMeta, useRecordList, type BarItem, type ListScope,
+  ListPage, RecordSheet, RefLink, actionIcon, formatDate, formatNumber, useListCount, useListMeta, useRecordList, type BarItem, type ListScope,
   type QuerySpec, type RecordFact,
 } from '@/platform-ui'
 import { lotColumns } from '@/features/lots/lotColumns'
@@ -37,7 +37,7 @@ export default function LotRecordPage() {
     { label: 'On hand EA', value: onHand != null ? formatNumber(onHand) : '—', hint: 'at Radiant' },
   ]
   const bar: BarItem[] = [
-    { id: 'recall-csv', label: 'Export for a recall (CSV)', primary: 10, group: 'record', changes: false, refreshes: false,
+    { id: 'recall-csv', label: 'Export for a recall (CSV)', icon: actionIcon('export'), primary: 10, group: 'record', changes: false, refreshes: false,
       fit: recall?.allowed ? true : 'You do not hold the recall export', whenNotFit: 'hidden', done: 'Recall exported', failPrefix: 'Export failed',
       hint: 'Every customer and order this lot went to: customer, order, ship date, EA, delivery', onSelect: () => downloadRecall([lot]) },
   ]

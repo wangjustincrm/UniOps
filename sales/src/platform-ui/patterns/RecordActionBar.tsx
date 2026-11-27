@@ -33,7 +33,7 @@ export function RecordActionBar({ items, label = 'Record actions', className }: 
         <Button key={i.id} type="button" size="sm" variant={n === 0 ? undefined : 'secondary'}
           title={i.sends ? `Sends ${i.sends}` : i.hint} aria-busy={running === i.id || undefined} aria-disabled={running === i.id || undefined}
           className={cn(running === i.id && 'cursor-wait opacity-70')}
-          onClick={() => { if (running !== i.id) run(i) }}>{i.label}</Button>
+          onClick={() => { if (running !== i.id) run(i) }}>{i.icon}{i.label}</Button>
       ))}
       {menu.length > 0 && (
         <DropdownMenu label={buttons.length ? 'More actions' : label} align="end"

@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Download } from 'lucide-react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, useNotices, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Cluster, Icon,
+  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, useNotices, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Cluster, actionIcon,
 } from '@/platform-ui'
 import {
   adjustStock, stockItemsClient, stockLotsClient, stockMovesClient,
@@ -111,7 +110,7 @@ function ItemSheet({ row }: { row: StockItemRead }) {
 function ExportCard({ spec, name }: { spec: QuerySpec; name: string }) {
   const notices = useNotices()
   return (
-    <IconButton label="Export CSV" icon={<Icon icon={Download} />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+    <IconButton label="Export CSV" icon={actionIcon('export', undefined, 'h-4 w-4')} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
       onClick={() => {
         stockMovesClient.exportCsv(spec, undefined, name).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
           (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${e instanceof Error ? e.message : String(e)}` }))

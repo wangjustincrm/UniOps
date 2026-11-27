@@ -1,3 +1,4 @@
+import { Upload } from 'lucide-react'
 import { z } from 'zod'
 import { type ReactNode } from 'react'
 import { ListPage, columnsOf, type ColumnDef, SchemaForm, type FieldSpec } from '@/platform-ui'
@@ -44,7 +45,7 @@ export function CountsView({ toolbar }: { toolbar: ReactNode }) {
       columns={countColumns} emptyTitle="No report uploaded yet"
       renderDetail={(r) => <CountSheet row={r} />}
       toolbar={() => toolbar}
-      create={{ label: 'Upload report', permission: ADJUST, render: (done, cancel) => <UploadForm done={done} cancel={cancel} /> }}
+      create={{ label: 'Upload report', permission: ADJUST, icon: <Upload aria-hidden className="mr-1 h-4 w-4" />, render: (done, cancel) => <UploadForm done={done} cancel={cancel} /> }}
     />
   )
 }

@@ -10,6 +10,8 @@ import type { ActionOptions } from './useAction'
 export interface BarItem extends Pick<ActionOptions, 'done' | 'errorMessages' | 'failPrefix' | 'invalidates' | 'after' | 'refreshes'> {
   id: string
   label: string
+  /** Its icon before the label (an export: actionIcon('export')). */
+  icon?: import('react').ReactNode
   /** A button in the header when it fits now: the lower, the more important. None: only ever in "⋯". */
   primary?: number
   /** Its place in "⋯" within its group (default: as declared). */
