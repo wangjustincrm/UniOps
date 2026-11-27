@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { useState } from 'react'
 import {
-  Button, ListPage, type Filter, Callout, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
+  ActionButton, Button, ListPage, useListMeta, type Filter, Callout, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
 } from '@/platform-ui'
 import { lotColumns as columns } from './lotColumns'
-import { lotsClient, parseLots, type LotRead } from './lotsApi'
+import { RECALL_FILE, downloadRecall, lotsClient, parseLots, shippedClient, type LotRead } from './lotsApi'
 
 const MAX_LOTS = 100  // the list query's limit on one filter's values
 
@@ -45,6 +45,8 @@ export default function LotsPage() {
   const [recall, setRecall] = useState<string[] | null>(null)
   const [asking, setAsking] = useState(false)
   const fixed: Filter[] | undefined = recall ? [{ field: 'lot', op: 'in', value: recall }] : undefined
+  // The recall's own file (customers, orders, delivery: the applied 945s), for whom the server says may export it.
+  const recallAllowed = !!useListMeta(shippedClient).data?.capabilities?.files?.find((x) => x.path === RECALL_FILE)?.allowed
   return (
     <>
       <ListPage<LotRead>
@@ -60,7 +62,11 @@ export default function LotsPage() {
             <Cluster as="span" gap={2} align="center">
               <Text weight="medium">Recall: {recall.join(', ')}</Text>
               <span>—</span><RecallReach lots={recall} />
-              <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setRecall(null)}>Clear recall</Button>
+              {recallAllowed && (
+                <ActionButton size="sm" className="ml-auto" done="Recall exported" failPrefix="Export failed" refreshes={false}
+                  onAction={() => downloadRecall(recall)}>Export for a recall (CSV)</ActionButton>
+              )}
+              <Button size="sm" variant="secondary" className={recallAllowed ? undefined : 'ml-auto'} onClick={() => setRecall(null)}>Clear recall</Button>
             </Cluster>
           </Callout>
         )}

@@ -13,7 +13,9 @@ import { toSearchParams } from './resource/querySpec'
 type Row = { id: number; version: number; code: string }
 const OPS: FieldMeta['operators'] = ['eq', 'in', 'contains']
 const f = (name: string): FieldMeta => ({ name, label: name, type: 'text', enum_values: [], filterable: true, sortable: true, groupable: false, operators: OPS })
-const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [f('code'), f('item_code'), f('partner')], views: [] }
+const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [f('code'), f('item_code'), f('partner')], views: [
+  { key: 'open', name: 'Open', state: { version: 1, filters: [{ field: 'partner', op: 'eq', value: 'X' }] } },  // the list's default
+  { key: 'all', name: 'All', state: { version: 1 } }] }
 const columns: ColumnDef<Row, unknown>[] = [{ accessorKey: 'code', header: 'Code' }]
 const ACTIONS = defineActions<Row>([{ id: 'touch', label: 'Touch', permission: 'app.edit', scope: 'group', placement: ['row', 'bulk'],
   will: (n) => `${n} will be touched`, done: (n) => `${n} touched` }])
@@ -61,5 +63,20 @@ describe('a scope', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Touch' }))
     await waitFor(() => expect(t.action).toHaveBeenCalled())
     expect(t.action.mock.calls[0]).toEqual(['touch', expect.objectContaining({ ids: { 1: 2 }, scope: ['item_code:eq:CF0093'] })])
+  })
+
+  it('opens on All, not the list\'s default view: the rows are the scope\'s, as the record\'s tab counts them', async () => {
+    const t = mount()
+    await screen.findByText('A-1')
+    expect(t.list.mock.calls.every(([s]) => (s.filters ?? []).length === 0)).toBe(true)  // never the Open view's filter
+    expect(screen.getByRole('button', { name: /^View/ })).toHaveTextContent('All')
+  })
+
+  it('the lock is first on the left, before the views and Search', async () => {
+    mount()
+    await screen.findByText('A-1')
+    const lock = screen.getByRole('note', { name: 'Scope: Item = CF0093' })
+    const search = screen.getByLabelText('Search')
+    expect(lock.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

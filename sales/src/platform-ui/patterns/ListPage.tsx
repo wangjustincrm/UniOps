@@ -257,7 +257,6 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const create = props.create
   const toolbar = (
     <>
-      {scope && <ScopeChip label={scope.label} />}
       <TourMark help="list.refresh" slot="list.refresh" className="inline-flex"><RefreshControl state={refresh} /></TourMark>
       {canExport && <ExportMenu columns={exportCols} run={(columns) => resource.exportCsv!(spec, columns)} notices={notices} errorMessages={props.errorMessages} />}
       {props.toolbar?.(ctx)}
@@ -288,6 +287,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         onExportColumns={setExportCols}
         defaultLocked={props.defaultLocked}
         {...tableProps}
+        lead={scope ? <ScopeChip label={scope.label} /> : undefined}
         searchable={props.searchable ?? true}
         loading={list.isLoading || !view.ready}
         fetching={list.isFetching}

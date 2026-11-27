@@ -17,3 +17,15 @@ export const shippedColumns: ColumnDef<ShippedRead, unknown>[] = [
   col.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
   col.text('ship_to_city', 'Ship-to city'),
 ]
+
+/** A recall's view of a lot (its Customers): who got it, on which order, when, how much, delivered or not. */
+export const recallColumns: ColumnDef<ShippedRead, unknown>[] = [
+  col.text('customer', 'Customer'),
+  col.text('order_ref', 'Order'),
+  col.date('ship_date', 'Ship date'),
+  col.number('qty_shipped_ea', 'EA'),
+  { accessorKey: 'delivery_confirmed', header: 'Delivery', cell: ({ row }) => (row.original.delivery_confirmed
+    ? <Badge variant="success">Confirmed</Badge> : <Badge variant="neutral">Not confirmed</Badge>) },
+  col.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
+  col.text('ship_to_city', 'Ship-to city'),
+]

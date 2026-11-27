@@ -44,6 +44,12 @@ export interface ShippedRead extends LotRead {
 
 export const shippedClient = createResourceClient<ShippedRead, never>(api, '/shipped')
 
+/** The recall file (`/shipped/recall/customers.csv`, its own key): every customer and order these lots went to. */
+export const RECALL_FILE = 'recall/customers.csv'
+export const downloadRecall = (lots: string[]) => api.download(
+  shippedClient.exportPath({ page: 1, pageSize: 1, scope: [{ field: 'lot', op: 'in', value: lots }] }, RECALL_FILE),
+  lots.length === 1 ? `recall-${lots[0]}.csv` : `recall-${lots.length}-lots.csv`)
+
 /** Lots pasted for a recall: one per line, or separated by commas, semicolons or spaces. */
 export function parseLots(text: string): string[] {
   return [...new Set(text.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))]

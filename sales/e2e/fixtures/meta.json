@@ -190,7 +190,11 @@
     ],
     "in_row": true,
     "suggestable": true,
-    "group": "Order"
+    "group": "Order",
+    "ref": {
+     "type": "order",
+     "key": "id"
+    }
    },
    {
     "name": "order_date",

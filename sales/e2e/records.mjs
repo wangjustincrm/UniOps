@@ -111,7 +111,8 @@ async function run(name, viewport) {
   }
 
   await step('a row\'s sheet: Open in its tab is its first button and moves it to a tab of its own', async () => {
-    await page.getByText('SMP-1030').first().click()
+    // A row's other cell opens its sheet (its Order ref is a link to the order's own tab).
+    await page.locator('table tbody tr', { hasText: 'SMP-1030' }).first().getByText('1030', { exact: true }).click()
     const sheet = page.getByRole('dialog', { name: 'SMP-1030' })
     const bar = sheet.getByRole('toolbar', { name: 'Record actions' })
     await bar.waitFor({ timeout: 10000 })

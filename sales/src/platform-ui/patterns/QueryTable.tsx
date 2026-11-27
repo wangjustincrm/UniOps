@@ -83,6 +83,8 @@ export interface QueryTableProps<T> {
   onLayoutChange?: (layout: Layout) => void
   /** The list's saved views (useListView(...).picker): shown left of the toolbar. */
   picker?: ViewPickerModel
+  /** First on the left, before the views and Search (a scoped list's lock). */
+  lead?: ReactNode
   /** How many first columns stay in place while the table scrolls sideways when the view does not say
    *  (default 1; 0 none). The user changes it from a column's menu; it saves with the view. */
   defaultLocked?: number
@@ -172,7 +174,7 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 
 function QueryTableView<T>({
   columns, defaultHidden, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
-  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, onExportColumns, defaultLocked = 1, count, recordOpen, ...view
+  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, lead, suggest, onExportColumns, defaultLocked = 1, count, recordOpen, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]>
   count?: (spec: QuerySpec) => Promise<{ total: number }> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
@@ -382,7 +384,7 @@ function QueryTableView<T>({
         onSortChange={(s) => change(specFromSorting(spec, [s]))}
         onColumnMove={meta ? (id, beforeId) => move(id, beforeId === null ? order.length : order.filter((x) => x !== id).indexOf(beforeId)) : undefined}
         onColumnDrag={meta ? setDragging : undefined}
-        leading={picker ? <TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark> : undefined}
+        leading={picker || lead ? <>{lead}{picker && <TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark>}</> : undefined}
         headerAddon={(id) => {
           const f = fields.get(id)
           const searched = (spec.filters ?? []).filter((x) => x.field === id)

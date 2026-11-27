@@ -114,6 +114,12 @@ export function useListView(
       takeViewRequest(key)
       apply({ kind: 'system', key: AD_HOC, name: request.name }, fullState(request.state, pageSize))
       if (!opened) setOpened(true)
+    } else if (!opened && scopeKind) {
+      // Inside a scope (an item's Orders) the list opens on all of the scope's rows, as the record's tab counts them:
+      // the list's own default view (Open) would show fewer with no hint why. Its views are still a click away.
+      const all = system.find((s) => !(s.state.filters?.length) && !s.state.search)
+      if (all) apply({ kind: 'system', key: all.key, name: all.name }, fullState(all.state, pageSize))
+      setOpened(true)
     } else if (!opened) {
       const def = mine.find((m) => m.is_default)
       if (def) apply({ kind: 'mine', id: def.id, name: def.name }, fullState(def.state, pageSize))
