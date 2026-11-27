@@ -3,7 +3,7 @@ import { hashKey, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { RecordSheetHostContext } from './recordSheetHost'
 import { changed, describeDiff, describeRecordChange, diffRows, type Key } from './refreshDiff'
 import { createNoticeStore, type NoticeStore, type NoticeTone } from './notices'
-import { PAGE_ACTIVITY_OPTIONS, usePageActive } from './pageActivity'
+import { PAGE_ACTIVITY_OPTIONS, usePageActive, usePageRefreshTick } from './pageActivity'
 
 // THE one way to refresh what a user sees (the user, 2026-11-03: one reusable
 // refresh). A click, an auto-refresh tick, a record sheet's refresh, and the
@@ -139,6 +139,14 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
   }
   const refreshRef = useRef(refresh)
   useEffect(() => { refreshRef.current = refresh })
+  // The page's own Refresh (its app tab's menu): every list and record on it reads again, visibly.
+  const pageTick = usePageRefreshTick()
+  const seenTick = useRef(pageTick)
+  useEffect(() => {
+    if (pageTick === seenTick.current) return
+    seenTick.current = pageTick
+    void refreshRef.current()
+  }, [pageTick])
 
   // Paused while not seen: the browser tab hidden, or the app tab this page lives in not the active one (user 2026-11-26: a
   // kept-alive tab never ticks). Coming back, what is older than PAGE_ACTIVITY_OPTIONS.reReadAfterMs is read again at once —

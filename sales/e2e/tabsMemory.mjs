@@ -82,10 +82,33 @@ for (const r of ROUTES) {
   }
   steps.push(await measure(`+ ${r}`))
 }
+// Stage 4 (user 2026-11-27): 20 record tabs on top — the shell's own cap is out of reach now (no list tab is ever evicted);
+// Sales keeps 12 record tabs, the oldest unchanged one closed with a notice and Reopen.
+const tabTitles = () => page.locator('[data-shell-tabbar] [role="tab"]').allInnerTexts()
+const listsBefore = (await tabTitles()).length
+const failures = []
+for (let i = 1; i <= 20; i++) {
+  await page.evaluate((to) => { window.history.pushState({}, '', to); window.dispatchEvent(new PopStateEvent('popstate')) }, `/orders/${i}`)
+  // As a person does: the next one once this one's tab is shown (a navigation made before the last has rendered is
+  // dropped by the router's transition, which no click can do).
+  await page.waitForFunction((n) => [...document.querySelectorAll('[data-shell-tabbar] [role="tab"][aria-selected="true"]')]
+    .some((t) => t.textContent.includes(`#${n}`) || t.textContent.includes(`SMP-${1000 + n}`)), i, { timeout: 10000 })
+  if (i % 5 === 0) steps.push(await measure(`+ ${i} record tabs`))
+}
+await page.waitForLoadState('networkidle')
+const titles = (await tabTitles()).map((t) => t.trim())
+const records = titles.length - listsBefore
+const notice = await page.locator('[data-shell-tabbar] [role="status"]').innerText().catch(() => '')
+console.log(JSON.stringify({ listTabs: listsBefore, recordTabs: records, notice, titles }))
+if (records !== 12) failures.push(`12 record tabs kept, not ${records}`)
+if (titles.length - records !== listsBefore) failures.push('a list tab was closed')
+if (!/closed to keep 12 open/.test(notice)) failures.push(`the cap's notice (${notice})`)
+
 // The ticks of kept-alive tabs: requests in 70 s while one tab (the last) is shown.
 const before = reqs.length
-await page.waitForTimeout(70000)
+await page.waitForTimeout(Number(process.env.IDLE_MS ?? 70000))
 const idle = { requestsIn70s: reqs.length - before, what: reqs.slice(before) }
 console.log(JSON.stringify(idle))
 console.log('SUMMARY ' + JSON.stringify({ first: steps[0], last: steps[steps.length - 1], idle }))
 await browser.close()
+if (failures.length) { console.log('FAILED:\n' + failures.map((x) => `  - ${x}`).join('\n')); process.exit(1) }

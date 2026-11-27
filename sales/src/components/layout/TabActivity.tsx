@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { deriveTabMeta, useOptionalTabStoreApi, useTabStore, type RouteDef } from '@uniops/shell'
 import { PageActivityContext } from '@/platform-ui'
+import { useTabSession } from './tabSession'
 
 const ALWAYS = { active: true }
 
@@ -18,6 +19,7 @@ function InTab({ routes, children }: { routes: RouteDef[]; children: ReactNode }
   const { pathname } = useLocation()
   const key = useMemo(() => deriveTabMeta(routes, pathname)?.key, [routes, pathname])
   const active = useTabStore((s) => !key || s.activeKey === key)
-  const value = useMemo(() => ({ active }), [active])
+  const refreshTick = useTabSession((s) => (key ? s.ticks[key] ?? 0 : 0))  // its tab's Refresh (the tab bar's menu)
+  const value = useMemo(() => ({ active, refreshTick }), [active, refreshTick])
   return <PageActivityContext.Provider value={value}>{children}</PageActivityContext.Provider>
 }

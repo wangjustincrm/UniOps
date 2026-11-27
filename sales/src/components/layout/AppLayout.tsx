@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
-import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
+import { TabStoreProvider, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
+import { SalesTabBar } from './SalesTabBar'
 import { moduleRoutes } from '@/app/routes'
 import { ModuleRoutesContext } from '@/app/records/moduleRoutesContext'
 import { RecordNavProvider } from '@/app/records/RecordNavProvider'
@@ -8,6 +9,7 @@ import { withTabActivity } from './tabRoutes'
 
 // Each page told whether its app tab is the shown one (a kept-alive tab does not auto-refresh).
 const TAB_ROUTES = withTabActivity(moduleRoutes)
+const SHELL_TAB_CAP = 500
 import {
   Home, Building2, Plug, FileText, Activity, ScrollText, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, CreditCard, Landmark, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell, Boxes, PackageCheck,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
@@ -407,7 +409,9 @@ export default function AppLayout() {
     <SalesHelpProvider><TourManager appName="Sales">
     <ViewsProvider client={views}>
       <RouterOpenRecord>
-    <TabStoreProvider options={{ initialTabs: [{
+    // The shell's own cap closes the least recently used page tab, lists too, with no word (15 by default): set out of
+    // reach. Sales keeps its own cap on record tabs only, said with Reopen (SalesTabBar, user 2026-11-27).
+    <TabStoreProvider options={{ cap: SHELL_TAB_CAP, initialTabs: [{
       key: visibleNav[0].href, title: visibleNav[0].label, kind: 'page', path: visibleNav[0].href, pinned: true, closable: false,
     }], userId: user?.id }}>
       <ModuleRoutesContext.Provider value={moduleRoutes}><RecordNavProvider routes={moduleRoutes}>
@@ -432,7 +436,7 @@ export default function AppLayout() {
           <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
           <TabRouterSync routes={moduleRoutes} />
           <RecoverFailedQueries />
-          <div data-shell-tabbar className="contents"><TabBar /></div>
+          <div data-shell-tabbar className="contents"><SalesTabBar routes={moduleRoutes} /></div>
           <main className="relative flex-1 overflow-hidden">
             <TabHost routes={TAB_ROUTES} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>

@@ -5,12 +5,18 @@ import { createContext, useContext } from 'react'
  *  coming back to a page reads it again when what it shows is older than `reReadAfterMs`. */
 export interface PageActivity {
   active: boolean
+  /** Bumped when the person asks the whole page to read again (its app tab's Refresh): every refresh on it runs. */
+  refreshTick?: number
 }
 
 export const PageActivityContext = createContext<PageActivity>({ active: true })
 
 export function usePageActive(): boolean {
   return useContext(PageActivityContext).active
+}
+
+export function usePageRefreshTick(): number {
+  return useContext(PageActivityContext).refreshTick ?? 0
 }
 
 /** The platform's one setting for it: coming back to a page, what is older than this is read again at once. */
