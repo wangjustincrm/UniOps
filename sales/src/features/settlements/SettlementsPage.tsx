@@ -1,20 +1,10 @@
 import { useMemo } from 'react'
-import { Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
+import { ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { paymentsClient, type PaymentRowRead } from '@/features/payments/paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from '@/features/payments/paymentsColumns'
 import { settlementPdf, settlementsClient, settlementsReportPdf, type SettlementRowRead } from './settlementsApi'
 import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns'
-
-const NOTE = (
-  <Callout label="Where these come from">
-    Each deposit a payment provider paid to the bank, read from the provider. Authorize.Net: one settled batch, about one a
-    day; it reports no fees per deposit (it bills them monthly). PayPal: one transfer to the bank, with everything since the
-    previous one; Net is after PayPal's fees, and what has not been transferred yet is the "In PayPal balance" row. Matched in
-    Shopify adds up the Shopify payments matched to the deposit's transactions. Chargebacks and returned items are shown on
-    their own, not in Net.
-  </Callout>
-)
 
 /** One deposit: its figures, and the payments in it (the Payments list, kept to this batch). */
 function SettlementDetail({ s }: { s: SettlementRowRead }) {
@@ -63,9 +53,9 @@ export default function SettlementsPage() {
   const columns = useMemo(() => settlementColumns(), [])
   return (
     <ListPage<SettlementRowRead>
-      resource={settlementsClient} title="Settlements"
+      resource={settlementsClient} title="Settlements" help="page:settlements"
       
-      columns={columns} defaultHidden={hiddenSettlementColumns} notice={NOTE} emptyTitle="No settlements yet"
+      columns={columns} defaultHidden={hiddenSettlementColumns} emptyTitle="No settlements yet"
       emptyText={EMPTY_TEXT.settlements} renderDetail={(s) => <SettlementDetail s={s} />}
       toolbar={({ spec }) => <ViewFileButton source={settlementsReportPdf(spec)}>Report (PDF)</ViewFileButton>}
     />

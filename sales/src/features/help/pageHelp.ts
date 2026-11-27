@@ -51,7 +51,20 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
   'page:inventory': {
     title: 'Inventory',
     body: "Stock at Radiant by item or by lot, summed from Sales' own records.",
+    about: { title: 'How these figures are made', text: "Every figure is a sum of moves made from Sales' own records: transfers (943) and their receipts (944), shipments (945), deliveries and returns. A Radiant report applied as the start (Radiant reports) sets every lot to Radiant's figure at its moment; the moves after it add up from there." },
     tasks: ['Open an item to see its lots.', 'Switch to By lot.', 'Apply a Radiant stock report (Radiant reports).'],
+  },
+  'page:payments': {
+    title: 'Payments',
+    body: 'Every payment and refund of the orders, by method, week or month, and the exceptions.',
+    about: { title: 'Where these come from', text: 'Every payment and refund transaction Shopify has for an order, read-only. Sales, Refunds and Net count successful transactions only. With an Authorize.Net connection, each Authorize.Net payment also shows the batch it was settled in and its Authorize.Net transaction ID, read from Authorize.Net and matched to the Shopify payment. A settled Authorize.Net transaction that is no Shopify payment is a row of its own (Exceptions).' },
+    tasks: ['Choose a view: a method, by week or month, the exceptions.', 'Open the order of a payment.'],
+  },
+  'page:settlements': {
+    title: 'Settlements',
+    body: 'Each deposit a payment provider paid to the bank, with the payments in it.',
+    about: { title: 'Where these come from', text: 'Each deposit a payment provider paid to the bank, read from the provider. Authorize.Net: one settled batch, about one a day; it reports no fees per deposit (it bills them monthly). PayPal: one transfer to the bank, with everything since the previous one; Net is after PayPal\'s fees, and what has not been transferred yet is the "In PayPal balance" row. Matched in Shopify adds up the Shopify payments matched to the deposit\'s transactions. Chargebacks and returned items are shown on their own, not in Net.' },
+    tasks: ['Open a deposit to see its payments.', 'Print the report of the list as it is filtered.'],
   },
   'page:health': {
     title: 'Health',

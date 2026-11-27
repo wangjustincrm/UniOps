@@ -14,6 +14,8 @@ export interface HelpEntry {
   next?: string
   /** A page's common tasks (its help panel lists them). */
   tasks?: string[]
+  /** A page's background, under its own heading (e.g. "Where these come from"): what a callout on the page used to say. */
+  about?: { title: string; text: string }
   /** The buttons and menu items the text names, by their exact words (a test checks they exist). */
   buttons?: string[]
   /** A page's tour: "Show me" in its panel walks these steps. */

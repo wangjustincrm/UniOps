@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, useNotices, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Cluster, actionIcon,
+  ActionButton, Button, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, useNotices, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Cluster, actionIcon,
 } from '@/platform-ui'
 import {
   adjustStock, stockItemsClient, stockLotsClient, stockMovesClient,
@@ -118,14 +118,6 @@ function ExportCard({ spec, name }: { spec: QuerySpec; name: string }) {
   )
 }
 
-const NOTE = (
-  <Callout label="How these figures are made">
-    Every figure is a sum of moves made from Sales' own records: transfers (943) and their receipts (944), shipments (945),
-    deliveries and returns. A Radiant report applied as the start (Radiant reports) sets every lot to Radiant's figure at
-    its moment; the moves after it add up from there.
-  </Callout>
-)
-
 /** Operations → Inventory: the stock at Radiant (design §15), by item or by lot, with each item's stock card. */
 type View = 'items' | 'lots' | 'counts'
 
@@ -143,7 +135,7 @@ export default function InventoryPage() {
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
         
-        columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
+        columns={lotColumns} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
         toolbar={() => nav}
       />
     )
@@ -152,7 +144,7 @@ export default function InventoryPage() {
     <ListPage<StockItemRead>
       key="items" resource={stockItemsClient} title="Inventory"
       
-      columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
+      columns={itemColumns} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
       renderDetail={(r) => <ItemSheet row={r} />}
       expand={(r) => (r.lots > 0 || r.on_hand_ea !== 0 ? <ActiveLots item={r.item_code} /> : null)}
       toolbar={() => nav}

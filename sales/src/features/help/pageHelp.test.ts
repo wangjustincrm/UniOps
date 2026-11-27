@@ -14,6 +14,7 @@ describe('page help', () => {
     for (const [id, p] of Object.entries(PAGE_HELP)) {
       expect(p.body.length, id).toBeLessThanOrEqual(320)
       for (const t of p.tasks ?? []) expect(t.length, `${id}: ${t}`).toBeLessThanOrEqual(120)
+      if (p.about) expect(p.about.text.length, `${id}: about`).toBeLessThanOrEqual(600)
     }
     for (const [k, t] of Object.entries(EMPTY_TEXT)) expect(t.length, k).toBeLessThanOrEqual(200)
   })

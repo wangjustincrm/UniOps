@@ -122,6 +122,12 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
             ) : (
               <section aria-label="This page" className="flex flex-col gap-4">
                 <p className="leading-relaxed">{entry.body}</p>
+                {entry.about && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">{entry.about.title}</p>
+                    <p className="leading-relaxed">{entry.about.text}</p>
+                  </div>
+                )}
                 <TourButtons total={total} fresh={entry.tour ? 0 : fresh.length} onAll={tourAll} onNew={tourNew} />
                 {rows.length > 0 && <StopRows rows={rows} onShow={showOne} />}
                 {entry.tasks && entry.tasks.length > 0 && (
