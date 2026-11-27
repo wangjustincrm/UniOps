@@ -64,7 +64,7 @@ export default function SettlementsPage() {
   return (
     <ListPage<SettlementRowRead>
       resource={settlementsClient} title="Settlements"
-      description="The deposits each payment provider paid to the bank, with the Shopify payments in them. Use the views by month and for what needs a look."
+      
       columns={columns} defaultHidden={hiddenSettlementColumns} notice={NOTE} emptyTitle="No settlements yet"
       emptyText={EMPTY_TEXT.settlements} renderDetail={(s) => <SettlementDetail s={s} />}
       toolbar={({ spec }) => <ViewFileButton source={settlementsReportPdf(spec)}>Report (PDF)</ViewFileButton>}

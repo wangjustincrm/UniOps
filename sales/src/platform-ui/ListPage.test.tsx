@@ -37,7 +37,7 @@ describe('ListPage', () => {
   it('opens a row in the detail sheet and keeps it current when the list refreshes', async () => {
     const resource = makeResource([[{ id: 1, code: 'A1', status: 'Review' }], [{ id: 1, code: 'A1', status: 'Pending' }]])
     renderWith(<>
-      <ListPage<Row> resource={resource} title="Things" description="All of them" columns={columns}
+      <ListPage<Row> resource={resource} title="Things"  columns={columns}
         renderDetail={(r) => <RecordSheet title={`Thing ${r.code}`} tabs={[{ id: 'd', label: 'Detail', render: () => <p>detail says {r.status}</p> }]} />} />
       <Refresh resource={resource} />
     </>)

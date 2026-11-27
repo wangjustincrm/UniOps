@@ -81,7 +81,7 @@ export default function ConnectionsPage() {
     <CrudPage<ConnectionRead, ConnectionCreate, ConnectionUpdate>
       title="Connections"
       singular="connection"
-      description="SFTP, Shopify and Authorize.Net connections. Passwords and keys stay on the server; only their names are kept here."
+      
       client={connectionsClient}
       columns={columns}
       rowActions={(c) => <ConnectionRowActions connection={c} />}

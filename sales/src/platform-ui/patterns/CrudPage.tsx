@@ -33,7 +33,6 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   title: string
   /** One record's name in sheet titles ("New partner"); defaults to `title`. */
   singular?: string
-  description?: string
   client: ResourceClient<T, TCreate, TUpdate>
   columns: ColumnDef<T, unknown>[]
   writePermission: string
@@ -104,7 +103,6 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
     <ListPage<T>
       resource={client}
       title={props.title}
-      description={props.description}
       columns={props.columns}
       rowActions={props.rowActions}
       errorMessages={props.errorMessages}

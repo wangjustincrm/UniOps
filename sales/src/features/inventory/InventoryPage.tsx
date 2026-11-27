@@ -142,7 +142,7 @@ export default function InventoryPage() {
     return (
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
-        description="Each lot at Radiant: received − shipped (less returns) = on hand; on hand − in process (picked for an order, per Radiant's report) − on hold = available."
+        
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
         toolbar={() => nav}
       />
@@ -151,7 +151,7 @@ export default function InventoryPage() {
   return (
     <ListPage<StockItemRead>
       key="items" resource={stockItemsClient} title="Inventory"
-      description="Stock at Radiant by item (its open lots): received − shipped (less returns) = on hand; on hand − in process (940 sent, no 945 yet) − on hold = available."
+      
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
       renderDetail={(r) => <ItemSheet row={r} />}
       expand={(r) => (r.lots > 0 || r.on_hand_ea !== 0 ? <ActiveLots item={r.item_code} /> : null)}

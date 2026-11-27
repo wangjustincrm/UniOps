@@ -41,7 +41,7 @@ export function CountsView({ toolbar }: { toolbar: ReactNode }) {
   return (
     <ListPage<StockCountRead>
       key="counts" resource={stockCountsClient} title="Radiant inventory reports"
-      description="Each report from Radiant's portal, compared lot by lot with what Sales recorded; applied, it is where the figures start."
+      
       columns={countColumns} emptyTitle="No report uploaded yet"
       renderDetail={(r) => <CountSheet row={r} />}
       toolbar={() => toolbar}

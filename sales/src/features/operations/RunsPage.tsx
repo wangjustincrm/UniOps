@@ -114,7 +114,7 @@ function Runs() {
 export default function RunsPage() {
   return (
     <Stack gap={4}>
-      <PageHeader title="Runs and log" description="Each connection's runs (its pass report) and the system job's, and everything the module logged. Run now runs every active connection, then the system job." />
+      <PageHeader title="Runs and log"  />
       <Tabs items={[{ value: 'runs', label: 'Runs', content: <Runs /> }, { value: 'log', label: 'Log', content: <LogTable /> }]} />
     </Stack>
   )

@@ -47,7 +47,7 @@ export default function WarehousesPage() {
   return (
     <CrudPage<WarehouseRead, WarehouseCreate, WarehouseUpdate>
       title="Warehouses" singular="warehouse"
-      description="Where transfers ship from and to; the 943 takes its names and addresses from here."
+      
       client={warehousesClient} columns={columns}
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['code']} emptyValues={empty}

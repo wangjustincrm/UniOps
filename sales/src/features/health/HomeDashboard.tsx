@@ -39,7 +39,7 @@ export function HomeDashboard() {
   const h = health.data
   return (
     <Stack gap={6}>
-      <PageHeader title="Sales" description="Orders by state, what needs a person, the last runs and the health of the module." />
+      <PageHeader title="Sales"  />
       <Columns as="section" aria-label="Orders" cols={2} md={5}>
         {d.cards.map((c) => (
           <StatCard key={c.key} label={c.label} count={c.count} tone={c.key === 'failed_files' && c.count ? 'danger' : 'neutral'}

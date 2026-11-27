@@ -53,7 +53,7 @@ export default function LotsPage() {
         key={recall ? recall.join('|') : 'all'}
         resource={lotsClient}
         title="Lots"
-        description="Every pallet row the warehouse's 945s reported: lot, expiry, quantity, and the order and customer it went to."
+        
         columns={columns}
         fixed={fixed}
         emptyTitle={recall ? 'None of these lots has shipped' : 'No 945 rows yet'}

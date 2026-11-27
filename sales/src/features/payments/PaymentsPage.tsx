@@ -21,7 +21,7 @@ export default function PaymentsPage() {
   return (
     <ListPage<PaymentRowRead>
       resource={paymentsClient} title="Payments"
-      description="Shopify payments and refunds, one row per transaction. Use the views for each method, by week or month, and the exceptions."
+      
       columns={columns} defaultHidden={hiddenPaymentColumns} notice={NOTE} emptyTitle="No payments yet" emptyText={EMPTY_TEXT.payments}
     />
   )

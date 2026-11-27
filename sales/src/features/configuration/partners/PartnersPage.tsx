@@ -32,7 +32,7 @@ export default function PartnersPage() {
     <CrudPage<PartnerRead, PartnerCreate, PartnerUpdate>
       title="Partners"
       singular="partner"
-      description="Trading partners: channel, settlement, sending and invoicing rules."
+      
       client={partnersClient}
       columns={columns}
       writePermission="sales.config"

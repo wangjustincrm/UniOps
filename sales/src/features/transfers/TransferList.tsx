@@ -26,7 +26,7 @@ export function TransferList({ scope, title, help }: { scope?: ListScope; title?
     <ListPage<TransferRead>
       resource={transfersClient}
       title={title}
-      description={title ? 'Stock sent from the plant to the warehouse (Radiant): a 943 says what is coming, its 944 says what arrived.' : undefined}
+      
       columns={columns}
       scope={scope}
       fit={scope ? 560 : undefined}

@@ -110,7 +110,7 @@ export default function DeliveryPage() {
     <OrderList
       fixed={WAITING}
       title="Delivery confirmation"
-      description="Shipped orders whose delivery is due: the requested date, or do-not-deliver-after for Walmart. No carrier reports the delivery, so it defaults to the due date. Change it if you know better: it becomes the invoice date."
+      
       showDue
       actions={DELIVERY_ACTIONS}
       emptyTitle="Nothing waits for a delivery confirmation"

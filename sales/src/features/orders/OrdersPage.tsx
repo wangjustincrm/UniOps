@@ -56,11 +56,11 @@ const dueColumn = orderColumns[dueColumnIndex]
 const dueOrderColumns = [...orderColumns.slice(0, 5), { ...dueColumn, meta: { ...dueColumn.meta, hidden: false } },
   ...orderColumns.slice(5).filter((_, i) => i + 5 !== dueColumnIndex)]
 
-export function OrderList({ fixed, scope, title, description, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue, actions }: {
+export function OrderList({ fixed, scope, title, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue, actions }: {
   fixed?: QuerySpec['filters']
   /** A record's own Orders (an item's: "has a line with item X"): locked, enforced by the server. */
   scope?: ListScope
-  title?: string; description?: string; emptyTitle: string
+  title?: string; emptyTitle: string
   emptyText?: string
   help?: HelpId
   /** More buttons in the order sheet's action bar. */
@@ -78,7 +78,7 @@ export function OrderList({ fixed, scope, title, description, emptyTitle, emptyT
     <ListPage<OrderRead>
       resource={ordersClient}
       title={title}
-      description={description}
+      
       emptyTitle={emptyTitle}
       emptyText={emptyText}
       help={help}
@@ -107,7 +107,7 @@ const isDraft = (o: OrderRead) => o.source_type === 'MANUAL' && o.fulfillment_st
  *  drafts (the old Manual orders page, 2026-11-02); New manual order opens the
  *  standard sheet. */
 export default function OrdersPage() {
-  return <OrderList title="Orders" description="Orders from the Shopify store, retailer 850s and manual entry. Choose a view (e.g. Open, On hold, Manual drafts), or search, sort and group the list yourself." emptyTitle="No orders yet"
+  return <OrderList title="Orders"  emptyTitle="No orders yet"
     emptyText={EMPTY_TEXT.orders} help="page:orders"
     create={{ label: 'New manual order', permission: 'sales.order.operate', className: 'max-w-3xl',
       render: (done, cancel) => <ManualOrderForm onSaved={done} onCancel={cancel} /> }}

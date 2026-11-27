@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react'
 import { PageHelp, type HelpId } from '../help'
 
-/** A page's title; actions sit on the right. `help`: a ? beside the title opening the page's help panel (what it is
- *  for, its common tasks, a search over all help). `description` is no longer shown under the title (the user,
- *  2026-11-27: pages without the grey sentence); it stays on the pages' code for now, read by nothing else. */
+/** A page's title (no sentence under it: the user, 2026-11-27); actions sit on the right. `help`: a ? beside the title
+ *  opening the page's help panel (what it is for, its common tasks, a search over all help). */
 export function PageHeader({ title, actions, help, helpSections }: {
-  title: string; description?: ReactNode; actions?: ReactNode; help?: HelpId; helpSections?: { title: string; ids: string[] }[]
+  title: string; actions?: ReactNode; help?: HelpId; helpSections?: { title: string; ids: string[] }[]
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">

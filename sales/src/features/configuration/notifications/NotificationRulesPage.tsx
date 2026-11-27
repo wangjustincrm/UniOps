@@ -81,7 +81,7 @@ export default function NotificationRulesPage() {
   return (
     <CrudPage<NotificationRuleRead, NotificationRuleCreate, NotificationRuleUpdate>
       title="Notifications" singular="notification rule"
-      description="Who hears about each event, and how. Without a rule, the task goes to the operator and no email is sent. Emails are only sent where SALES_EXTERNAL_EMAIL_ENABLED is on."
+      
       client={rulesClient} columns={columns}
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['event_type']}

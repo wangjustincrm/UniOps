@@ -22,7 +22,7 @@ describe('ListPage paging and filters', () => {
     }
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={qc}><ViewsProvider client={views}>
-      <ListPage<Row> resource={resource} columns={columns} title="Things" description="d" />
+      <ListPage<Row> resource={resource} columns={columns} title="Things"  />
     </ViewsProvider></QueryClientProvider>)
     expect(await screen.findByText('1–50 of 120')).toBeInTheDocument()
     fireEvent.click(screen.getByTitle('Next page'))
@@ -42,7 +42,7 @@ describe('ListPage paging and filters', () => {
     }
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={qc}><ViewsProvider client={views}>
-      <ListPage<Row> resource={resource} columns={columns} title="Things" description="d" />
+      <ListPage<Row> resource={resource} columns={columns} title="Things"  />
     </ViewsProvider></QueryClientProvider>)
     expect(await screen.findByText('1–50 of 120')).toBeInTheDocument()
     fireEvent.click(screen.getByTitle('Next page'))

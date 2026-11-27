@@ -24,7 +24,7 @@ export function InvoiceList({ scope, title, help }: { scope?: ListScope; title?:
     <ListPage<InvoiceRead>
       resource={invoicesClient}
       title={title}
-      description={title ? "One per confirmed order, priced per case at the 850 price. Edit before sending; send by the partner's method (810 or email with PDFs)." : undefined}
+      
       columns={columns}
       scope={scope}
       fit={scope ? 560 : undefined}

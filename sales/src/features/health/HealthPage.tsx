@@ -80,7 +80,7 @@ export default function HealthPage() {
   return (
     <TourScope id="health">
     <Stack gap={6}>
-      <PageHeader title="Health" description="Checks of the settings, connections, scheduler, files, ACKs and sends. Each one opens the records behind it." help="page:health" />
+      <PageHeader title="Health"  help="page:health" />
       <Cluster gap={3} align="center" size="sm">
         <HealthBadge result={h.result} /><span>checked {formatDateTime(h.checked_at)}</span>
       </Cluster>

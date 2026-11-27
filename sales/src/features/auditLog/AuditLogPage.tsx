@@ -62,13 +62,13 @@ export default function AuditLogPage() {
       <Tabs ariaLabel="Audit log" defaultValue="logs" items={[
         { value: 'logs', label: 'Requests and jobs', content: (
           <ListPage<AuditLogRow> key={JSON.stringify(filters)} resource={auditLogsClient} title="Audit log" columns={logColumns}
-            description="Every change made through Sales and every failed request, with who, when and what. Reads that work are not kept. Open one for its actions and the records it changed."
+            
             fixed={filters.length ? filters : undefined} toolbar={() => toolbar} onRowClick={(r) => setOpened(r.uuid)}
             emptyTitle="Nothing recorded yet" help="page:auditLog" />
         ) },
         { value: 'changes', label: 'Entity changes', content: (
           <ListPage<EntityChangeRow> resource={entityChangesClient} title="Entity changes" columns={changeColumns}
-            description="Every change to a record, by entity and id (search an Order id, a transfer…). Open a row for its request."
+            
             onRowClick={(r) => r.audit_log_id && setOpened(r.audit_log_id)} emptyTitle="No change recorded yet" />
         ) },
       ]} />

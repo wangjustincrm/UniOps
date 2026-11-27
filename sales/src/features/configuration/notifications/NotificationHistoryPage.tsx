@@ -25,7 +25,7 @@ export default function NotificationHistoryPage() {
     <ListPage<NotificationRead>
       resource={historyClient}
       title="Notification history"
-      description="Every task and email the notification rules made, newest first. An email's delivery is its send's status."
+      
       columns={columns}
       emptyTitle="No notification yet"
     />

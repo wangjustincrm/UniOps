@@ -34,7 +34,7 @@ export default function CarriersPage() {
   return (
     <CrudPage<CarrierRead, CarrierCreate, CarrierUpdate>
       title="Carriers" singular="carrier"
-      description="The carriers on the 945s: their names, and where a tracking number is looked up."
+      
       client={carriersClient} columns={columns}
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['scac']} emptyValues={empty}

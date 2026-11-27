@@ -7,7 +7,7 @@ import { shippedColumns } from './shippedColumns'
 export default function ShippedPage() {
   return (
     <ListPage<ShippedRead> resource={shippedClient} title="Shipped" columns={shippedColumns}
-      description="What went out to customers: every row of an applied 945, with its customer, order, item, lot and whether its delivery is confirmed."
+      
       emptyTitle="Nothing shipped yet" />
   )
 }

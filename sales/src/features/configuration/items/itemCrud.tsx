@@ -24,7 +24,7 @@ const errorMessages: Record<string, string> = {
  *  sheet and in its own tab (/items/:code) the same view. */
 export const itemCrud: CrudPageProps<ItemRead, ItemCreate, ItemUpdate> = {
   title: 'Items', singular: 'item',
-  description: 'The Item Master: identifiers used to match order lines, and each item\'s units in EA.',
+  
   client: itemsClient, columns,
   writePermission: 'sales.config', createSchema: itemCreateSchema, updateSchema: itemUpdateSchema,
   fields: itemFields, immutableOnEdit: ['item_code'], emptyValues: itemEmptyValues, toFormValues: itemToFormValues,

@@ -57,7 +57,6 @@ export interface ListPageProps<T extends { id: number }> {
   resource: ListResource<T>
   /** With a title the page has its header; without, the list is a part of a page. */
   title?: string
-  description?: ReactNode
   columns: ColumnDef<T, unknown>[]
   /** Columns shown only where a view names them (see QueryTable). */
   defaultHidden?: string[]
@@ -274,7 +273,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     <ActionHostContext.Provider value={actionHost as ActionHost<unknown>}>
     <TourScope id={props.title ?? 'list'}>
     <div className="flex flex-col gap-4">
-      {props.title && <PageHeader title={props.title} description={props.description} help={props.help}
+      {props.title && <PageHeader title={props.title} help={props.help}
         helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: canExport, select: selection.lead.length > 0,
           links: (meta?.fields ?? []).some((f) => f.ref && meta?.refs?.[f.ref.type]?.readable), scope: !!scope }) }]} />}
       {props.notice}
