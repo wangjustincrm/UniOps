@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { Check, ChevronDown, CopyPlus, MoreHorizontal, RotateCcw, Save, Star } from 'lucide-react'
 import { Dialog } from '../primitives/Dialog'
 import { DropdownMenu } from '../primitives/DropdownMenu'
-import { IconButton } from '../primitives/IconButton'
 import { Popover } from '../primitives/Popover'
-import { ToolbarPopover } from './ToolbarPopover'
 import { Button, Input } from '../primitives/shell'
 import { cn } from '../lib/cn'
 import { errorText } from '../resource/businessError'
@@ -14,9 +12,10 @@ import type { CurrentView, ViewPickerModel } from './views'
 
 const ERRORS = { 'view.name_taken': 'You already have a view with that name.' }
 
-/** The view picker left of a list's toolbar (design §13.19): system views and
- *  my views; a dot when the list differs from the chosen view (ViewActions then offers
- *  Save / Save as new / Reset); per view of mine: Rename, Set as default, Delete. */
+/** The view picker at the right end of a list's toolbar (design §13.19; the user, 2026-11-27): a dot when the list
+ *  differs from the chosen view; its menu holds what the view can do — Save view, Save as new view…, Reset to "<view>"
+ *  (each greyed with why when it cannot) — then the system views and my views; per view of mine: Rename, Set as
+ *  default, Delete. */
 export function ViewPicker({ model }: { model: ViewPickerModel }) {
   // What a view action did, in the list's status row (a name the server refuses stays at its field).
   const notices = useNotices()
@@ -36,6 +35,9 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
   const isCurrent = (v: CurrentView) => current?.kind === v.kind &&
     (v.kind === 'system' ? current.kind === 'system' && current.key === v.key : current.kind === 'mine' && current.id === v.id)
   const choose = (v: CurrentView) => { model.select(v); setOpen(false) }
+  const busy = model.busy ? 'Saving…' : null
+  const nothing = !dirty ? 'Nothing changed since the view was chosen' : null
+  const saveWhy = busy ?? (current?.kind !== 'mine' ? 'A system view: save the changes as a new view' : nothing)
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -44,14 +46,23 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
         onOpenChange={setOpen}
         className="w-72 p-1"
         trigger={
-          <button type="button" aria-label={`View: ${current?.name ?? 'none'}${dirty ? ' (unsaved changes)' : ''}`}
+          <button type="button" aria-label={`View: ${current?.name ?? 'none'}${dirty ? ' (unsaved changes)' : model.stale ? ' (saved by an older version)' : ''}`}
             className="inline-flex h-10 max-w-[16rem] items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-50">
             <span className="truncate">{current?.name ?? 'Views'}</span>
-            {dirty && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-warning-500" />}
+            {(dirty || model.stale) && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-warning-500" />}
             <ChevronDown className="h-4 w-4 shrink-0 text-neutral-500" />
           </button>
         }
       >
+        <div role="group" aria-label="This view" data-help="list.saveView" className="border-b border-neutral-100 py-1">
+          {model.stale && !dirty && <p role="status" className="px-2 py-1 text-xs text-warning-700">Saved by an older version: review it, then Save view.</p>}
+          <Act label="Save view" icon={<Save className="h-3.5 w-3.5" />} why={model.stale && !dirty && current?.kind === 'mine' ? busy : saveWhy}
+            onAct={() => { setOpen(false); if (current) void said(() => model.save(), () => `View "${current.name}" saved`)().catch(() => {}) }} />
+          <Act label="Save as new view…" icon={<CopyPlus className="h-3.5 w-3.5" />} why={busy ?? nothing}
+            onAct={() => { setOpen(false); setNaming({ title: 'Save as a new view', initial: '', done: said(model.saveAs, (n) => `Saved as the view "${n}"`) }) }} />
+          <Act label={`Reset to "${current?.name ?? 'the view'}"`} icon={<RotateCcw className="h-3.5 w-3.5" />} why={busy ?? nothing}
+            onAct={() => { setOpen(false); model.reset() }} />
+        </div>
         <Section title="System views">
           {model.system.map((s) => {
             const v: CurrentView = { kind: 'system', key: s.key, name: s.name }
@@ -98,6 +109,22 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
         onConfirm={async () => { if (deleting) await said(() => model.remove(deleting.id), () => `View "${deleting.name}" deleted`)() }}
       />
     </div>
+  )
+}
+
+/** One of the view's actions in the menu: greyed with why when it cannot (said on focus too). */
+function Act({ label, icon, why, onAct }: { label: string; icon: React.ReactNode; why: string | null; onAct: () => void }) {
+  const id = `why-${label.replace(/\W+/g, '-')}`
+  return (
+    <button type="button" aria-label={label} aria-disabled={why ? true : undefined} aria-describedby={why ? id : undefined}
+      onClick={() => { if (!why) onAct() }}
+      className={cn('flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-sm', why ? 'cursor-not-allowed text-neutral-400' : 'hover:bg-neutral-50')}>
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{label}</span>
+        {why && <span id={id} className="text-xs text-neutral-500">{why}</span>}
+      </span>
+    </button>
   )
 }
 
@@ -156,70 +183,5 @@ function NameDialog({ title, initial, done, onClose }: {
         {error != null && <p role="alert" className="text-sm text-danger-700">{errorText(error, ERRORS)}</p>}
       </form>
     </Dialog>
-  )
-}
-
-// Toolbar icons share one size with the other toolbar controls.
-/** What the list's changes can become: Save (my view), Save as new, Reset. Shown only when there are changes. */
-export function ViewActions({ model }: { model: ViewPickerModel }) {
-  const notices = useNotices()
-  const said = <A extends unknown[]>(fn: (...a: A) => Promise<void>, text: (...a: A) => string) => async (...a: A) => {
-    try {
-      await fn(...a)
-      notices.notify({ key: 'view', tone: 'success', text: text(...a) })
-    } catch (e) {
-      notices.notify({ key: 'view', tone: 'error', text: `The view was not saved: ${errorText(e, ERRORS)}` })
-      throw e
-    }
-  }
-  const { current, dirty } = model
-  if (!dirty) return model.stale ? <span role="status" className="text-xs text-warning-700">Saved by an older version: review it, then Save.</span> : null
-  return (
-    <span className="inline-flex items-center gap-1">
-      {current?.kind === 'mine' && (
-        <IconButton label="Save view" icon={<Save className="h-4 w-4" />} disabled={model.busy} className={TOOL}
-          onClick={() => { void said(() => model.save(), () => `View "${current.name}" saved`)().catch(() => {}) }} />
-      )}
-      <SaveAsNew busy={model.busy} save={said(model.saveAs, (n) => `Saved as the view "${n}"`)} />
-      <IconButton label="Reset to the saved view" icon={<RotateCcw className="h-4 w-4" />} disabled={model.busy} className={TOOL}
-        onClick={model.reset} />
-    </span>
-  )
-}
-
-const TOOL = 'h-8 w-8 rounded-lg border border-neutral-200 bg-white'
-
-/** Save as new: an icon opening a small popover with the name. */
-function SaveAsNew({ busy, save }: { busy: boolean; save: (name: string) => Promise<void> }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [error, setError] = useState<unknown>(null)
-  const [pending, setPending] = useState(false)
-  const submit = async () => {
-    if (!name.trim() || pending) return
-    setPending(true)
-    setError(null)
-    try {
-      await save(name.trim())
-      setOpen(false)
-      setName('')
-    } catch (e) {
-      setError(e)
-    } finally {
-      setPending(false)
-    }
-  }
-  return (
-    <ToolbarPopover label="Save as a new view" icon={<CopyPlus className="h-4 w-4" />} title="Save as a new view" open={open}
-      onOpenChange={(o) => { setOpen(o); if (!o) setError(null) }} disabled={busy} width="w-72"
-      actions={<>
-        <Button size="sm" variant="secondary" onClick={() => setOpen(false)} disabled={pending}>Cancel</Button>
-        <Button size="sm" onClick={() => void submit()} disabled={pending || !name.trim()}>Save</Button>
-      </>}>
-      <form onSubmit={(e) => { e.preventDefault(); void submit() }}>
-        <Input aria-label="View name" placeholder="Name of the view" value={name} autoFocus maxLength={80} onChange={(e) => setName(e.target.value)} />
-      </form>
-      {error != null && <p role="alert" className="text-sm text-danger-700">{errorText(error, ERRORS)}</p>}
-    </ToolbarPopover>
   )
 }
