@@ -60,6 +60,8 @@ MAX_PAGE = 10_000
 MAX_IN_VALUES = 100
 MAX_SEARCH = 100
 MAX_FILTERS = 20
+# A page's scope (a record's own list: the Orders of an item): a few locked filters, never more.
+MAX_SCOPE = 3
 MAX_VALUE = 200
 MAX_GROUP_KEYS = 3
 MAX_GROUPS = 500  # group counts returned; beyond: groups_truncated
@@ -86,6 +88,10 @@ class QuerySpec(BaseModel):
     search: str | None = Field(None, max_length=MAX_SEARCH)
     filters: list[Filter] = Field(default_factory=list, max_length=MAX_FILTERS)
     group: list[SortKey] = Field(default_factory=list, max_length=MAX_GROUP_KEYS)
+    # The page's scope (user 2026-11-27): filters the person cannot remove there (an item's Orders: item_code eq X).
+    # ANDed into every read and every action the list does — its rows, its count, its export, its selection's actions —
+    # so a scoped page never reaches past it, whatever its search.
+    scope: list[Filter] = Field(default_factory=list, max_length=MAX_SCOPE)
 
 
 class Total(BaseModel):
@@ -125,6 +131,9 @@ class FilterRule:
     ops: frozenset[str] | None = None
     cast: Callable[[Any], Any] | None = None
     kind: FieldKind | None = None
+    # The condition on `column` (a related row's) becomes the row's own through this, e.g. an order "has a line with
+    # item X": lambda cond: exists().where(OrderLine.order_id == Order.id, cond).
+    through: Callable[[Any], Any] | None = None
 
     def convert(self, value: Any) -> Any:
         return (self.cast or cast_for(self.column))(value)
@@ -258,8 +267,9 @@ def query_spec(
     search: Annotated[str | None, Query(max_length=MAX_SEARCH)] = None,
     filter: Annotated[list[str] | None, Query(max_length=MAX_FILTERS)] = None,  # noqa: A002 — the parameter's name
     group: Annotated[str | None, Query(max_length=200)] = None,
+    scope: Annotated[list[str] | None, Query(max_length=MAX_SCOPE)] = None,
 ) -> QuerySpec:
-    """FastAPI dependency: `?page=&page_size=&sort=a,-b&search=&filter=f:op:v&filter=…&group=a,-b`."""
+    """FastAPI dependency: `?page=&page_size=&sort=a,-b&search=&filter=f:op:v&filter=…&group=a,-b&scope=f:op:v`."""
     keys = parse_sort(group)
     if len(keys) > MAX_GROUP_KEYS:
         raise InvalidInput("query.too_many_groups", f"group by at most {MAX_GROUP_KEYS} fields", {"max": MAX_GROUP_KEYS})
@@ -270,4 +280,5 @@ def query_spec(
         search=search,
         filters=[parse_filter(f) for f in (filter or [])],
         group=keys,
+        scope=[parse_filter(f) for f in (scope or [])],
     )

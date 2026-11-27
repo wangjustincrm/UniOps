@@ -181,3 +181,14 @@ async def test_a_retired_part_of_a_saved_state_is_dropped_not_refused(http):
     r = await new(http, state={"version": VIEW_STATE_VERSION, "includeHistorical": True, "refresh": 60})
     assert r.status_code == 201, r.text
     assert "includeHistorical" not in r.json()["state"] and r.json()["state"]["refresh"] == 60
+
+
+async def test_a_list_inside_a_scope_keeps_its_own_views_general_to_the_scope_kind(http):
+    """User 2026-11-27: a view saved in an item's Orders is "Orders of an item" (orders@item), any item; never the
+    Orders page's own views."""
+    assert (await new(http, "Of an item", resource="orders@item")).status_code == 201
+    assert [v["name"] for v in (await http.get("/api/v1/views?resource=orders@item", headers=AS_ANN)).json()] == ["Of an item"]
+    assert (await http.get("/api/v1/views?resource=orders", headers=AS_ANN)).json() == []
+    for bad in ("orders@Item", "orders@", "orders@item lot", "nolist@item"):
+        r = await new(http, "x", resource=bad)
+        assert r.status_code == 422 and r.json()["error"]["code"] == "view.unknown_resource", bad

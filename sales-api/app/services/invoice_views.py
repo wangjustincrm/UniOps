@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 
 from app.domain.status import Invoice as Inv
 from app.models.config import ItemUnit
@@ -41,8 +41,11 @@ class InvoiceRepository(Repository[Invoice]):
     filterable = {"status": FilterRule(Invoice.status_sql, kind="text"),
                   "order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
                   "order_number": FilterRule(Invoice.order_number_sql, kind="number", cast=int),
-                  "partner_name": FilterRule(Invoice.partner_name_sql, kind="text")}
-    labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "po": "PO",
+                  "partner_name": FilterRule(Invoice.partner_name_sql, kind="text"),
+                  # "Has a line with item X" (an item's Invoices).
+                  "item_code": FilterRule(InvoiceLine.item_code, kind="text", ops=frozenset({"eq", "in"}),
+                                          through=lambda c: exists().where(InvoiceLine.invoice_id == Invoice.id, c))}
+    labels = {"item_code": "Has a line with item", "invoice_number": "Invoice", "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "po": "PO",
               "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "total": "Amount", "send_count": "Times sent"}
     enums = {"method": ("810_JSON", "EMAIL", "NONE"), "status": tuple(s.value for s in Inv)}
     default_sort = ("-invoice_date", "-id")

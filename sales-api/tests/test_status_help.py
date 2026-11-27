@@ -52,7 +52,8 @@ def test_every_named_button_is_a_real_label():
 def test_the_button_check_is_strict():
     src = _front_labels()
     assert not is_button("Send it to the moon", src)
-    assert not is_button("Shipped", src)       # a status value compared in code, not a button
+    # A status value compared in code, not a button ("Shipped" is a tab's name too since 2026-11-27: an item's Shipped).
+    assert not is_button("Fulfilling", src)
     assert not is_button("go back", src)       # the words the Cancelled at Source text once used
     assert is_button("Back to", src) and is_button("Release hold", src) and is_button("Send", src)
 

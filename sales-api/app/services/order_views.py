@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, ClassVar
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 
 from app.core.config import settings as app_settings
 from app.domain.address import address_flags
@@ -147,7 +147,7 @@ class OrderRepository(Repository[Order]):
                    "shopify_fulfillment_status", "source_name", "tags", "original_total", "total_refunded", "net_amount",
                    "manual_reason", "parent_order_id", "settled_on", "settled_reference", "settled_amount", "settled_note",
                    "settled_at", "settled_by_name", "created_at", "updated_at")
-    labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
+    labels = {"item_code": "Has a line with item", "order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
               "partner_code": "Partner code", "total_amount": "Total", "total": "Source total", "source_order_number": "Source no.", "source_order_id": "Source ID",
               "order_status": "Status", "on_hold_reason": "On Hold reason", "first_received_at": "Received", "paid_at": "Paid",
               "shopify_financial_status": "Shopify Payment", "shopify_fulfillment_status": "Shopify Fulfillment",
@@ -177,6 +177,9 @@ class OrderRepository(Repository[Order]):
                 "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql,
                 "payment_status": Order.payment_status_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
+                  # "Has a line with item X" (user 2026-11-27: an item's Orders): an order with a line of it, not removed.
+                  "item_code": FilterRule(OrderLine.item_code, kind="text", ops=frozenset({"eq", "in"}),
+                                          through=lambda c: exists().where(OrderLine.order_id == Order.id, OrderLine.removed.is_(False), c)),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
@@ -196,7 +199,8 @@ class OrderRepository(Repository[Order]):
         ("Status", ("order_status", "on_hold_reason", "payment_status", "review_reason", "historical", "archive_suppressed",
                     "shopify_financial_status", "shopify_fulfillment_status")),
         ("Order", ("source_reference", "order_number", "source_order_number", "source_order_id", "source_type", "source_name",
-                   "connection_name", "order_type", "department", "tags", "manual_reason", "parent_reference", "parent_order_id")),
+                   "connection_name", "order_type", "department", "tags", "manual_reason", "parent_reference", "parent_order_id",
+                   "item_code")),
         ("Partner", ("partner_name", "partner_code")),
         ("Dates", ("order_date", "first_received_at", "paid_at", "requested_delivery_date", "cancel_date", "do_not_deliver_after",
                    "received_month", "archived_in_shopify_at", "source_cancelled_at")),

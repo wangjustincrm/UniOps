@@ -33,3 +33,10 @@ class LotRead(BaseModel):
     partner_name: str | None
     ship_to_city: str | None
     ship_to_postal: str | None
+
+
+class ShippedRead(LotRead):
+    """An applied 945 row (Shipped): a lot's row, with the customer (a Shopify one as an initial and the city) and
+    whether its delivery is confirmed."""
+    customer: str | None
+    delivery_confirmed: bool

@@ -50,7 +50,7 @@ def mounted(svc) -> set[str]:
 
 
 def test_there_are_the_lists_we_know():
-    assert len(LISTS) == 24, [c.__name__ for c in LISTS]
+    assert len(LISTS) == 25, [c.__name__ for c in LISTS]
     assert all(c.resolved().path for c in LISTS), [c.__name__ for c in LISTS if not c.resolved().path]
     assert all(c.resolved().path is None for c in NOT_MOUNTED)
 
@@ -75,7 +75,7 @@ def test_no_list_route_is_mounted_by_hand():
 
 
 LABELLED = [c for c in LISTS if c.resolved().export and c.resolved().export_headers == "labels"]
-PAGES = {"OrderService": "orders/OrdersPage.tsx", "TransferService": "transfers/TransfersPage.tsx", "InvoiceService": "invoices/InvoicesPage.tsx",
+PAGES = {"OrderService": "orders/OrdersPage.tsx", "TransferService": "transfers/TransferList.tsx", "InvoiceService": "invoices/InvoiceList.tsx",
          "StockCountService": "inventory/CountsView.tsx"}
 # A page's own cell made from fields the full export has: nothing is lost, only the wording.
 OWN_CELLS = {("StockCountService", "state"): "Applied / Report only: from Applied (applied_at)"}

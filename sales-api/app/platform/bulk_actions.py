@@ -37,7 +37,7 @@ from starlette.datastructures import QueryParams
 from app.platform.authorization import authorize
 from app.platform.commands import Stale, check_version, require_reason
 from app.platform.errors import BusinessError, InvalidInput, NotFound
-from app.platform.query import QuerySpec, query_spec
+from app.platform.query import MAX_SCOPE, QuerySpec, parse_filter, query_spec
 from app.platform.uow import Savepoint
 from app.platform.routes import Router, own_commit
 
@@ -114,6 +114,9 @@ class ActionIn(BaseModel):
     ids: dict[int, int | None] | None = None       # id → the version the person saw (null: the record has none)
     query: Annotated[str, Field(max_length=8000)] | None = None  # "all matching": the list's own query string
     expected: int | None = None                    # with `query`: how many the person was told match
+    # With `ids`: the scope of the page they were chosen on (`field:op:value`, as ?scope=). An id it does not select is
+    # refused, never acted on: a scoped page acts inside its scope only. (With `query`, the scope is in the query.)
+    scope: Annotated[list[Annotated[str, Field(max_length=500)]], Field(max_length=MAX_SCOPE)] | None = None
     input: dict[str, Any] | None = None
     reason: Annotated[str, Field(max_length=2000)] | None = None  # why, where the action asks for it
     dry_run: bool = False
@@ -139,7 +142,7 @@ class ActionOut(BaseModel):
 def _spec(query: str) -> QuerySpec:
     p = QueryParams(query)
     return query_spec(page=1, page_size=1, sort=p.get("sort"), search=p.get("search"), filter=p.getlist("filter") or None,
-                      group=None)
+                      group=None, scope=p.getlist("scope") or None)
 
 
 async def _targets(uow: Any, registry: ActionRegistry, body: ActionIn) -> dict[int, int | None]:
@@ -148,6 +151,11 @@ async def _targets(uow: Any, registry: ActionRegistry, body: ActionIn) -> dict[i
     if body.ids is not None:
         if not 1 <= len(body.ids) <= MAX_RECORDS:
             raise InvalidInput("action.too_many", f"1 to {MAX_RECORDS} records at a time", {"max": MAX_RECORDS})
+        if body.scope:
+            outside = await registry.repo_cls(uow).outside_scope(list(body.ids), [parse_filter(s) for s in body.scope])
+            if outside:
+                raise BusinessError("scope.outside", f"{len(outside)} of these records are outside this page's scope: nothing was done",
+                                    {"ids": outside[:20]})
         return dict(body.ids)
     repo = registry.repo_cls(uow)
     ids = await repo.matching_ids(_spec(body.query or ""), MAX_RECORDS + 1)

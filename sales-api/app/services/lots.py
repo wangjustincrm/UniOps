@@ -5,7 +5,7 @@ every order and customer it went to, as a CSV too."""
 from __future__ import annotations
 
 
-from app.models.lots import LotRow
+from app.models.lots import LotRow, ShippedRow
 from app.platform.query import FilterRule
 from app.platform.record_types import Ref
 from app.platform.repository import Repository
@@ -13,7 +13,7 @@ from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.domain.carriers import tracking_url
-from app.schemas.lots import LotRead
+from app.schemas.lots import LotRead, ShippedRead
 from app.services.carriers import carriers_by_scac
 
 READ = "sales.read"
@@ -67,3 +67,37 @@ class LotService(ReadOnlyService[LotRow, LotRead]):
     def _csv_export_columns(self) -> tuple[str, ...]:
         """All fields: the recall's columns (every order and customer the lots went to)."""
         return CSV_COLUMNS
+
+
+SHIPPED_CSV = ("ship_date", "customer", "order_ref", "order_number", "partner_name", "item_code", "lot", "expiry", "qty_shipped_ea",
+               "delivery_confirmed", "ship_to_city", "ship_to_postal", "tracking", "sscc", "bol", "document_id")
+
+
+class ShippedRepository(LotRepository):
+    """Shipped: the applied 945 rows only (Lots keeps every 945 row, kept-only ones too)."""
+    model = ShippedRow
+    refs = LotRepository.refs
+    search_fields = ("lot", "item_code", "order_ref", "customer", "tracking", "sscc", "ship_to_postal")
+    list_fields = ("lot", "item_code", "expiry", "days_to_expiry", "qty_shipped_ea", "sscc", "tracking", "ship_date", "bol",
+                   "order_ref", "order_number", "partner_code", "partner_name", "customer", "delivery_confirmed", "ship_to_city",
+                   "ship_to_postal", "document_id", "shipment_id")
+    # Its own columns (not the Lots list's, which a subclass would inherit as explicit entries).
+    sortable = {}
+    filterable = {"order_id": FilterRule(ShippedRow.order_id)}
+    meta_hidden = ("applied", "shadow", "our_reference")
+    labels = {**LotRepository.labels, "customer": "Customer", "delivery_confirmed": "Delivery confirmed"}
+    suggestable = ("lot", "item_code", "order_ref")
+    groupable = ("lot", "item_code", "expiry", "ship_date", "customer", "partner_name", "order_ref", "ship_to_city", "delivery_confirmed")
+    presets = (Preset("all", "All"),
+               Preset("by_customer", "By customer", {"group": [{"field": "customer", "desc": False}], "sort": [{"field": "ship_date", "desc": True}]}))
+
+
+class ShippedService(LotService):
+    """Shipped (user 2026-11-27): what went out to customers, from the applied 945s — an item's or a lot's (its scope),
+    or all of them."""
+    repo_cls = ShippedRepository
+    read_schema = ShippedRead
+    resource = Resource(path="/shipped", tags=("shipped",), get=False)
+
+    def _csv_export_columns(self) -> tuple[str, ...]:
+        return SHIPPED_CSV

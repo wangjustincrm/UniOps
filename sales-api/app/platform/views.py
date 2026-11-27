@@ -14,6 +14,7 @@ name is chosen there.
 """
 # No `from __future__ import annotations`: FastAPI must see the real types of
 # views_router's closures (the dependencies and the DTOs).
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -157,10 +158,14 @@ class ViewRead(BaseModel):
     stale: bool
 
 
+SCOPE_KIND = re.compile(r"[a-z][a-z_]{0,29}")  # a scope's kind (item, lot): the views of a list inside it
+
+
 # ── the service ──────────────────────────────────────────────────────────────
 class ViewService:
     """`lists` maps a resource key (the list's path, e.g. "orders") to its
-    read service class; only those lists have views."""
+    read service class; only those lists have views. A list inside a scope keeps its own views, general to the
+    scope's kind (user 2026-11-27: "orders@item" — the Orders of an item, any item: the page gives the value)."""
     model: ClassVar[type]
     lists: ClassVar[dict[str, type]]
 
@@ -169,7 +174,10 @@ class ViewService:
         self.s = uow.session
 
     async def _list(self, resource: str):
-        svc = self.lists.get(resource)
+        base, at, kind = resource.partition("@")
+        if at and not SCOPE_KIND.fullmatch(kind):
+            raise InvalidInput("view.unknown_resource", f"no list {resource!r}", {"field": "resource"})
+        svc = self.lists.get(base)
         if svc is None:
             raise InvalidInput("view.unknown_resource", f"no list {resource!r}", {"field": "resource"})
         await authorize(self.uow, svc.read_permission)

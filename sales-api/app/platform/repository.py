@@ -297,9 +297,18 @@ class Repository(Generic[T]):
                 *(getattr(self.model, f).ilike(pattern, escape="\\") for f in self.search_fields),
                 *(getattr(self.model, f) == number for f in self.search_numbers if number is not None),
             ))
-        for f in spec.filters:
+        for f in [*spec.scope, *spec.filters]:
             q = q.where(self._filter(f))
         return q
+
+    async def outside_scope(self, ids: Sequence[int], scope: Sequence[Filter]) -> list[int]:
+        """Of these ids, those the scope does not select (a scoped page's action on records it never showed)."""
+        if not scope:
+            return []
+        pk = self.model.__mapper__.primary_key[0]
+        q = self._apply(self.base_query(), QuerySpec(scope=list(scope)), open_work=False).where(pk.in_(list(ids)))
+        inside = {r[0] for r in (await self.session.execute(self._only(q, pk))).all()}
+        return sorted(set(ids) - inside)
 
     # ── field kinds and operators (one declaration: query and /meta) ────────
     @classmethod
@@ -365,6 +374,11 @@ class Repository(Generic[T]):
         return labels if OTHER in labels else [*labels, OTHER]
 
     def _filter(self, f: Filter):
+        cond = self._condition(f)
+        rule = self.filterable[f.field]
+        return rule.through(cond) if rule.through is not None else cond
+
+    def _condition(self, f: Filter):
         rule = self.filterable.get(f.field)
         if rule is None:
             raise InvalidInput(

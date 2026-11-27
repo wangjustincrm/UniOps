@@ -2,13 +2,14 @@
 for every change. The work is in app/services/transfers.py."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 
 from app.domain.status import TRANSFER
 from app.domain.status import Transfer as T
 from app.models.config import Warehouse
 from app.models.documents import Document
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
+from app.platform.query import FilterRule
 from app.platform.uow import Savepoint
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError
@@ -30,9 +31,12 @@ class TransferRepository(Repository[Transfer]):
     search_fields = ("transfer_number", "notes")
     list_fields = ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id", "status", "items", "sent_ea", "received_ea",
                    "receipt_date", "attachments", "notes", "error", "created_at", "updated_at")
-    labels = {"transfer_number": "Transfer", "from_warehouse": "From", "to_warehouse": "To", "from_warehouse_id": "From (ID)", "to_warehouse_id": "To (ID)", "sent_ea": "Sent EA",
+    labels = {"item_code": "Has a line with item", "transfer_number": "Transfer", "from_warehouse": "From", "to_warehouse": "To", "from_warehouse_id": "From (ID)", "to_warehouse_id": "To (ID)", "sent_ea": "Sent EA",
               "received_ea": "Received EA", "receipt_date": "Received on", "items": "Items", "attachments": "Attachments"}
     enums = {"status": tuple(s.value for s in T)}
+    # "Has a line with item X" (an item's Transfers).
+    filterable = {"item_code": FilterRule(TransferLine.item_code, kind="text", ops=frozenset({"eq", "in"}),
+                                          through=lambda c: exists().where(TransferLine.transfer_id == Transfer.id, c))}
     default_sort = ("-created_at", "-transfer_number")
     groupable = ("status", "from_warehouse_id", "to_warehouse_id", "receipt_date")
     summable = ("sent_ea", "received_ea")
