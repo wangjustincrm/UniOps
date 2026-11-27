@@ -128,7 +128,10 @@ async function run(name, viewport) {
       }
     }
     await shot('drawer-item')
-    await item.getByRole('link', { name: /^← Back to/ }).click()
+    // From the order's sheet: Back names the order (and returns to Orders, the sheet still open).
+    const back = item.getByRole('link', { name: phone ? /^← Back to/ : '← Back to Order SMP-1030' })
+    await back.waitFor({ timeout: 5000 })
+    await back.click()
     await page.waitForURL(/\/orders$/, { timeout: 5000 })
     if (phone) {
       check((await page.getByRole('dialog').count()) === 0, `${name}: on a phone the sheet was closed when the item opened`)
@@ -223,7 +226,8 @@ async function run(name, viewport) {
     await sheet.getByRole('toolbar', { name: 'Record actions' }).getByRole('button', { name: 'Open in its tab' }).click()
     await page.waitForURL(/\/items\/ITEM-1$/, { timeout: 5000 })
     await tabBar.getByText('Items', { exact: true }).first().click()
-    await shown().getByText('ITEM-1', { exact: true }).first().click()
+    await shown().getByRole('heading', { name: 'Items', exact: true }).waitFor({ timeout: 5000 })  // the Items tab is the one shown
+    await shown().locator('table tbody tr', { hasText: 'ITEM-1' }).first().getByText('Sample item 0').click()
     const again = page.getByRole('dialog', { name: 'ITEM-1' })
     await again.getByRole('region', { name: 'Open in its tab' }).waitFor({ timeout: 10000 })
     await shot('read-only-sheet')

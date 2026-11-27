@@ -3,7 +3,7 @@ import { DropdownMenu } from '../primitives/DropdownMenu'
 import { cn } from '../lib/cn'
 import { BREAKPOINTS, useMediaQuery } from '../primitives/useResponsive'
 import { RecordSheetHostContext } from './recordSheetHost'
-import { useRecordNav, type RecordKey } from './recordNav'
+import { RecordFromContext, useRecordNav, type RecordKey } from './recordNav'
 import { useListMeta, type ListMeta } from '../resource/listMeta'
 import { useAction } from './useAction'
 import { copyLink, openInBrowserTab } from './links'
@@ -25,12 +25,13 @@ export function RefLink({ record, readable, from, children, className }: {
   // On a phone a list's sheet takes the whole screen (it is not drawn in its tab): going to another record closes it
   // first, or the record's tab would open behind it.
   const host = useContext(RecordSheetHostContext)
+  const inSheet = useContext(RecordFromContext)
   const phone = useMediaQuery(`(max-width: ${BREAKPOINTS.sm - 0.02}px)`)
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   const self = useRef<HTMLAnchorElement>(null)
   const action = useAction({ refreshes: false })
   if (!nav || !href || !mayRead || record.key === '' || record.key == null) return <>{children}</>
-  const open = () => { if (phone) host?.close(); nav.open(record) }
+  const open = () => { if (phone) host?.close(); nav.open(record, inSheet ?? undefined) }
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     e.stopPropagation()  // never also the row's own click (its sheet)
     if (MODIFIED(e)) return

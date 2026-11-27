@@ -23,7 +23,7 @@ import { PermissionContext } from './permissions'
 import { RecordSheetHostContext, type RecordSheetSize } from './recordSheetHost'
 import type { BarItem } from './actionBar'
 import { RecordActionBar } from './RecordActionBar'
-import { ReadOnlyContext, READ_ONLY_HERE, RecordContainerContext, useRecordNav, useRecordTabOpen, type RecordKey } from './recordNav'
+import { ReadOnlyContext, READ_ONLY_HERE, RecordContainerContext, RecordFromContext, useRecordNav, useRecordTabOpen, type RecordKey } from './recordNav'
 import { copyLink } from './links'
 
 export { RecordSheetHostContext } from './recordSheetHost'
@@ -292,7 +292,9 @@ export function RecordSheet(props: RecordSheetProps) {
       </div>
     )
   }
-  const content = <NoticesContext.Provider value={notices}>{body}</NoticesContext.Provider>
+  // In a list's sheet, a link inside says where it came from: this record ("← Back to Order SMP-1030").
+  const from = !inTab && props.record ? { record: props.record, title: props.title } : null
+  const content = <RecordFromContext.Provider value={from}><NoticesContext.Provider value={notices}>{body}</NoticesContext.Provider></RecordFromContext.Provider>
   const readOnlyText = readOnly ? READ_ONLY_HERE : null
   const statusBar = <TableStatusBar store={notices} className="shrink-0 px-4 sm:px-6" />
 

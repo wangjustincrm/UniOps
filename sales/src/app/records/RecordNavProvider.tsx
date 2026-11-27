@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { deriveTabMeta, useTabStoreApi, type RouteDef } from '@uniops/shell'
 import { RecordNavContext, type RecordKey, type RecordNav } from '@/platform-ui'
 import { forgetClosed, rememberBack } from './backLinks'
-import { hrefOf } from './recordTypes'
+import { RECORD_TYPES, hrefOf } from './recordTypes'
 
 /** How platform-ui opens a record here (RefLink, "Open in its tab"): its route opens its own tab (one per record,
  *  keyStrategy 'param') or focuses it; the tab it was opened from is its "← Back to …". */
@@ -17,12 +17,14 @@ export function RecordNavProvider({ routes, children }: { routes: RouteDef[]; ch
     }
     return {
       href: hrefOf,
-      open: (r) => {
+      open: (r, sheet) => {
         const href = hrefOf(r)
         if (!href) return
         const s = api.getState()
         const from = s.tabs.find((t) => t.key === s.activeKey)
-        if (from?.path) rememberBack(href, { path: from.path, title: from.title })
+        // From a record's sheet: Back names that record, and goes to its tab, where the sheet is still open.
+        const noun = sheet ? RECORD_TYPES[sheet.record.type]?.noun : undefined
+        if (from?.path) rememberBack(href, { path: from.path, title: sheet ? `${noun ? `${noun} ` : ''}${sheet.title}` : from.title })
         navigate(href)
       },
       isOpen: (r) => {

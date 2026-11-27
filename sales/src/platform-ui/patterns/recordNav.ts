@@ -14,15 +14,22 @@ export interface RecordKey {
 export interface RecordNav {
   /** The record's address in this app; null: the type has no page here. */
   href: (r: RecordKey) => string | null
-  /** Open its tab (or focus it), remembering where it was opened from (its "← Back to …"). */
-  open: (r: RecordKey) => void
+  /** Open its tab (or focus it), remembering where it was opened from (its "← Back to …"): the tab, or the record whose
+   *  sheet it was opened from (`from`: "← Back to Order SMP-1030", still to that tab with the sheet open). */
+  open: (r: RecordKey, from?: RecordFrom) => void
   /** Whether the record's tab is open now. */
   isOpen: (r: RecordKey) => boolean
   /** Told when tabs open or close (for isOpen). */
   subscribe: (notify: () => void) => () => void
 }
 
+/** The record a link sits in (a list's sheet): what "← Back to …" names. */
+export interface RecordFrom { record: RecordKey; title: string }
+
 export const RecordNavContext = createContext<RecordNav | null>(null)
+
+/** Set by a record's sheet for the links inside it. */
+export const RecordFromContext = createContext<RecordFrom | null>(null)
 
 export function useRecordNav(): RecordNav | null {
   return useContext(RecordNavContext)
