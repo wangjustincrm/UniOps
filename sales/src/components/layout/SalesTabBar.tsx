@@ -17,6 +17,7 @@ export function SalesTabBar({ routes }: { routes: RouteDef[] }) {
   const activeKey = useTabStore((s) => s.activeKey)
   const notice = useTabSession((s) => s.notice)
   const recent = useTabSession((s) => s.recent)
+  const sheets = useTabSession((s) => s.sheets)
   const actions = useTabActions()
   useRecordTabCap(routes)
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
@@ -44,22 +45,30 @@ export function SalesTabBar({ routes }: { routes: RouteDef[] }) {
           {tabs.map((t, i) => {
             const Icon = tabIcon(t.icon)
             const active = t.key === activeKey
+            const sheetOpen = !active && !!sheets[t.key]  // a record left open in its sheet, behind this tab
             return (
-              <div key={t.key} ref={(el) => { if (el) refs.current.set(t.key, el); else refs.current.delete(t.key) }}
-                role="tab" aria-selected={active} tabIndex={active ? 0 : -1} title={t.title}
-                onClick={() => actions.select(t.key)} onKeyDown={(e) => onKey(e, t, i)}
-                onAuxClick={(e: MouseEvent) => { if (e.button === 1 && t.closable) { e.preventDefault(); void actions.close(t.key) } }}
-                onContextMenu={(e) => { e.preventDefault(); openMenu(t.key, e.clientX, e.clientY) }}
-                className={cn('group flex cursor-pointer select-none items-center gap-1.5 self-center rounded-md px-3 py-1.5 text-sm outline-none transition-colors',
-                  'focus-visible:ring-2 focus-visible:ring-primary-500',
-                  active ? 'bg-primary-50 font-medium text-primary-700' : 'text-neutral-600 hover:bg-neutral-50')}>
-                {Icon && <Icon aria-hidden className="h-3.5 w-3.5 shrink-0" />}
-                <span className="max-w-[160px] truncate">{t.title}</span>
-                {t.dirty && <span aria-label="unsaved changes" className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-500" />}
+              // The tab and its ✕ side by side (a button inside a tab would be one control in another).
+              <div key={t.key} role="presentation" className={cn('group flex shrink-0 items-center self-center rounded-md transition-colors',
+                active ? 'bg-primary-50' : 'hover:bg-neutral-50')}>
+                <div ref={(el) => { if (el) refs.current.set(t.key, el); else refs.current.delete(t.key) }}
+                  role="tab" aria-selected={active} tabIndex={active ? 0 : -1} title={sheetOpen ? `${t.title}: a record is open` : t.title}
+                  aria-keyshortcuts={t.closable ? 'Delete Shift+F10' : 'Shift+F10'}
+                  aria-label={sheetOpen ? `${t.title}, a record is open` : undefined}
+                  onClick={() => actions.select(t.key)} onKeyDown={(e) => onKey(e, t, i)}
+                  onAuxClick={(e: MouseEvent) => { if (e.button === 1 && t.closable) { e.preventDefault(); void actions.close(t.key) } }}
+                  onContextMenu={(e) => { e.preventDefault(); openMenu(t.key, e.clientX, e.clientY) }}
+                  className={cn('flex cursor-pointer select-none items-center gap-1.5 rounded-md py-1.5 pl-3 text-sm outline-none',
+                    t.closable ? 'pr-1' : 'pr-3', 'focus-visible:ring-2 focus-visible:ring-primary-500',
+                    active ? 'font-medium text-primary-700' : 'text-neutral-600')}>
+                  {Icon && <Icon aria-hidden className="h-3.5 w-3.5 shrink-0" />}
+                  <span className="max-w-[160px] truncate">{t.title}</span>
+                  {t.dirty && <span aria-label="unsaved changes" className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-500" />}
+                  {sheetOpen && <span aria-hidden data-sheet-dot className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary-600" />}
+                </div>
                 {t.closable && (
-                  <button type="button" tabIndex={-1} aria-label={`Close ${t.title}`}
-                    onClick={(e) => { e.stopPropagation(); void actions.close(t.key) }}
-                    className="ml-1 rounded p-0.5 text-neutral-400 opacity-60 hover:bg-neutral-200 hover:text-neutral-700 group-hover:opacity-100">
+                  // For the mouse: a tab closes from the keyboard with Delete, or its menu (Shift+F10) — what a screen reader says.
+                  <button type="button" tabIndex={-1} aria-hidden title={`Close ${t.title}`} data-close-tab={t.key} onClick={() => { void actions.close(t.key) }}
+                    className="mr-1 rounded p-0.5 text-neutral-400 opacity-60 hover:bg-neutral-200 hover:text-neutral-700 group-hover:opacity-100">
                     <X aria-hidden className="h-3 w-3" />
                   </button>
                 )}

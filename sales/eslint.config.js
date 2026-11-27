@@ -30,6 +30,8 @@ const SHELL_LAYER = ['src/main.tsx', 'src/components/layout/**', 'src/app/**']
 // patterns never render a raw one (the user's rule, 2026-10-30).
 const TYPES = '/^(checkbox|radio|date|datetime-local|number|file)$/'
 const RAW_CONTROLS = [
+  // A // line between JSX tags is not a comment: it renders as text (2026-11-27, the app showed one above every page).
+  { selector: String.raw`JSXText[value=/(^|\n)\s*\/\/ /]`, message: 'A // line inside JSX renders as text: use {/* … */} or put the comment above the JSX.' },
   { selector: "JSXOpeningElement[name.name='select']", message: 'Use Select (or CheckboxList) from @/platform-ui, not a raw <select>.' },
   { selector: "JSXOpeningElement[name.name='textarea']", message: 'Use Textarea from @/platform-ui, not a raw <textarea>.' },
   {

@@ -12,7 +12,7 @@ export const RECORD_TAB_CAPS = [6, 12, 20] as const
 const CAP_KEY = 'sales.recordTabCap'
 const RECENT_MAX = 10
 
-interface State { ticks: Record<string, number>; recent: ClosedTab[]; notice: TabNotice | null; cap: number }
+interface State { ticks: Record<string, number>; recent: ClosedTab[]; notice: TabNotice | null; cap: number; sheets: Record<string, boolean> }
 
 function storedCap(): number {
   try {
@@ -23,7 +23,7 @@ function storedCap(): number {
   }
 }
 
-let state: State = { ticks: {}, recent: [], notice: null, cap: storedCap() }
+let state: State = { ticks: {}, recent: [], notice: null, cap: storedCap(), sheets: {} }
 const listeners = new Set<() => void>()
 const set = (next: Partial<State>) => { state = { ...state, ...next }; listeners.forEach((l) => l()) }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
@@ -46,7 +46,9 @@ export const tabSession = {
     set({ cap })
   },
   /** Tests: a clean session. */
-  reset: () => set({ ticks: {}, recent: [], notice: null, cap: storedCap() }),
+  /** Whether a sheet is open in this tab's page (a dot on the tab while it is not shown). */
+  sheet: (key: string, open: boolean) => { if (!!state.sheets[key] !== open) set({ sheets: { ...state.sheets, [key]: open } }) },
+  reset: () => set({ ticks: {}, recent: [], notice: null, cap: storedCap(), sheets: {} }),
 }
 
 export function useTabSession<T>(pick: (s: State) => T): T {

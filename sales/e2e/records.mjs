@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as F from './fixtures/data.mjs'
+import { axeReady, axeViolations } from './a11y.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(process.env.PW ? path.join(process.env.PW, 'x.js') : import.meta.url)
@@ -95,6 +96,50 @@ async function run(name, viewport) {
 
   await page.goto(`${BASE}/orders`, { waitUntil: 'networkidle', timeout: 60000 })
   await page.locator(phone ? '[data-row-card]' : 'table tbody tr').first().waitFor({ timeout: 15000 })
+
+  await step('a drawer belongs to its tab: order → item → Back, the sheet hidden with its tab and back as it was', async () => {
+    await page.goto(`${BASE}/orders`, { waitUntil: 'networkidle' })
+    if (phone) await page.locator('[data-row-card]').first().click()
+    else await page.locator('table tbody tr', { hasText: 'SMP-1030' }).first().getByText('1030', { exact: true }).click()
+    const sheet = page.getByRole('dialog').first()
+    await sheet.waitFor({ timeout: 10000 })
+    if (!phone) {
+      // The tab bar is not covered: what is under its middle is the tab bar.
+      const bar = await page.locator('[data-shell-tabbar] [role="tablist"]').boundingBox()
+      const hit = await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[data-shell-tabbar]'), [bar.x + 20, bar.y + bar.height / 2])
+      check(hit, `${name}: the tab bar is not covered by the sheet`)
+      if (axeReady) {
+        const v = await axeViolations(page, '[data-sheet-layer] [role="dialog"]')
+        check(v.length === 0, `${name}: the sheet in its tab (axe, WCAG A/AA)${v.length ? ': ' + v.join('; ') : ''}`)
+      }
+    }
+    await sheet.getByRole('tab', { name: /^Lines/ }).click()
+    await shot('drawer-orders')
+    await sheet.getByRole('link', { name: 'ITEM-1', exact: true }).click()
+    await page.waitForURL(/\/items\/ITEM-1$/, { timeout: 5000 })
+    const item = shown().getByRole('region', { name: 'ITEM-1' })
+    await item.waitFor({ timeout: 10000 })
+    check(!(await sheet.isVisible()), `${name}: the order's sheet is not over the item's tab`)
+    if (!phone) {
+      check((await page.getByRole('tab', { name: 'Orders, a record is open' }).count()) === 1, `${name}: the Orders tab says a record is open there`)
+      if (axeReady) {
+        const v = await axeViolations(page, '[data-shell-tabbar]')
+        check(v.length === 0, `${name}: the tab bar (axe)${v.length ? ': ' + v.join('; ') : ''}`)
+      }
+    }
+    await shot('drawer-item')
+    await item.getByRole('link', { name: /^← Back to/ }).click()
+    await page.waitForURL(/\/orders$/, { timeout: 5000 })
+    if (phone) {
+      check((await page.getByRole('dialog').count()) === 0, `${name}: on a phone the sheet was closed when the item opened`)
+    } else {
+      await sheet.waitFor({ state: 'visible', timeout: 5000 })
+      check((await sheet.getByRole('tab', { name: /^Lines/ }).getAttribute('aria-selected')) === 'true', `${name}: back on the same inner tab (Lines)`)
+      await shot('drawer-back')
+      await page.keyboard.press('Escape')  // closed again for the next steps
+      await sheet.waitFor({ state: 'hidden', timeout: 5000 })
+    }
+  })
 
   if (phone) {
     await step('a phone: the header has no buttons, only ⋯', async () => {
