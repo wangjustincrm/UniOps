@@ -31,6 +31,7 @@ from app.platform.authorization import requires
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService, Service
@@ -196,6 +197,7 @@ class RunService(ReadOnlyService[Run, RunRead]):
 
 class LogRepository(Repository[LogEntry]):
     model = LogEntry
+    refs = {"order_id": Ref("order")}
     search_fields = ("message",)
     list_fields = ("id", "at", "run_id", "level", "step", "connection_id", "document_id", "order_id",
                    "transfer_id", "message")

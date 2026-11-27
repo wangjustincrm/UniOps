@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from app.models.lots import LotRow
 from app.platform.query import FilterRule
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
@@ -24,6 +25,7 @@ CSV_COLUMNS = ("lot", "item_code", "expiry", "qty_shipped_ea", "ship_date", "ord
 
 class LotRepository(Repository[LotRow]):
     model = LotRow
+    refs = {"lot": Ref("lot"), "item_code": Ref("item"), "order_id": Ref("order"), "order_ref": Ref("order", "order_id"), "order_number": Ref("order", "order_id")}
     search_fields = ("lot", "item_code", "order_ref", "partner_name", "tracking", "sscc", "ship_to_postal")
     search_numbers = ("order_number",)  # the Internal no., matched exactly
     list_fields = ("lot", "item_code", "expiry", "days_to_expiry", "qty_shipped_ea", "sscc", "tracking", "ship_date",
@@ -52,6 +54,7 @@ class LotService(ReadOnlyService[LotRow, LotRead]):
     repo_cls = LotRepository
     read_schema = LotRead
     read_permission = READ
+    record_type = "lot"  # a page of its own (platform/record_types.py)
     resource = Resource(path="/lots", tags=("lots",), get=False)
 
     async def enrich(self, rows: list[LotRead], entities) -> None:

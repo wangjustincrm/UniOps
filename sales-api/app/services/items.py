@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.domain.items import check_units, factor, normalise_unit, titles_column, titles_list, units_text
 from app.models.config import DcRouting, Item, ItemPartnerCode, ItemUnit, Partner
 from app.platform.errors import InvalidInput
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import CrudService
@@ -62,6 +63,7 @@ class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
     create_schema = ItemCreate
     update_schema = ItemUpdate
     read_permission = READ
+    record_type = "item"  # a page of its own (platform/record_types.py)
     resource = Resource(path="/config/items", tags=("items",), history=True)
     write_permission = CONFIG
     csv_key = "item_code"
@@ -128,6 +130,7 @@ class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
 
 class PartnerCodeRepository(Repository[ItemPartnerCode]):
     model = ItemPartnerCode
+    refs = {"item_code": Ref("item")}
     search_fields = ("partner_code", "buyer_part", "item_code")
     list_fields = ("partner_code", "buyer_part", "item_code", "created_at", "updated_at")
     default_sort = ("partner_code", "buyer_part")

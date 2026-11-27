@@ -64,6 +64,7 @@ from app.platform.authorization import requires
 from app.platform.commands import VersionArg, check_version
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService, Service
@@ -128,6 +129,8 @@ ORDER_STATE_SQL = case(
 
 class OrderRepository(Repository[Order]):
     model = Order
+    refs = {"parent_order_id": Ref("order")}
+    detail_refs = ("item", "lot")  # its lines name items; its packing, lots
 
     def base_query(self):
         """An order as the Orders pages show it: with its facts (models/orders.py order_fact)."""
@@ -333,6 +336,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     repo_cls = OrderRepository
     read_schema = OrderRead
     read_permission = READ
+    record_type = "order"  # a page of its own (platform/record_types.py)
     # Everyone who sees Orders may export them (user 2026-11-24); the full export is the list's fields and whatever else
     # the page or a view of it shows (tests/test_list_resources.py: never less than the page).
     resource = Resource(path="/orders", detail=OrderDetail, timeline=TIMELINES["order"], attachments=RECORDS["order"], actions=lambda: _order_actions(),

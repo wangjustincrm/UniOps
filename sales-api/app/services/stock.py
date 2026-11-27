@@ -49,6 +49,7 @@ from app.platform.authorization import requires
 from app.platform.clock import clock
 from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
@@ -263,6 +264,7 @@ async def sync_all(uow_factory) -> dict:
 
 class StockItemRepository(Repository[StockItem]):
     model = StockItem
+    refs = {"item_code": Ref("item")}
     search_fields = ("item_code", "description")
     list_fields = ("item_code", "description", "received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "report_diff_ea", "on_hand_ea", "hold_ea",
                    "allocated_ea", "available_ea", "to_radiant_ea", "to_customer_ea", "returning_ea", "lots", "first_expiry",
@@ -280,6 +282,7 @@ class StockItemRepository(Repository[StockItem]):
 
 class StockLotRepository(Repository[StockLot]):
     model = StockLot
+    refs = {"item_code": Ref("item"), "lot": Ref("lot")}
     search_fields = ("item_code", "lot")
     list_fields = ("item_code", "lot", "expiry", "days_to_expiry", "received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "report_diff_ea",
                    "on_hand_ea", "hold_ea", "in_process_ea", "available_ea", "to_customer_ea", "returning_ea", "to_radiant_ea", "first_move_at", "last_move_at")
@@ -306,6 +309,7 @@ class StockLotRepository(Repository[StockLot]):
 
 class StockMoveRepository(Repository[StockMove]):
     model = StockMove
+    refs = {"item_code": Ref("item"), "lot": Ref("lot"), "order_id": Ref("order")}
     search_fields = ("item_code", "lot", "reason")
     list_fields = ("at", "item_code", "lot", "expiry", "qty_ea", "from_place", "to_place", "source_type", "order_id", "transfer_id",
                    "document_id", "reason", "created_by_name")

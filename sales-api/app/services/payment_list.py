@@ -3,6 +3,7 @@ no page per method. Read-only; sales.read to look."""
 from __future__ import annotations
 
 from app.models.payment_list import INFO_ISSUES, ISSUES, KINDS, MATCHES, METHODS, SOURCES, STATUSES, PaymentRow
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
@@ -23,6 +24,7 @@ def _by_settlement(key: str, method: str) -> Preset:
 
 class PaymentRowRepository(Repository[PaymentRow]):
     model = PaymentRow
+    refs = {"order_id": Ref("order"), "order_ref": Ref("order", "order_id")}
     search_fields = ("order_ref", "customer", "gateway_ref", "shopify_payment_id")
     suggestable = ("order_ref",)  # never a personal field (tests/test_suggestions.py)
     list_fields = ("id", "order_id", "order_ref", "customer", "processed_at", "processed_week", "processed_month", "method", "gateway",

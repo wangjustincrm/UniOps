@@ -29,6 +29,7 @@ from sqlalchemy import inspect, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 
+from app.platform.record_types import read_permission_of, register as register_record_type
 from app.platform.relative_dates import as_meta as relative_dates
 from app.platform.actors import Actor
 from app.platform.audit import AuditEntryRead, jsonable
@@ -95,6 +96,14 @@ class ReadOnlyService(Service, Generic[T, R]):
     # The zone a "Visible columns" export writes date-times in, as people read them ("2026-11-17 15:54",
     # the zone named in the header); None: as stored (ISO, UTC). The business code sets it once.
     export_timezone: ClassVar[str | None] = None
+    # The record type this list holds, when its records have a page of their own (platform/record_types.py):
+    # its read_permission is then what every link to such a record goes by.
+    record_type: ClassVar[str | None] = None
+
+    def __init_subclass__(cls, **kw: Any) -> None:
+        super().__init_subclass__(**kw)
+        if (name := cls.__dict__.get("record_type")) is not None:
+            register_record_type(name, cls)
 
     def __init__(self, uow) -> None:
         super().__init__(uow)
@@ -271,7 +280,13 @@ class ReadOnlyService(Service, Generic[T, R]):
                 "client_columns": list(repo.client_columns),
                 "views": [p.as_dict() for p in repo.presets],
                 "groups": repo.group_labels(), "relative_dates": relative_dates(),
-                "capabilities": await self.capabilities()}
+                "capabilities": await self.capabilities(), "refs": await self.ref_access()}
+
+    async def ref_access(self) -> dict[str, dict[str, bool]]:
+        """Per record type this list's fields name: whether this person may read it (its own list's key), so a
+        link is offered only to whom it would open for — the others see the text."""
+        types = sorted({r.type for r in self.repo_cls.refs.values()} | set(self.repo_cls.detail_refs))
+        return {t: {"readable": await may(self.uow, read_permission_of(t))} for t in types}
 
     async def capabilities(self) -> dict[str, Any]:
         """What this list offers, and whether this person may use it (the operation itself still checks)."""

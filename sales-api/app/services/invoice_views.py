@@ -17,6 +17,7 @@ from app.services.record_files import TIMELINES, timeline_of
 from app.platform.authorization import authorize, requires
 from app.platform.commands import ANY_VERSION
 from app.platform.query import FilterRule
+from app.platform.record_types import Ref
 from app.platform.repository import Repository
 from app.platform.resource import RecordFile, Resource
 from app.platform.services import ReadOnlyService
@@ -30,6 +31,7 @@ OPERATE = "sales.order.operate"  # delivery and returns are order work (FR-OB-61
 
 class InvoiceRepository(Repository[Invoice]):
     model = Invoice
+    refs = {"order_id": Ref("order"), "order_ref": Ref("order", "order_id"), "order_number": Ref("order", "order_id")}
     search_fields = ("invoice_number", "order_ref_sql", "partner_name_sql", "delivery_number")
     suggestable = ("invoice_number", "order_ref", "partner_name")
     search_numbers = ("order_number_sql",)  # the Internal no., matched exactly

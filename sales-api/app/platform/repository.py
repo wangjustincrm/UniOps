@@ -29,6 +29,7 @@ from typing import Any, ClassVar, Generic, Literal, TypeVar, Union, get_args, ge
 from pydantic import BaseModel
 from sqlalchemy import Select, and_, func, not_, or_, select, true
 
+from app.platform.record_types import Ref
 from app.platform.clock import clock
 from app.platform.relative_dates import is_relative, period
 from app.platform.entities import SoftDeletable
@@ -68,6 +69,12 @@ class Repository(Generic[T]):
     # offers for a filter is in exactly one group — "Other" named on purpose (tests/test_field_groups.py). Not declared:
     # every field is in "Other".
     field_groups: ClassVar[tuple[tuple[str, tuple[str, ...]], ...]] = ()
+    # Fields that name a record with a page of its own (platform/record_types.py): sent in /meta as `ref`, so the client
+    # links them. Declared, never guessed from a name (tests/test_record_refs.py makes sure none is forgotten).
+    refs: ClassVar[Mapping[str, Ref]] = {}
+    # Record types the record's own detail names beyond its list fields (an order's lines name items, its packing lots):
+    # /meta says whether this person may read them, so the detail links them by the same one key.
+    detail_refs: ClassVar[tuple[str, ...]] = ()
     enums: ClassVar[Mapping[str, Sequence[str]]] = {}
     # Fields the list can be grouped by (sortable or filterable keys): the
     # values that repeat — a status, a partner, a flag — not free text.
@@ -344,6 +351,7 @@ class Repository(Generic[T]):
                 **({"summable": True} if n in cls.summable else {}),
                 **({"money": True, "currency_field": currency} if n in cls.money_fields else {}),
                 "group": cls.group_of(n),
+                **({"ref": r.as_dict(n)} if (r := cls.refs.get(n)) is not None else {}),
             })
         return out
 
