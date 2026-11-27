@@ -39,6 +39,9 @@ export interface QuerySpec {
   filters?: Filter[]
   /** Group by these fields (at most MAX_GROUP_KEYS), before the sort. */
   group?: SortKey[]
+  /** The page's scope (a record's own list: an item's Orders): filters the person cannot remove there, which the
+   *  server ANDs into the rows, the count, the export and the actions (?scope=field:op:value). Never in a saved view. */
+  scope?: Filter[]
 }
 
 /** The sums of a list's summable fields over some rows in one currency
@@ -101,6 +104,9 @@ export const clearFilter = (spec: QuerySpec, field: string): QuerySpec => setFil
 /** One value with `\` and `|` escaped, so it survives the `|` join. */
 export const escapeValue = (v: string): string => v.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
 
+/** One filter as the server reads it: `field:op:value`. */
+export const filterParam = (f: Filter): string => `${f.field}:${f.op}:${filterValue(f)}`
+
 export function filterValue(f: Filter): string {
   if (NO_VALUE_OPS.includes(f.op)) return ''
   if (RANGE_OPS.includes(f.op)) {
@@ -149,8 +155,9 @@ export function toSearchParams(spec: QuerySpec): URLSearchParams {
   p.set('page_size', String(Math.min(spec.pageSize, MAX_PAGE_SIZE)))
   if (spec.sort?.length) p.set('sort', spec.sort.map((s) => (s.desc ? `-${s.field}` : s.field)).join(','))
   if (spec.search?.trim()) p.set('search', spec.search.trim())
-  for (const f of spec.filters ?? []) p.append('filter', `${f.field}:${f.op}:${filterValue(f)}`)
+  for (const f of spec.filters ?? []) p.append('filter', filterParam(f))
   if (spec.group?.length) p.set('group', spec.group.map((g) => (g.desc ? `-${g.field}` : g.field)).join(','))
+  for (const f of spec.scope ?? []) p.append('scope', filterParam(f))
   return p
 }
 

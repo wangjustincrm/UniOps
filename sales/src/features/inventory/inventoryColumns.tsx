@@ -1,10 +1,11 @@
 import {
   columnsOf, startHidden, withHelp, type ColumnDef, Text,
 } from '@/platform-ui'
-import type { StockItemRead, StockLotRead } from './inventoryApi'
+import { PLACE, SOURCE, type StockItemRead, type StockLotRead, type StockMoveRead } from './inventoryApi'
 
 const colItem = columnsOf<StockItemRead>()
 const colLot = columnsOf<StockLotRead>()
+const colMove = columnsOf<StockMoveRead>()
 
 // The figures (user 2026-11-13/16), read left to right: received − shipped (net: a customer's return comes off it) = on
 // hand; on hand − in process − on hold = available. Each row balances. In process: an item's 940s sent with no 945 yet; a
@@ -45,4 +46,17 @@ export const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   startHidden(withHelp(colLot.number('to_customer_ea', 'In transit to customers'), 'term:In transit to customers')),
   startHidden(withHelp(colLot.number('returning_ea', 'Returns on the way'), 'term:Returns on the way')),
   startHidden(colLot.datetime('last_move_at', 'Last move')),
+]
+
+/** A stock move (the stock card): an item's moves, in the Inventory sheet and the item's own page. */
+export const moveColumns: ColumnDef<StockMoveRead, unknown>[] = [
+  colMove.datetime('at', 'When'),
+  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
+  colMove.number('qty_ea', 'Qty EA'),
+  { id: 'move', header: 'Move', cell: ({ row: { original: m } }) => `${PLACE[m.from_place] ?? m.from_place} → ${PLACE[m.to_place] ?? m.to_place}` },
+  { accessorKey: 'source_type', header: 'Source', cell: ({ row }) => SOURCE[row.original.source_type] ?? row.original.source_type },
+  { id: 'ref', header: 'Record', cell: ({ row: { original: m } }) => [
+    m.order_id && `order #${m.order_id}`, m.transfer_id && `transfer #${m.transfer_id}`, m.document_id && `file #${m.document_id}`,
+  ].filter(Boolean).join(' · ') || '—' },
+  { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <Text size="xs">{row.original.reason ?? ''}</Text> },
 ]

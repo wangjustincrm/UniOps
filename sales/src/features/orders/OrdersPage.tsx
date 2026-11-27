@@ -1,5 +1,5 @@
 import {
-  ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type HelpId, type ListCreate, type QuerySpec, type RecordTab, Text,
+  ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type HelpId, type ListCreate, type ListScope, type QuerySpec, type RecordTab, Text,
 } from '@/platform-ui'
 import { OrderSheet } from './OrderDetailView'
 import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
@@ -56,8 +56,11 @@ const dueColumn = orderColumns[dueColumnIndex]
 const dueOrderColumns = [...orderColumns.slice(0, 5), { ...dueColumn, meta: { ...dueColumn.meta, hidden: false } },
   ...orderColumns.slice(5).filter((_, i) => i + 5 !== dueColumnIndex)]
 
-export function OrderList({ fixed, title, description, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue, actions }: {
-  fixed?: QuerySpec['filters']; title: string; description: string; emptyTitle: string
+export function OrderList({ fixed, scope, title, description, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue, actions }: {
+  fixed?: QuerySpec['filters']
+  /** A record's own Orders (an item's: "has a line with item X"): locked, enforced by the server. */
+  scope?: ListScope
+  title?: string; description?: string; emptyTitle: string
   emptyText?: string
   help?: HelpId
   /** More buttons in the order sheet's action bar. */
@@ -80,6 +83,8 @@ export function OrderList({ fixed, title, description, emptyTitle, emptyText, he
       emptyText={emptyText}
       help={help}
       fixed={fixed}
+      scope={scope}
+      fit={scope ? 560 : undefined}
       columns={showDue ? dueOrderColumns : orderColumns}
       toolbar={toolbar ? (ctx) => (typeof toolbar === 'function' ? toolbar(ctx) : toolbar) : undefined}
       create={create}

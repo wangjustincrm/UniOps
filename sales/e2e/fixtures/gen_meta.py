@@ -8,13 +8,18 @@ logging.disable(logging.CRITICAL)
 from app.services.payment_list import PaymentRowService
 from app.services.stock import StockItemService, StockLotService
 from app.services.order_views import OrderService
-from app.services.lots import LotService
+from app.services.lots import LotService, ShippedService
+from app.services.invoice_views import InvoiceService
+from app.services.transfer_views import TransferService
+from app.services.stock import StockMoveService
+from app.services.items import PartnerCodeService
 from app.services.items import ItemService
 from app.domain.status_help import payload as status_help
 from app.platform.relative_dates import as_meta as relative_dates
 out = {}
 for k, cls in (("orders", OrderService), ("payments", PaymentRowService), ("inventory/items", StockItemService), ("inventory/lots", StockLotService),
-               ("lots", LotService), ("config/items", ItemService)):
+               ("lots", LotService), ("config/items", ItemService), ("shipped", ShippedService), ("invoices", InvoiceService),
+               ("transfers", TransferService), ("inventory/moves", StockMoveService), ("config/partner-codes", PartnerCodeService)):
     repo = cls.repo_cls
     out[k] = {"meta": {"version": cls.META_VERSION, "fields": repo.field_meta(cls.read_schema), "searchable": bool(repo.search_fields),
               "default_sort": list(repo.default_sort), "client_columns": list(repo.client_columns), "views": [p.as_dict() for p in repo.presets],

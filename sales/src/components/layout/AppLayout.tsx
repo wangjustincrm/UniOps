@@ -9,7 +9,7 @@ import { withTabActivity } from './tabRoutes'
 // Each page told whether its app tab is the shown one (a kept-alive tab does not auto-refresh).
 const TAB_ROUTES = withTabActivity(moduleRoutes)
 import {
-  Home, Building2, Plug, FileText, Activity, ScrollText, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, CreditCard, Landmark, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell, Boxes,
+  Home, Building2, Plug, FileText, Activity, ScrollText, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, CreditCard, Landmark, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell, Boxes, PackageCheck,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -64,6 +64,7 @@ const NAV: NavItem[] = [
   { label: 'Audit log', href: '/audit-log', icon: ScrollText, perm: 'sales.config', section: 'Operations' },  // sales.config for now (user 2026-11-23)
   { label: 'Inventory', href: '/inventory', icon: Warehouse, perm: 'sales.read', section: 'Operations' },
   { label: 'Lots', href: '/lots', icon: Boxes, perm: 'sales.read', section: 'Operations' },
+  { label: 'Shipped', href: '/shipped', icon: PackageCheck, perm: 'sales.read', section: 'Operations' },
   { label: 'Health', href: '/health', icon: HeartPulse, perm: 'sales.read', section: 'Operations' },
   { label: 'Notification history', href: '/notifications', icon: Mail, perm: 'sales.read', section: 'Operations' },
   { label: 'Partners', href: '/config/partners', icon: Building2, perm: 'sales.read', section: 'Configuration' },

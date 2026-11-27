@@ -83,6 +83,8 @@ export interface ActionRunBody {
   /** Why, where the action asks for it. */
   reason?: string
   dry_run?: boolean
+  /** With `ids`: the page's scope (`field:op:value`); the server refuses an id outside it (with `query` it is in the query). */
+  scope?: string[]
 }
 export interface ActionResultRow {
   id: number; status: 'done' | 'skipped' | 'failed'; reason?: string | null; version?: number | null

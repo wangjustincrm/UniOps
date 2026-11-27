@@ -30,7 +30,7 @@ export const DEFAULT_SLOTS: Record<string, SlotDef> = {
   'list.chips': { order: 32, group: 'lists', tour: false, v: 2 },
   'row.status': { order: 35, group: 'page' }, 'list.columns': { order: 38, group: 'lists', tour: false },
   'list.rowOpen': { order: 40, group: 'lists' }, 'list.sortGroup': { order: 45, group: 'lists' },
-  'list.rowDetails': { order: 50, group: 'lists', tour: false }, 'list.links': { order: 51, group: 'lists', tour: false }, 'list.groups': { order: 52, group: 'lists', tour: false },
+  'list.rowDetails': { order: 50, group: 'lists', tour: false }, 'list.links': { order: 51, group: 'lists', tour: false }, 'list.scope': { order: 5, group: 'lists', tour: false }, 'list.groups': { order: 52, group: 'lists', tour: false },
   'list.totals': { order: 54, group: 'lists', tour: false }, 'list.moreColumns': { order: 56, group: 'lists', tour: false },
   'list.refresh': { order: 60, group: 'lists', tour: false }, 'list.export': { order: 70, group: 'lists', tour: false },
   'list.select': { order: 36, group: 'lists', tour: false },

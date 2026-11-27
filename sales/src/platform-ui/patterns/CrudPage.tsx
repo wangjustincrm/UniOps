@@ -60,6 +60,9 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   recordActions?: (row: T) => ReactNode
   /** The record, when its type has a page of its own (RecordSheet `record`): Open in its tab, Copy link. */
   recordKey?: (row: T) => RecordKey
+  /** The record's own view, in place of the form sheet (an item: its facts, its lists, Edit behind a button) — in the
+   *  list's sheet and in the record's tab alike. With CrudEditForm for its form. */
+  renderRecord?: (row: T, close: () => void) => ReactNode
   /** The record sheet's size (default md): wider when its facts need the room. */
   detailSize?: 'md' | 'lg' | 'xl'
   /** After New: the new record opens in its sheet on this tab (otherwise the list just shows it). */
@@ -105,7 +108,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       notice={props.notice}
       notices={notices}
       detailSize={props.detailSize ?? 'md'}
-      renderDetail={(row, close) => (
+      renderDetail={(row, close) => props.renderRecord ? props.renderRecord(row, close) : (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
           save={(values, version) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version })}
           deactivate={() => deactivate.mutateAsync(row.id)} />
@@ -187,10 +190,27 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
 export function CrudRecord<T extends Row, TCreate, TUpdate>({ row, close, props }: { row: T; close: () => void; props: CrudPageProps<T, TCreate, TUpdate> }) {
   const { update, deactivate } = useCrudResource(props.client)
   const canWrite = useCan(props.writePermission)
+  if (props.renderRecord) return <>{props.renderRecord(row, close)}</>
   return (
     <RecordForm row={row} close={close} canWrite={canWrite} props={props}
       save={(values, version) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version })}
       deactivate={() => deactivate.mutateAsync(row.id)} />
+  )
+}
+
+/** A CrudPage record's edit form on its own (a record view that shows its facts first and the form behind "Edit"):
+ *  the same fields, rules and save as the list's sheet; `done` after a save or Cancel. */
+export function CrudEditForm<T extends Row, TCreate, TUpdate>({ row, props, done }: { row: T; props: CrudPageProps<T, TCreate, TUpdate>; done: () => void }) {
+  const { update } = useCrudResource(props.client)
+  const fields = (props.editFields ?? props.fields).map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
+  return (
+    <SchemaForm schema={props.updateSchema} fields={fields} defaultValues={props.toFormValues(row)} version={row.version ?? undefined}
+      changesOnly errorMessages={props.errorMessages} fieldLabels={props.fieldLabels} onCancel={done} done="Saved"
+      onSubmit={async (values, edit) => {
+        const saved = await update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version: edit.version })
+        done()
+        return saved
+      }} />
   )
 }
 

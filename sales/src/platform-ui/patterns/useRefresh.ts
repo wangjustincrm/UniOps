@@ -57,6 +57,8 @@ export interface RefreshOptions<D> {
   setAuto?: (seconds: number) => void
   /** The scope it reports into (a ListPage passes its own); else one of its own (a record sheet shows it). */
   notices?: NoticeStore
+  /** Other reads of the same record, read again with it (an item: its details beside its stock). */
+  also?: { refetch: () => Promise<{ isError: boolean }> }[]
 }
 
 const MIN_BUSY = 600
@@ -125,8 +127,8 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
     notices.notify({ key: 'refresh', tone: 'info', text: 'Updating…', sticky: true })
     const started = Date.now()
     try {
-      const r = await query.refetch()
-      if (r.isError) {
+      const [r, ...more] = await Promise.all([query.refetch(), ...(opts.also ?? []).map((q) => q.refetch())])
+      if (r.isError || more.some((m) => m.isError)) {
         asking.current = null
         notices.notify({ key: 'refresh', tone: 'error', text: 'Refresh failed', action: { label: 'Try again', onClick: () => { void refreshRef.current() } } })
       }

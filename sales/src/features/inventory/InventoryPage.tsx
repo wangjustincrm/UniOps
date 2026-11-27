@@ -2,17 +2,16 @@ import { useState } from 'react'
 import { Download } from 'lucide-react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, useNotices, type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Text, Cluster, Icon,
+  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, useNotices, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Cluster, Icon,
 } from '@/platform-ui'
 import {
-  PLACE, SOURCE, adjustStock, stockItemsClient, stockLotsClient, stockMovesClient,
+  adjustStock, stockItemsClient, stockLotsClient, stockMovesClient,
   type StockItemRead, type StockLotRead, type StockMoveRead,
 } from './inventoryApi'
-import { itemColumns, lotColumns } from './inventoryColumns'
+import { itemColumns, lotColumns, moveColumns } from './inventoryColumns'
 import { CountsView } from './CountsView'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
-const colMove = columnsOf<StockMoveRead>()
 const ADJUST = 'sales.inventory.adjust'
 
 
@@ -28,17 +27,6 @@ function ActiveLots({ item }: { item: string }) {
   )
 }
 
-const moveColumns: ColumnDef<StockMoveRead, unknown>[] = [
-  colMove.datetime('at', 'When'),
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
-  colMove.number('qty_ea', 'Qty EA'),
-  { id: 'move', header: 'Move', cell: ({ row: { original: m } }) => `${PLACE[m.from_place] ?? m.from_place} → ${PLACE[m.to_place] ?? m.to_place}` },
-  { accessorKey: 'source_type', header: 'Source', cell: ({ row }) => SOURCE[row.original.source_type] ?? row.original.source_type },
-  { id: 'ref', header: 'Record', cell: ({ row: { original: m } }) => [
-    m.order_id && `order #${m.order_id}`, m.transfer_id && `transfer #${m.transfer_id}`, m.document_id && `file #${m.document_id}`,
-  ].filter(Boolean).join(' · ') || '—' },
-  { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <Text size="xs">{row.original.reason ?? ''}</Text> },
-]
 
 const adjustSchema = z.object({
   lot: z.string().trim().max(50).nullable(),

@@ -61,11 +61,12 @@ const AD_HOC = '__requested'
  *  views off. */
 export function useListView(
   resource: { basePath: string; meta: () => Promise<ListMeta> },
-  { pageSize = 50, fixed = [] }: { pageSize?: number; fixed?: Filter[] } = {},
+  { pageSize = 50, fixed = [], scopeKind }: { pageSize?: number; fixed?: Filter[]; scopeKind?: string } = {},
 ): ListView {
   const client = useContext(ViewsContext)
   const enabled = !!client && fixed.length === 0
-  const key = resourceKey(resource.basePath)
+  // A list inside a scope keeps its own views, general to the scope's kind ("orders@item": the Orders of any item).
+  const key = resourceKey(resource.basePath) + (scopeKind ? `@${scopeKind}` : '')
   const qc = useQueryClient()
   const meta = useListMeta(enabled ? resource : undefined)
   const mineQ = useQuery({

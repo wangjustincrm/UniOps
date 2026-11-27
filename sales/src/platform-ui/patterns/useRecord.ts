@@ -96,6 +96,21 @@ export function useRecordList<T>(resource: Resource & { list: (spec: QuerySpec) 
   return q
 }
 
+/** How many rows a list's query selects, nothing else (`GET <list>/count`): a record's tab counts (an item's Orders).
+ *  Under the list's key, so whatever refreshes the list refreshes the count. */
+export function useListCount(resource: Resource & { count: (spec: QuerySpec) => Promise<{ total: number }> }, spec: QuerySpec | null,
+  opts: ReadOptions = {}) {
+  const queryKey = [...queryKeys.list(resource), 'count', spec]
+  const q = useQuery({
+    queryKey,
+    queryFn: () => resource.count(spec!),
+    enabled: spec != null && opts.enabled !== false,
+    staleTime: opts.staleTime ?? 30_000,
+  })
+  useReadErrors(q, queryKey, opts)
+  return q.data?.total
+}
+
 /** Anything else a page reads (settings, a dashboard, a choice list, a record's own sub-list): under the key given,
  *  which the page shares with whoever refreshes or sets it. No key (null): nothing is fetched. */
 export function useLookup<T>(key: QueryKey | null, fetch: () => Promise<T>, opts: ReadOptions = {}) {

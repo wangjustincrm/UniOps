@@ -31,6 +31,7 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
   'list.chips': { title: 'Active filters', body: 'The chips show everything that narrows the list (filters, search, sort, grouping). A click on a Search chip edits it; × removes one; Reset to the saved view removes your changes.',
     buttons: ['Reset to the saved view'] },
   'list.rowOpen': { title: 'Open a row', body: 'Click a row (or press Enter) to open it beside the list. In the record, J / K (or Alt+↑ / Alt+↓) move to the next or previous one; Open in its tab moves it to a tab of its own.' },
+  'list.scope': { title: 'Scope', body: "A list inside a record (an item's Orders) shows only that record's rows: the lock (Scope: Item = …) is set by the page and cannot be removed here. Search, sort, export and actions all stay inside it; a view saved here is for any item's list." },
   'list.links': { title: 'Links to records', body: "An underlined value (an item, a lot, an order) is a link: a click opens that record in a tab of its own, or goes to its tab if it is open. Ctrl+click (⌘ on a Mac) or a middle click opens it in a new browser tab. Right click (or Shift+F10): Open, Open in a new browser tab, Copy link. In the record's tab, ← Back to … closes it and returns where you were." },
   'list.rowDetails': { title: 'Row details', body: "▸ opens a row's details under it (e.g. an item's lots) without leaving the list." },
   'list.groups': { title: 'Groups', body: "Rows grouped by a field; a group's header folds it, its totals sit beside it. To group, drag a header's grip onto the Grouping row that appears (or use the column menu); drag a Grouping chip onto another to change the order, or onto Drop here to remove (× works too). At most 3." },
@@ -52,8 +53,9 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
 }
 
 /** The tools a list has, in the order "Using lists" explains them. */
-export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean; select?: boolean; links?: boolean }): string[] {
+export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean; select?: boolean; links?: boolean; scope?: boolean }): string[] {
   return [
+    ...(has.scope ? ['list.scope'] : []),
     ...(has.search ? ['list.search'] : []),
     ...(has.panel ? ['list.statusFind', 'list.searchPanel', 'list.columnSearch'] : []),
     ...(has.views ? ['list.views', 'list.defaultView', 'list.saveView'] : []),

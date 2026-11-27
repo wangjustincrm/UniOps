@@ -35,6 +35,15 @@ export interface LotRead {
 
 export const lotsClient = createResourceClient<LotRead, never>(api, '/lots')
 
+/** An applied 945 row (Shipped): what went out to a customer, with the customer (a Shopify one as an initial and the
+ *  city) and whether its delivery is confirmed. */
+export interface ShippedRead extends LotRead {
+  customer: string | null
+  delivery_confirmed: boolean
+}
+
+export const shippedClient = createResourceClient<ShippedRead, never>(api, '/shipped')
+
 /** Lots pasted for a recall: one per line, or separated by commas, semicolons or spaces. */
 export function parseLots(text: string): string[] {
   return [...new Set(text.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))]

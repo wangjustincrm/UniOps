@@ -1,10 +1,10 @@
 import { useParams } from 'react-router-dom'
-import { CrudRecord, RecordSheet, useRecordList } from '@/platform-ui'
+import { RecordSheet, useRecordList } from '@/platform-ui'
 import { itemsClient } from '@/features/configuration/items/itemsApi'
-import { itemCrud } from '@/features/configuration/items/itemCrud'
+import { ItemRecord } from '@/features/configuration/items/ItemRecord'
 import { RecordRoute } from './RecordRoute'
 
-/** /items/:code — an item in its own tab: the same view as the Items list's sheet (its CrudPage record). */
+/** /items/:code — an item in its own tab: the same view as the Items list's sheet (ItemRecord). */
 export default function ItemRecordPage() {
   const code = useParams().code ?? ''
   const q = useRecordList(itemsClient, { page: 1, pageSize: 1, filters: [{ field: 'item_code', op: 'eq', value: code }] }, { errors: 'inline' })
@@ -13,7 +13,7 @@ export default function ItemRecordPage() {
   return (
     <RecordRoute type="item" title={row?.item_code}>
       {(close) => (row
-        ? <CrudRecord row={row} close={close} props={itemCrud} />
+        ? <ItemRecord row={row} close={close} />
         : <RecordSheet title={code} loading={!q.error && !missing} error={q.error ?? missing} tabs={[]} />)}
     </RecordRoute>
   )

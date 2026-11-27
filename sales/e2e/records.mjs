@@ -36,8 +36,11 @@ function filterValue(u, field) {
   return f ? decodeURIComponent(f.split(':').slice(2).join(':')) : null
 }
 
+const asked = []  // every API address the page read (the scope must ride in them)
+
 function answer(url) {
   const u = new URL(url)
+  asked.push(u.pathname + u.search)
   const p = u.pathname.replace(/^\/api\/v1\//, '')
   if (p === 'config/me/permissions') return { permissions: Object.fromEntries(PERMS.map((k) => [k, true])), roles: [] }
   if (p === 'config/public/branding') return { name: 'UniOps' }
@@ -52,6 +55,11 @@ function answer(url) {
     const code = filterValue(u, 'item_code')
     const all = ['ITEM-1', 'ITEM-2', 'ITEM-3'].map(ITEM)
     const rows = code ? all.filter((r) => r.item_code === code) : all
+    return { items: rows, total: rows.length }
+  }
+  if (p === 'inventory/items') {
+    const code = filterValue(u, 'item_code')
+    const rows = F.stockItems.filter((r) => !code || r.item_code === code)
     return { items: rows, total: rows.length }
   }
   if (p === 'lots') {
@@ -173,8 +181,28 @@ async function run(name, viewport) {
     const again = page.getByRole('dialog', { name: 'ITEM-1' })
     await again.getByRole('region', { name: 'Open in its tab' }).waitFor({ timeout: 10000 })
     await shot('read-only-sheet')
+    check((await again.getByRole('button', { name: 'Edit item' }).count()) === 0, 'the read-only sheet offers no Edit item')
     check((await again.getByRole('button', { name: 'Save' }).count()) === 0, 'the read-only sheet offers no Save')
-    check(await again.locator('#sf-description').isDisabled({ timeout: 5000 }), 'its form is read-only')
+  })
+  await step('the item\'s own page: facts first, the form behind Edit item, its Orders scoped by the server', async () => {
+    await page.goto(`${BASE}/items/ITEM-1`, { waitUntil: 'networkidle' })
+    const item = shown().getByRole('region', { name: 'ITEM-1' })
+    await item.waitFor({ timeout: 10000 })
+    check((await item.locator('#sf-description').count()) === 0, 'no form until Edit item')
+    await item.getByText('480', { exact: true }).first().waitFor({ timeout: 5000 })  // available EA, a fact
+    const tabs = (await item.getByRole('tab').allInnerTexts()).map((t) => t.split('\n')[0].trim())
+    check(JSON.stringify(tabs) === JSON.stringify(['Overview', 'Lots', 'Stock card', 'Shipped', 'Orders', 'Invoices', 'Transfers', 'Partner codes', 'History']),
+      `the item's tabs (${JSON.stringify(tabs)})`)
+    await shot('item-overview')
+    await item.getByRole('button', { name: 'Edit item' }).click()
+    await item.locator('#sf-description').waitFor({ timeout: 5000 })
+    await item.getByRole('button', { name: 'Cancel' }).click()
+    await item.getByRole('tab', { name: /^Orders/ }).click()
+    await item.getByRole('note', { name: 'Scope: Item = ITEM-1' }).waitFor({ timeout: 10000 })
+    await shot('item-orders')
+    const scoped = asked.filter((a) => a.startsWith('/api/v1/orders?') && a.includes('scope=item_code%3Aeq%3AITEM-1'))
+    check(scoped.length > 0, 'the Orders tab reads with the scope')
+    check(asked.some((a) => a.startsWith('/api/v1/shipped/count?') && a.includes('scope=')), 'the tab counts are counted with the scope')
   })
   await browser.close()
 }

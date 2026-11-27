@@ -1,4 +1,5 @@
 import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
+import { Lock } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
@@ -12,7 +13,7 @@ import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
 import { takeOpenRequest, useOpenRequest } from '../resource/viewRequests'
-import type { Filter, Page, QuerySpec } from '../resource/querySpec'
+import { filterParam, type Filter, type Page, type QuerySpec } from '../resource/querySpec'
 import { ActionButton } from './ActionButton'
 import { RefreshControl } from './RefreshControl'
 import { compareRows, useRefresh } from './useRefresh'
@@ -33,6 +34,8 @@ export interface ListResource<T> {
   basePath: string
   list: (spec: QuerySpec) => Promise<Page<T>>
   meta: () => Promise<ListMeta>
+  /** How many rows a query selects (the search panel's "Search (n)"). */
+  count?: (spec: QuerySpec) => Promise<{ total: number }>
   /** One record by id: a record asked for from elsewhere opens with its data. */
   get?: (id: number) => Promise<T>
   /** A record action on one record or many (needed for `actions`). */
@@ -75,6 +78,10 @@ export interface ListPageProps<T extends { id: number }> {
   recordName?: (row: T) => string
   /** Filters the page sets itself (a record's own list): kept, not removable; no views. */
   fixed?: Filter[]
+  /** A record's own list as a scope (user 2026-11-27: an item's Orders): filters the person cannot remove here, shown
+   *  as 🔒 Scope apart from Search and never in the search panel, that the server applies to everything the list does
+   *  — its rows, its count, its export, its selection's actions. Its saved views are general to the scope's kind. */
+  scope?: ListScope
   /** Whether a record asked for from elsewhere (openRecord, a Task Inbox link) opens here. Default:
    *  only a list without `fixed` filters, the resource's own page; one inside another page (e.g. the
    *  orders waiting for delivery) shares the resource and must not take the order page's requests. */
@@ -111,6 +118,14 @@ export interface ListPageProps<T extends { id: number }> {
   create?: ListCreate<T>
 }
 
+export interface ListScope {
+  /** What the scope is of (item, lot): its views are this list's views of any such scope. */
+  kind: string
+  /** How it reads, e.g. "Item = CF0093". */
+  label: string
+  filters: Filter[]
+}
+
 export interface ListCreate<T> {
   label: string
   permission: string
@@ -128,12 +143,16 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const { resource, fixed = [], columns, rowActions, renderDetail } = props
   const qc = useQueryClient()
   const detailScope = useUnsavedScope()  // the open record's unsaved input: prev / next asks about it
-  const view = useListView(resource, { fixed })
+  const scope = props.scope
+  const view = useListView(resource, { fixed, scopeKind: scope?.kind })
   // Search on any field shows when the list has a filterable field the page didn't fix (as QueryTable decides).
   const meta = useListMeta(resource).data
   const canExport = (props.exportable ?? !!props.title) && !!meta?.capabilities?.export?.allowed && !!resource.exportCsv
   const hasPanel = (meta?.fields ?? []).some((f) => f.filterable && !fixed.some((x) => x.field === f.name))
-  const { spec } = view
+  // The scope rides in the spec: every read, count, export and "all matching" action carries it (?scope=).
+  const spec: QuerySpec = scope ? { ...view.spec, scope: scope.filters } : view.spec
+  // What the table changes (page, sort, search) goes back to the view without the scope: never saved with a view.
+  const tableProps = scope ? { ...view.tableProps, spec, onSpecChange: (s: QuerySpec) => view.tableProps.onSpecChange({ ...s, scope: undefined }) } : view.tableProps
   const [open, setOpenRaw] = useState<T | null>(null)
   // The detail's tab: kept from record to record; a linked one replaces it.
   const [tab, setTab] = useState<string | undefined>(undefined)
@@ -182,7 +201,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   // A record asked for from elsewhere (a Task Inbox link): fetched by its id
   // when the client can, then opened like a clicked row.
   const asked = useOpenRequest(resource.basePath)
-  const takes = props.takesOpenRequests ?? fixed.length === 0
+  const takes = props.takesOpenRequests ?? (fixed.length === 0 && !scope)
   useEffect(() => {
     if (asked === undefined || !renderDetail || !takes) return
     const req = takeOpenRequest(resource.basePath)
@@ -203,10 +222,14 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     spec, rows, refresh: () => qc.invalidateQueries({ queryKey: queryKeys.list(resource) }),
   }
   const actionHost = useMemo<ActionHost<T>>(() => ({
-    run: (id, body) => { if (!resource.action) throw new Error('this list has no record actions'); return resource.action(id, body) },
+    run: (id, body) => {
+      if (!resource.action) throw new Error('this list has no record actions')
+      // Chosen records: the scope goes with them, and the server refuses any outside it.
+      return resource.action(id, scope && body.ids ? { ...body, scope: scope.filters.map(filterParam) } : body)
+    },
     name: props.recordName ?? ((r: T) => `#${r.id}`),
     sends: (id) => meta?.capabilities?.actions?.find((a) => a.id === id)?.sends ?? undefined,
-  }), [resource, props.recordName, meta])
+  }), [resource, props.recordName, meta, scope])
   const selection = useRowSelection({ actions: props.actions as RecordAction<T & { version: number }>[] | undefined,
     rows: rows as (T & { version: number })[], spec, total: list.data?.total ?? 0, host: actionHost as ActionHost<T & { version: number }> })
   const ownColumns = [...(selection.lead as ColumnDef<T, unknown>[]), ...columns,
@@ -234,6 +257,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const create = props.create
   const toolbar = (
     <>
+      {scope && <ScopeChip label={scope.label} />}
       <TourMark help="list.refresh" slot="list.refresh" className="inline-flex"><RefreshControl state={refresh} /></TourMark>
       {canExport && <ExportMenu columns={exportCols} run={(columns) => resource.exportCsv!(spec, columns)} notices={notices} errorMessages={props.errorMessages} />}
       {props.toolbar?.(ctx)}
@@ -248,14 +272,14 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     <div className="flex flex-col gap-4">
       {props.title && <PageHeader title={props.title} description={props.description} help={props.help}
         helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: canExport, select: selection.lead.length > 0,
-          links: (meta?.fields ?? []).some((f) => f.ref && meta?.refs?.[f.ref.type]?.readable) }) }]} />}
+          links: (meta?.fields ?? []).some((f) => f.ref && meta?.refs?.[f.ref.type]?.readable), scope: !!scope }) }]} />}
       {props.notice}
       <QueryTable<T>
         ariaLabel={props.title}
         columns={allColumns}
         defaultHidden={props.defaultHidden}
         resource={resource}
-        locked={fixed.map((f) => f.field)}
+        locked={[...fixed, ...(scope?.filters ?? [])].map((f) => f.field)}
         rows={rows}
         total={list.data?.total ?? 0}
         groups={list.data?.groups}
@@ -263,7 +287,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         totals={list.data?.totals}
         onExportColumns={setExportCols}
         defaultLocked={props.defaultLocked}
-        {...view.tableProps}
+        {...tableProps}
         searchable={props.searchable ?? true}
         loading={list.isLoading || !view.ready}
         fetching={list.isFetching}
@@ -298,5 +322,15 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     </TourScope>
     </ActionHostContext.Provider>
     </NoticesContext.Provider>
+  )
+}
+
+/** The scope of a record's own list: set by its page, not removable here (no ✕, not in the search panel). */
+function ScopeChip({ label }: { label: string }) {
+  return (
+    <span role="note" aria-label={`Scope: ${label}`} title="Set by this page: it cannot be removed here"
+      className="inline-flex h-8 items-center gap-1 rounded-full border border-primary-200 bg-primary-50 px-3 text-xs font-medium text-primary-800">
+      <Lock aria-hidden className="h-3.5 w-3.5" />Scope: {label}
+    </span>
   )
 }
