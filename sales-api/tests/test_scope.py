@@ -120,3 +120,33 @@ def test_the_scope_is_part_of_the_query_spec():
     assert spec.scope[0].field == "item_code"
     assert OrderService.repo_cls.filterable["item_code"].through is not None
     assert select  # imported for readers who extend this module
+
+
+async def test_a_recall_lists_who_got_the_lots_with_its_own_key(p6):  # noqa: F811
+    a = await shipped(p6, "PO-1")
+    await shipped(p6, "PO-2", rows=["LX*1", "W12*CP*60*60*0*EA**VN*CF0092", "N9*LT*LOT-A", "DTM*036*20280519"])
+    async with p6.factory(OP) as u:
+        name, body = await ShippedService(u).recall_csv(QuerySpec(scope=[parse_filter("lot:eq:LOT-A")]))
+        assert name == "recall-LOT-A.csv"
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig"))))
+        assert rows[0] == ["Lot", "Item", "Customer", "Order", "Ship date", "EA", "Delivery"]
+        orders = {r[3] for r in rows[1:]}
+        assert len(orders) == 2 and a.source_reference in orders  # both orders the lot went on
+        assert {(r[0], r[2], r[6]) for r in rows[1:]} == {("LOT-A", "Loblaws", "Not confirmed")} and len(rows) == 3
+        name, _ = await ShippedService(u).recall_csv(QuerySpec(filters=[parse_filter("lot:in:LOT-A|LOT-B")]))
+        assert name == "recall-2-lots.csv"
+        import pytest
+        from app.platform.errors import InvalidInput
+        with pytest.raises(InvalidInput, match="names its lots"):
+            await ShippedService(u).recall_csv(QuerySpec())
+
+
+async def test_the_recall_export_needs_its_key_and_meta_says_who_may(api):  # noqa: F811
+    path = "/api/v1/shipped/recall/customers.csv?scope=lot:eq:LOT-A"
+    assert (await api.get(path, headers=READER)).status_code == 403
+    r = await api.get(path, headers=OPERATOR)
+    assert r.status_code == 200 and r.text.lstrip("﻿").startswith("Lot,Item,Customer,Order,Ship date,EA,Delivery")
+    assert (await api.get("/api/v1/shipped/recall/customers.csv", headers=OPERATOR)).status_code == 422
+    files = lambda h: api.get("/api/v1/shipped/meta", headers=h)  # noqa: E731
+    assert [(f["path"], f["allowed"]) for f in (await files(READER)).json()["capabilities"]["files"]] == [("recall/customers.csv", False)]
+    assert [(f["path"], f["allowed"]) for f in (await files(OPERATOR)).json()["capabilities"]["files"]] == [("recall/customers.csv", True)]

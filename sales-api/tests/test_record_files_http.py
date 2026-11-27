@@ -43,6 +43,7 @@ async def test_one_that_is_not_there_is_said(api, path):  # noqa: F811
 
 async def test_meta_says_the_files(api):  # noqa: F811
     meta = (await api.get("/api/v1/orders/meta", headers=READER)).json()
-    assert meta["capabilities"]["files"] == [{"path": "po.pdf", "media_type": "application/pdf", "over": "record"},
-                                             {"path": "packet.zip", "media_type": "application/zip", "over": "record"}]
+    # `allowed`: whether this person may have it (a file with a key of its own, e.g. a recall; else reading is enough).
+    assert meta["capabilities"]["files"] == [{"path": "po.pdf", "media_type": "application/pdf", "over": "record", "allowed": True},
+                                             {"path": "packet.zip", "media_type": "application/zip", "over": "record", "allowed": True}]
     assert (await api.get("/api/v1/lots/meta", headers=READER)).json()["capabilities"]["files"] == []

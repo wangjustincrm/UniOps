@@ -42,6 +42,7 @@ class RecordFile:
     media_type: str = "application/pdf"
     inline: bool = True       # shown by the browser; False: downloaded
     over: Literal["record", "list"] = "record"
+    permission: str | None = None   # beyond reading the list (a recall's export); /meta says whether this person holds it
 
 
 @dataclass(frozen=True)

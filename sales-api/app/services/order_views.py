@@ -129,7 +129,8 @@ ORDER_STATE_SQL = case(
 
 class OrderRepository(Repository[Order]):
     model = Order
-    refs = {"parent_order_id": Ref("order")}
+    # Its own Order ref is a link too (to the order's tab), as an order ref is in every other list (user 2026-11-27).
+    refs = {"parent_order_id": Ref("order"), "source_reference": Ref("order", "id")}
     detail_refs = ("item", "lot")  # its lines name items; its packing, lots
 
     def base_query(self):

@@ -207,7 +207,7 @@ def test_the_files_we_know_are_declared():
         "/orders/{id}/po.pdf": ("application/pdf", True), "/orders/{id}/packet.zip": ("application/zip", False),
         "/invoices/{id}/invoice.pdf": ("application/pdf", True), "/transfers/{id}/print.pdf": ("application/pdf", True),
         "/settlements/report/settlements.pdf": ("application/pdf", True), "/settlements/{id}/statement.pdf": ("application/pdf", True),
-        "/documents/{id}/raw": ("application/octet-stream", False)}
+        "/documents/{id}/raw": ("application/octet-stream", False), "/shipped/recall/customers.csv": ("text/csv", False)}
 
 
 def test_a_declared_file_is_mounted_by_the_router_and_no_file_is_by_hand():

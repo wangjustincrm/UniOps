@@ -6,11 +6,13 @@ from __future__ import annotations
 
 
 from app.models.lots import LotRow, ShippedRow
-from app.platform.query import FilterRule
+from app.platform.authorization import note_action, requires
+from app.platform.errors import InvalidInput
+from app.platform.query import FilterRule, QuerySpec, parse_sort
 from app.platform.record_types import Ref
 from app.platform.repository import Repository
-from app.platform.resource import Resource
-from app.platform.services import ReadOnlyService
+from app.platform.resource import RecordFile, Resource
+from app.platform.services import ReadOnlyService, csv_bytes
 from app.platform.views import Preset
 from app.domain.carriers import tracking_url
 from app.schemas.lots import LotRead, ShippedRead
@@ -92,12 +94,45 @@ class ShippedRepository(LotRepository):
                Preset("by_customer", "By customer", {"group": [{"field": "customer", "desc": False}], "sort": [{"field": "ship_date", "desc": True}]}))
 
 
+# The recall export's key (user 2026-11-27: its own permission). sales.lots.export needs an identity-api migration
+# (the user's decision, asked 2026-11-27); until then the people who act on orders.
+RECALL_EXPORT = "sales.order.operate"
+# A recall's columns (user 2026-11-27): who got it, on which order, when, how much, delivered or not — a Shopify
+# customer as an initial and the city only.
+RECALL_COLUMNS = (("lot", "Lot"), ("item_code", "Item"), ("customer", "Customer"), ("order_ref", "Order"),
+                  ("ship_date", "Ship date"), ("qty_shipped_ea", "EA"), ("delivery", "Delivery"))
+RECALL_MAX_ROWS = 20_000
+
+
 class ShippedService(LotService):
     """Shipped (user 2026-11-27): what went out to customers, from the applied 945s — an item's or a lot's (its scope),
-    or all of them."""
+    or all of them. A recall (one lot or several, in the scope or a filter) is a CSV of its own, with its own key."""
     repo_cls = ShippedRepository
     read_schema = ShippedRead
-    resource = Resource(path="/shipped", tags=("shipped",), get=False)
+    resource = Resource(path="/shipped", tags=("shipped",), get=False,
+                        files=(RecordFile("recall/customers.csv", "recall_csv", media_type="text/csv", inline=False, over="list",
+                                          permission=RECALL_EXPORT),))
+
+    @requires(READ)
+    async def recall_csv(self, spec: QuerySpec) -> tuple[str, bytes]:
+        """Every customer and order the lots went to — the lots named in the list's scope or filter (one at least);
+        sales.read and the recall's own key."""
+        await self._authorize(RECALL_EXPORT)
+        lots = sorted({str(v) for f in [*spec.scope, *spec.filters] if f.field == "lot" and f.op in ("eq", "in")
+                       for v in (f.value if isinstance(f.value, list) else [f.value])})
+        if not lots:
+            raise InvalidInput("recall.no_lot", "a recall names its lots: a lot in the scope or a filter", {"field": "lot"})
+        note_action(type(self).__name__, "recall_csv")
+        page = await self.repo.list(spec.model_copy(update={"page": 1, "page_size": RECALL_MAX_ROWS, "group": [],
+                                                            "sort": [*spec.sort] or parse_sort("lot,ship_date,order_ref")}))
+        if page.total > RECALL_MAX_ROWS:  # never a recall that silently leaves customers out
+            raise InvalidInput("recall.too_many", f"more than {RECALL_MAX_ROWS} rows: name fewer lots", {"max": RECALL_MAX_ROWS})
+        rows = page.items
+        body = csv_bytes([label for _, label in RECALL_COLUMNS], (
+            [("Confirmed" if r.delivery_confirmed else "Not confirmed") if c == "delivery" else getattr(r, c) for c, _ in RECALL_COLUMNS]
+            for r in rows))
+        name = f"recall-{lots[0]}.csv" if len(lots) == 1 else f"recall-{len(lots)}-lots.csv"
+        return name, body
 
     def _csv_export_columns(self) -> tuple[str, ...]:
         return SHIPPED_CSV
